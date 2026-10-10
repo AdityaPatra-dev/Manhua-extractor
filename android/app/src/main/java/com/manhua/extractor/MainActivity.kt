@@ -108,6 +108,8 @@ class MainActivity : AppCompatActivity() {
                 mediaPlaybackRequiresUserGesture = false
             }
 
+            addJavascriptInterface(AndroidWebAppInterface(this@MainActivity), "AndroidApp")
+
             webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                     return false

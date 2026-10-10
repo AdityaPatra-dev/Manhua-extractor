@@ -296,6 +296,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await res.json();
       if (data.success) {
+        if (window.AndroidApp && typeof window.AndroidApp.notifyDownloadStarted === "function") {
+          window.AndroidApp.notifyDownloadStarted();
+        }
         progressCard.classList.remove("hidden");
         progressCard.scrollIntoView({ behavior: "smooth" });
         listenToProgress();
@@ -396,6 +399,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await res.json();
       if (data.success) {
+        if (window.AndroidApp && typeof window.AndroidApp.notifyDownloadStarted === "function") {
+          window.AndroidApp.notifyDownloadStarted();
+        }
         progressCard.classList.remove("hidden");
         listenToProgress();
       } else {

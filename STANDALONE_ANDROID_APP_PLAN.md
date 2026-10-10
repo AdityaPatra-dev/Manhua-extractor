@@ -193,7 +193,7 @@ flowchart TD
 - [x] **Milestone 2**: Create `android_entry.py` adapter to wire storage paths and background Uvicorn loop.
 - [x] **Milestone 3**: Implement `MainActivity.kt` with hardware-accelerated WebView and readiness poller.
 - [x] **Milestone 4**: Implement `DownloadForegroundService.kt` for background downloads with notifications.
-- [ ] **Milestone 5**: Implement `FileProvider` and MediaStore integration to export `.cbz` to public Downloads.
+- [x] **Milestone 5**: Implement `FileProvider` and MediaStore integration to export `.cbz` to public Downloads.
 - [ ] **Milestone 6**: Configure Gradle build scripts & compile test APK.
 
 ---
