@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+downloads/
+.pytest_cache/
+*.sqlite3-journal
+*.db
+
