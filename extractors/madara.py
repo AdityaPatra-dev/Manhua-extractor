@@ -93,23 +93,47 @@ class MadaraExtractor(BaseExtractor):
         return self.deduplicate_urls(raw_urls)
 
     def extract_chapter_list(self, soup: BeautifulSoup, url: str, html: str) -> List[Dict[str, Any]]:
+        has_ajax_holder = bool(soup.select_one("#manga-chapters-holder, .manga-chapters-data, div[data-id]"))
+        base_series_url = re.sub(r'/(?:chapter|ch|c|ajax)[-_/\d].*$', '/', url, flags=re.I)
+        if not base_series_url.endswith('/'):
+            base_series_url += '/'
+        
+        # Try direct AJAX fetching first if the dynamic chapters container is explicitly present
+        if has_ajax_holder:
+            try:
+                import requests
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    "Referer": url,
+                    "X-Requested-With": "XMLHttpRequest"
+                }
+                ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
+                resp = requests.post(ajax_endpoint, headers=headers, timeout=10)
+                if resp.status_code == 200 and resp.text:
+                    ajax_soup = BeautifulSoup(resp.text, "html.parser")
+                    ajax_chapters = super().extract_chapter_list(ajax_soup, base_series_url, resp.text)
+                    if ajax_chapters:
+                        return ajax_chapters
+            except Exception:
+                pass
+
         chapters = super().extract_chapter_list(soup, url, html)
         if chapters:
             return chapters
 
-        # If no chapters found in initial HTML, Madara themes often load chapters via AJAX
+        # Fallback to AJAX if no chapters found in initial DOM
         try:
             import requests
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 "Referer": url,
                 "X-Requested-With": "XMLHttpRequest"
             }
-            clean_url = url.split("?")[0].rstrip('/') + "/ajax/chapters/"
-            resp = requests.post(clean_url, headers=headers, timeout=6)
+            ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
+            resp = requests.post(ajax_endpoint, headers=headers, timeout=10)
             if resp.status_code == 200 and resp.text:
                 ajax_soup = BeautifulSoup(resp.text, "html.parser")
-                ajax_chapters = super().extract_chapter_list(ajax_soup, url, resp.text)
+                ajax_chapters = super().extract_chapter_list(ajax_soup, base_series_url, resp.text)
                 if ajax_chapters:
                     return ajax_chapters
         except Exception:

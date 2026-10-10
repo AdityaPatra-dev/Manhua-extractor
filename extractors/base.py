@@ -202,10 +202,14 @@ class BaseExtractor(ABC):
                 link_candidates.extend(found)
 
         # Fallback to broad link search if specific selectors matched nothing
-        if not link_candidates and not chapters:
-            link_candidates = soup.find_all("a", href=True)
+        clean_series_path = re.sub(r'/(?:chapter|ch|c|ajax)[-_/\d].*$', '', parsed.path, flags=re.I).strip('/')
 
         for a in link_candidates:
+            # Skip links inside sidebar / recommendation containers
+            parent_classes = " ".join(a.find_parent().get("class", [])) if a.find_parent() else ""
+            if any(bad in parent_classes.lower() for bad in ("widget", "popular", "related", "sidebar", "footer", "comment")):
+                continue
+
             href = a.get("href", "").strip()
             if not href or href.startswith("#") or href.startswith("javascript:"):
                 continue
@@ -217,6 +221,13 @@ class BaseExtractor(ABC):
             full_url = urljoin(url, href)
             if full_url in seen_urls or not full_url.startswith("http"):
                 continue
+
+            parsed_href = urlparse(full_url)
+            if clean_series_path and len(clean_series_path.split('/')) > 1 and parsed_href.netloc == parsed.netloc:
+                href_path = parsed_href.path.strip('/')
+                # If the link belongs to a different series path on the same site, skip it
+                if not href_path.startswith(clean_series_path):
+                    continue
 
             ch_num = self.extract_chapter_number(full_url, txt)
             seen_urls.add(full_url)
