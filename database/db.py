@@ -76,6 +76,26 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                 value TEXT
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS promo_signatures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT,
+                phash TEXT UNIQUE NOT NULL,
+                match_threshold INTEGER DEFAULT 10,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Migration columns for series table
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN anilist_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN mal_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
     conn.close()
 
 # --- Series Operations ---
@@ -267,4 +287,59 @@ def get_all_settings(db_path: str = DEFAULT_DB_PATH) -> Dict[str, str]:
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
     conn.close()
     return {r["key"]: r["value"] for r in rows}
+
+
+# --- Promotional Signatures Operations ---
+
+def add_promo_signature(
+    phash: str,
+    label: str = "Promo",
+    match_threshold: int = 10,
+    db_path: str = DEFAULT_DB_PATH
+) -> int:
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.execute("""
+            INSERT INTO promo_signatures (phash, label, match_threshold)
+            VALUES (?, ?, ?)
+            ON CONFLICT(phash) DO UPDATE SET label = excluded.label, match_threshold = excluded.match_threshold
+        """, (phash, label, match_threshold))
+        sig_id = cursor.lastrowid
+    conn.close()
+    return sig_id
+
+
+def get_all_promo_signatures(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+    conn = get_connection(db_path)
+    rows = conn.execute("SELECT * FROM promo_signatures ORDER BY created_at DESC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def delete_promo_signature(signature_id: int, db_path: str = DEFAULT_DB_PATH) -> bool:
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.execute("DELETE FROM promo_signatures WHERE id = ?", (signature_id,))
+        deleted = cursor.rowcount > 0
+    conn.close()
+    return deleted
+
+
+def update_series_trackers(
+    series_id: int,
+    anilist_id: Optional[int] = None,
+    mal_id: Optional[int] = None,
+    db_path: str = DEFAULT_DB_PATH
+) -> None:
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            UPDATE series
+            SET anilist_id = COALESCE(?, anilist_id),
+                mal_id = COALESCE(?, mal_id),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (anilist_id, mal_id, series_id))
+    conn.close()
+
 

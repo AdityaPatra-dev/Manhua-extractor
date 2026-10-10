@@ -13,5 +13,10 @@ from .db import (
     get_setting,
     set_setting,
     get_all_settings,
+    add_promo_signature,
+    get_all_promo_signatures,
+    delete_promo_signature,
+    update_series_trackers
 )
+
 
