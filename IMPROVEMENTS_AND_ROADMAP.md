@@ -154,10 +154,10 @@ Currently, downloads run sequentially in a single job. Interrupting the script r
 | **In-App Vertical Web Reader** | 🔥 High | 🟢 Low | **v1.1** | ✅ **COMPLETE** |
 | **`curl_cffi` TLS Fingerprint Engine** | 🔥 High | 🟡 Medium | **v1.1** | ✅ **COMPLETE** |
 | **OPDS Server Feed for Tachiyomi/Mihon** | 🔥 High | 🟡 Medium | **v1.2** | ✅ **COMPLETE** |
-| **Scheduled Auto-Updater Worker** | 🔥 High | 🟡 Medium | **v1.2** | ⏳ Next Up |
-| **Kindle / E-Ink Smart Strip Slicer** | ⚡ Medium | 🟡 Medium | **v1.3** | Planned |
-| **Discord / Telegram Notifications** | ⚡ Medium | 🟢 Low | **v1.3** | Planned |
-| **Panel-Level Cache & Resume** | 🔥 High | 🟡 Medium | **v1.4** | Planned |
+| **Scheduled Auto-Updater Worker** | 🔥 High | 🟡 Medium | **v1.2** | ✅ **COMPLETE** |
+| **Discord / Telegram / Ntfy Webhooks** | ⚡ Medium | 🟢 Low | **v1.2** | ✅ **COMPLETE** |
+| **Kindle / E-Ink Smart Strip Slicer** | ⚡ Medium | 🟡 Medium | **v1.3** | ⏳ Next Up |
+| **Panel-Level Cache & Resume** | 🔥 High | 🟡 Medium | **v1.3** | ⏳ Next Up |
 | **AniList / MAL Tracker Sync** | ⚡ Medium | 🟡 Medium | **v1.4** | Planned |
 | **Playwright Stealth Headless Fallback** | ⚡ Medium | 🔴 High | **v2.0** | Planned |
 | **Ad / Credit Page Trimming (pHash)** | ⚡ Medium | 🟡 Medium | **v2.0** | Planned |
@@ -167,7 +167,9 @@ Currently, downloads run sequentially in a single job. Interrupting the script r
 
 ## 9. Next Recommended Action
 
-1. **Phase 1 (Immediate)**: Integrate `curl_cffi` into [extractors/dispatcher.py](file:///home/adityapatra/Documents/GitHub/Manhua-extractor/extractors/dispatcher.py) to eliminate the remaining Cloudflare 403 blocks, and add the vertical web reader to [app.py](file:///home/adityapatra/Documents/GitHub/Manhua-extractor/app.py).
-2. **Phase 2**: Add background scheduling via `APScheduler` so tracked library series check for new releases automatically.
-3. **Phase 3**: Implement the OPDS endpoint so downloaded chapters can be read directly on mobile devices via Tachiyomi/Mihon.
+1. **v1.3 Priority 1: Kindle / E-Ink Smart Strip Slicer**:
+   * Implement automated whitespace detection in `core/optimizer.py` to intelligently segment long vertical webtoon strips into reader-friendly aspect ratios (e.g. 1264x1680) for e-readers and low-memory devices.
+2. **v1.3 Priority 2: Panel-Level Download Staging & Resumption**:
+   * Add panel-level caching in `core/downloader.py` using `.staging/{chapter_hash}/` to resume interrupted chapter downloads without refetching already completed panels.
+
 
