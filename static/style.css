@@ -547,9 +547,16 @@ input:focus, select:focus {
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1.5rem;
-  background: rgba(11, 15, 25, 0.92);
+  background: rgba(11, 15, 25, 0.94);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-color);
+  transition: transform 0.28s ease, opacity 0.25s ease;
+}
+
+.reader-topbar.hud-hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 .reader-title-info {
@@ -571,6 +578,9 @@ input:focus, select:focus {
   align-items: center;
   padding-bottom: 5rem;
   background: #000;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .reader-page {
@@ -590,7 +600,7 @@ input:focus, select:focus {
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 1rem;
-  background: rgba(19, 27, 46, 0.9);
+  background: rgba(19, 27, 46, 0.94);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border-color);
   border-radius: 8px;
@@ -598,6 +608,13 @@ input:focus, select:focus {
   color: var(--text-muted);
   z-index: 50;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  transition: transform 0.28s ease, opacity 0.25s ease;
+}
+
+.reader-bottom-hud.hud-hidden {
+  transform: translateY(120%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Chapter Catalog Component */

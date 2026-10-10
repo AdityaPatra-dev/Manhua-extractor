@@ -567,10 +567,74 @@ document.addEventListener("DOMContentLoaded", () => {
   const readerNextBtn = document.getElementById("reader-next-btn");
   const readerProgressCounter = document.getElementById("reader-progress-counter");
   const readerScrollTop = document.getElementById("reader-scroll-top");
+  const readerFullscreenBtn = document.getElementById("reader-fullscreen-btn");
+  const readerTopbar = document.querySelector(".reader-topbar");
+  const readerBottomHud = document.querySelector(".reader-bottom-hud");
+
+  let currentReadingChapterId = null;
+  let lastReaderScrollTop = 0;
+  let hudHidden = false;
+
+  function setHudVisibility(visible) {
+    hudHidden = !visible;
+    if (readerTopbar) {
+      if (visible) readerTopbar.classList.remove("hud-hidden");
+      else readerTopbar.classList.add("hud-hidden");
+    }
+    if (readerBottomHud) {
+      if (visible) readerBottomHud.classList.remove("hud-hidden");
+      else readerBottomHud.classList.add("hud-hidden");
+    }
+  }
+
+  // Tap in reading area toggles HUD (except on buttons or links)
+  if (readerPagesContainer) {
+    readerPagesContainer.addEventListener("click", (e) => {
+      if (e.target.tagName === "BUTTON" || e.target.closest("button") || e.target.tagName === "A") {
+        return;
+      }
+      setHudVisibility(hudHidden);
+    });
+  }
+
+  // Fullscreen API toggle
+  if (readerFullscreenBtn) {
+    readerFullscreenBtn.addEventListener("click", () => {
+      const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement;
+      if (!isFs) {
+        if (readerView.requestFullscreen) {
+          readerView.requestFullscreen().catch(() => {});
+        } else if (readerView.webkitRequestFullscreen) {
+          readerView.webkitRequestFullscreen();
+        } else if (document.documentElement.requestFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        }
+      }
+    });
+
+    const updateFsBtnText = () => {
+      const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement;
+      readerFullscreenBtn.textContent = isFs ? "✕ Exit" : "⛶ Fullscreen";
+    };
+    document.addEventListener("fullscreenchange", updateFsBtnText);
+    document.addEventListener("webkitfullscreenchange", updateFsBtnText);
+  }
 
   readerClose.addEventListener("click", () => {
+    // If in fullscreen, exit fullscreen first
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
     readerView.classList.add("hidden");
     readerPagesContainer.innerHTML = "";
+    currentReadingChapterId = null;
     loadLibrary();
   });
 
@@ -579,9 +643,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   window.openReader = async function(chapterId) {
+    currentReadingChapterId = chapterId;
+    setHudVisibility(true);
     seriesModal.classList.add("hidden");
     readerView.classList.remove("hidden");
-    readerPagesContainer.innerHTML = "<p style='color: #94a3b8; padding: 3rem;'>Loading chapter panels...</p>";
+    readerView.scrollTop = 0;
+    readerPagesContainer.innerHTML = "<p style='color: #94a3b8; padding: 3rem; text-align: center;'>Loading chapter panels...</p>";
 
     try {
       const res = await fetch(`/api/chapter/${chapterId}/pages`);
@@ -608,15 +675,48 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // Render panels in vertical continuous scroll
-        readerPagesContainer.innerHTML = data.pages.map((pUrl, idx) => `
+        const panelsHtml = data.pages.map((pUrl, idx) => `
           <div class="reader-page-wrapper" style="position: relative; display: inline-block; width: 100%; text-align: center;">
-            <img class="reader-page" src="${pUrl}" alt="Page ${idx + 1}" loading="lazy" id="page-panel-${idx}">
+            <img class="reader-page" src="${pUrl}" alt="Page ${idx + 1}" loading="lazy" decoding="async" id="page-panel-${idx}">
             <button class="btn-mark-promo" onclick="markPageAsPromo(${chapterId}, ${idx}, this)" style="position: absolute; right: 15px; top: 15px; background: rgba(15,23,42,0.85); color: #f87171; border: 1px solid #ef4444; border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; opacity: 0.4; transition: opacity 0.2s;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.4'">🚫 Mark as Promo</button>
           </div>
         `).join("");
 
-        // Scroll listener for progress tracking
+        // End-of-chapter card for seamless mobile navigation
+        const endCardHtml = `
+          <div class="reader-chapter-end-card" style="width: 90%; max-width: 500px; margin: 3rem auto 2rem auto; padding: 2rem 1.5rem; text-align: center; background: rgba(30, 41, 59, 0.85); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+            <h3 style="margin-bottom: 0.5rem; font-size: 1.2rem; color: var(--text-main);">Finished ${data.chapter_title} 🎉</h3>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">${data.series_title}</p>
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; justify-content: center; align-items: stretch; max-width: 280px; margin: 0 auto;">
+              ${data.next_chapter_id 
+                ? `<button class="btn btn-primary" style="padding: 12px 18px; font-size: 0.95rem; font-weight: 600;" onclick="openReader(${data.next_chapter_id})">Next Chapter ❯</button>` 
+                : '<p style="color: #4ade80; font-size: 0.85rem; margin: 4px 0;">🎉 You are caught up to the latest downloaded chapter!</p>'
+              }
+              ${data.prev_chapter_id 
+                ? `<button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="openReader(${data.prev_chapter_id})">❮ Previous Chapter</button>` 
+                : ''
+              }
+              <button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="readerClose.click()">Back to Library</button>
+            </div>
+          </div>
+        `;
+
+        readerPagesContainer.innerHTML = panelsHtml + endCardHtml;
+
+        // Scroll listener for progress tracking and auto-hiding HUD
+        let progressSaveTimeout = null;
         readerView.onscroll = () => {
+          const currentScroll = readerView.scrollTop;
+          const diff = currentScroll - lastReaderScrollTop;
+
+          // Auto-hide HUD on downward scroll, reveal on upward scroll
+          if (diff > 35 && currentScroll > 80 && !hudHidden) {
+            setHudVisibility(false);
+          } else if (diff < -25 && hudHidden) {
+            setHudVisibility(true);
+          }
+          lastReaderScrollTop = Math.max(0, currentScroll);
+
           const scrollPos = readerView.scrollTop + 300;
           const panels = readerPagesContainer.querySelectorAll(".reader-page");
           let currentPage = 1;
@@ -627,18 +727,23 @@ document.addEventListener("DOMContentLoaded", () => {
           });
           readerProgressCounter.textContent = `Page ${currentPage} of ${data.total_pages}`;
 
-          // Post progress to database
-          fetch(`/api/chapter/${chapterId}/progress`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ last_read_page: currentPage, read_status: 1 })
-          }).catch(() => {});
+          // Throttle progress save
+          if (!progressSaveTimeout) {
+            progressSaveTimeout = setTimeout(() => {
+              progressSaveTimeout = null;
+              fetch(`/api/chapter/${chapterId}/progress`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ last_read_page: currentPage, read_status: 1 })
+              }).catch(() => {});
+            }, 1000);
+          }
         };
       } else {
-        readerPagesContainer.innerHTML = `<p style="color: var(--danger); padding: 3rem;">Error: ${data.error || 'Could not load chapter pages.'}</p>`;
+        readerPagesContainer.innerHTML = `<p style="color: var(--danger); padding: 3rem; text-align: center;">Error: ${data.error || 'Could not load chapter pages.'}</p>`;
       }
     } catch (e) {
-      readerPagesContainer.innerHTML = `<p style="color: var(--danger); padding: 3rem;">Network error: ${e.message}</p>`;
+      readerPagesContainer.innerHTML = `<p style="color: var(--danger); padding: 3rem; text-align: center;">Network error: ${e.message}</p>`;
     }
   };
 
