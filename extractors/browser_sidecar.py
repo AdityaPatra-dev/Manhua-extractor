@@ -108,9 +108,12 @@ def solve_with_nodriver(target_url: str, timeout_seconds: int = 15) -> Optional[
                 page = await browser.get(target_url)
                 for _ in range(timeout_seconds):
                     await asyncio.sleep(1)
-                    title = await page.evaluate("document.title")
-                    if title and "Just a moment" not in str(title):
-                        break
+                    try:
+                        title = await page.evaluate("document.title")
+                        if title and "Just a moment" not in str(title):
+                            break
+                    except Exception:
+                        pass
                 # Allow JS/hydration to settle
                 await asyncio.sleep(2)
                 content = await page.get_content()
@@ -127,7 +130,7 @@ def solve_with_nodriver(target_url: str, timeout_seconds: int = 15) -> Optional[
                 browser.stop()
 
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            return pool.submit(asyncio.run, _run()).result(timeout=timeout_seconds + 8)
+            return pool.submit(asyncio.run, _run()).result(timeout=timeout_seconds + 12)
     except Exception:
         return None
 

@@ -52,9 +52,27 @@ class HeuristicExtractor(BaseExtractor):
         src = (img.get("data-src") or img.get("src") or "").lower()
         if not src or src.startswith("data:"):
             return False
-        # Filter obvious banners/icons
-        forbidden = ["logo", "avatar", "banner", "loader", "icon", "discord", "patreon", "ads"]
-        return not any(bad in src for bad in forbidden)
+
+        # Filter out comments, avatars, widgets, and footers via parent hierarchy
+        parent = img.find_parent()
+        while parent:
+            classes = " ".join(parent.get("class", [])).lower()
+            pid = str(parent.get("id", "")).lower()
+            if any(bad in classes or bad in pid for bad in [
+                "comment", "disqus", "author", "user-profile", "sidebar", "widget", "footer"
+            ]):
+                return False
+            parent = parent.find_parent()
+
+        filename = src.split("?")[0].split("/")[-1]
+        if any(bad in filename for bad in ["logo", "icon", "banner", "loader", "discord", "patreon"]):
+            return False
+        if re.search(r'[-_.]avatar[-_.]|^avatar[-_.]', filename):
+            return False
+        if any(bad in src for bad in ["/ads/", "/ad/", "-ads-", "_ads_", "/advertisement/"]):
+            return False
+
+        return True
 
     def extract_next_chapter(self, soup: BeautifulSoup, current_url: str) -> Optional[str]:
         # 1. Check link text cues

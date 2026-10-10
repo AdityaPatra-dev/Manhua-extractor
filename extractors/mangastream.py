@@ -103,6 +103,17 @@ class MangaStreamExtractor(BaseExtractor):
         return self.deduplicate_urls(raw_urls)
 
     def extract_next_chapter(self, soup: BeautifulSoup, current_url: str) -> Optional[str]:
+        # 1. Check ts_reader.run payload
+        m = re.search(r'ts_reader\.run\(\s*(\{.+?\})\s*\);', str(soup), re.DOTALL)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+                next_url = data.get("nextUrl")
+                if next_url and next_url.startswith("http") and next_url != current_url:
+                    return next_url
+            except Exception:
+                pass
+
         candidates = [
             soup.select_one("div.nextprev a.ch-next-btn"),
             soup.select_one("div.nextprev a[rel='next']"),

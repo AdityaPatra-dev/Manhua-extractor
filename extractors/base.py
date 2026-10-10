@@ -131,13 +131,23 @@ class BaseExtractor(ABC):
             url = urljoin(base_url, url)
 
         lower = url.lower()
-        # Filter obvious advertisement / icon assets
-        forbidden = [
-            "logo", "avatar", "banner", "loader", "icon", "discord",
-            "patreon", "dflazy.jpg", "loading.gif", "blank.gif", "placeholder",
-            "footer", "ads", "advertisement"
-        ]
-        if any(bad in lower for bad in forbidden):
+        filename = lower.split("?")[0].split("/")[-1]
+
+        # Filter branding icons, loaders, and placeholders from filename
+        if any(bad in filename for bad in [
+            "logo", "icon", "banner", "loader", "discord", "patreon",
+            "dflazy", "loading", "blank", "placeholder"
+        ]):
+            return None
+
+        # Filter avatar if it appears in filename (e.g. user-avatar.jpg), not if in series directory path
+        if re.search(r'[-_.]avatar[-_.]|^avatar[-_.]', filename):
+            return None
+
+        # Filter actual ad directory patterns (avoiding 'uploads' or 'downloads')
+        if any(bad in lower for bad in [
+            "/ads/", "/ad/", "-ads-", "_ads_", "/advertisement/", "loading.gif", "blank.gif", "dflazy.jpg"
+        ]):
             return None
 
         if not lower.startswith("http"):
