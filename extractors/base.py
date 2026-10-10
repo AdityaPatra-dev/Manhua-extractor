@@ -35,13 +35,16 @@ class BaseExtractor(ABC):
         h1 = soup.find('h1')
         if h1:
             title = h1.get_text(strip=True)
-            # Remove chapter mentions from title
-            title = re.sub(r'(?i)chapter\s*[\d\.\-]+.*', '', title).strip(' -:|')
+            title = re.sub(r'chapter\s*[\d\.\-]+.*', '', title, flags=re.I).strip(' -:|—')
+            title = re.sub(r'^read\s+', '', title, flags=re.I).strip()
+            title = re.sub(r'\s+[-—|]\s+.*$', '', title, flags=re.I).strip()
         if not title:
             og_title = soup.find('meta', property='og:title')
             if og_title and og_title.get('content'):
                 title = og_title['content'].strip()
-                title = re.sub(r'(?i)chapter\s*[\d\.\-]+.*', '', title).strip(' -:|')
+                title = re.sub(r'chapter\s*[\d\.\-]+.*', '', title, flags=re.I).strip(' -:|—')
+                title = re.sub(r'^read\s+', '', title, flags=re.I).strip()
+                title = re.sub(r'\s+[-—|]\s+.*$', '', title, flags=re.I).strip()
         if not title:
             title = slug.replace('-', ' ').title()
 

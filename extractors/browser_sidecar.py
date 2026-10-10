@@ -92,12 +92,52 @@ def solve_with_playwright(target_url: str, timeout_seconds: int = 30) -> Optiona
         return None
 
 
+def solve_with_nodriver(target_url: str, timeout_seconds: int = 15) -> Optional[Dict[str, Any]]:
+    """
+    On-demand nodriver / Chrome CDP fallback for Cloudflare Turnstile challenges.
+    """
+    try:
+        import nodriver as uc
+        import asyncio
+        import concurrent.futures
+
+        async def _run():
+            is_headless = not bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+            browser = await uc.start(headless=is_headless)
+            try:
+                page = await browser.get(target_url)
+                for _ in range(timeout_seconds):
+                    await asyncio.sleep(1)
+                    title = await page.evaluate("document.title")
+                    if title and "Just a moment" not in str(title):
+                        break
+                # Allow JS/hydration to settle
+                await asyncio.sleep(2)
+                content = await page.get_content()
+                cookies_cdp = await page.send(uc.cdp.network.get_cookies())
+                cookie_dict = {c.name: c.value for c in cookies_cdp} if cookies_cdp else {}
+                return {
+                    "success": True,
+                    "status_code": 200,
+                    "text": content,
+                    "cookies": cookie_dict,
+                    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+                }
+            finally:
+                browser.stop()
+
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return pool.submit(asyncio.run, _run()).result(timeout=timeout_seconds + 8)
+    except Exception:
+        return None
+
+
 def fetch_protected_page(
     url: str,
     flaresolverr_url: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Tries FlareSolverr first, then Playwright fallback.
+    Tries FlareSolverr first, then Playwright fallback, then nodriver / Chrome CDP.
     """
     # 1. Try FlareSolverr if available
     sol = solve_with_flaresolverr(url, endpoint=flaresolverr_url)
@@ -109,4 +149,10 @@ def fetch_protected_page(
     if pw_sol and pw_sol.get("success"):
         return pw_sol
 
+    # 3. Try nodriver / Chrome CDP fallback
+    nd_sol = solve_with_nodriver(url)
+    if nd_sol and nd_sol.get("success"):
+        return nd_sol
+
     return None
+

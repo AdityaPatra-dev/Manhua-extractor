@@ -397,11 +397,25 @@
       <div class="modal-body">
         <div class="modal-series-info">
           <img id="modal-series-cover" src="" alt="Cover" class="modal-cover">
-          <div>
-            <span id="modal-engine-badge" class="preview-badge">Engine</span>
+          <div style="flex: 1;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+              <span id="modal-engine-badge" class="preview-badge">Engine</span>
+              <button id="modal-btn-delete-series" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); cursor: pointer;" title="Delete this series and downloaded files">🗑️ Delete Manhua</button>
+            </div>
             <div id="modal-meta-tags" style="margin: 6px 0; font-size: 0.85rem; color: var(--text-muted);"></div>
             <p id="modal-synopsis" class="modal-synopsis"></p>
-            <button id="modal-btn-refresh-meta" class="btn btn-secondary" style="margin-top: 8px; font-size: 0.8rem;">🔄 Fetch MangaDex Metadata</button>
+            
+            <!-- Storage Location Display -->
+            <div id="modal-storage-box" style="margin: 8px 0; padding: 8px 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 6px;">
+              <div style="font-size: 0.78rem; font-weight: 600; color: var(--accent); margin-bottom: 4px;">📁 Stored At:</div>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <input type="text" id="modal-storage-path" readonly style="flex: 1; padding: 4px 8px; font-size: 0.78rem; font-family: monospace; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; text-overflow: ellipsis;">
+                <button id="btn-copy-storage-path" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" title="Copy file path to clipboard">📋 Copy</button>
+                <button id="btn-open-storage-folder" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" title="Open storage directory">📂 Open</button>
+              </div>
+            </div>
+
+            <button id="modal-btn-refresh-meta" class="btn btn-secondary" style="margin-top: 4px; font-size: 0.8rem;">🔄 Fetch MangaDex Metadata</button>
           </div>
         </div>
         <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Chapters</h4>

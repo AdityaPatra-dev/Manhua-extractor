@@ -1,4 +1,6 @@
 import os
+import sys
+import shutil
 import re
 import json
 import asyncio
@@ -15,6 +17,7 @@ from database.db import (
     get_all_series,
     get_series_by_id,
     delete_series,
+    delete_chapter,
     add_or_update_chapter,
     get_chapters_for_series,
     get_chapter_by_id,
@@ -501,7 +504,20 @@ async def get_series_detail(series_id: int):
     if not series:
         return JSONResponse({"success": False, "error": "Series not found"}, status_code=404)
     chapters = get_chapters_for_series(series_id)
-    return {"success": True, "series": series, "chapters": chapters}
+    
+    safe_title = re.sub(r'[\\/*?:"<>|]', "", series.get("slug") or series.get("title") or "series")
+    storage_dir = os.path.join(DOWNLOADS_DIR, safe_title)
+    for c in chapters:
+        if c.get("file_path") and os.path.exists(os.path.dirname(c["file_path"])):
+            storage_dir = os.path.dirname(c["file_path"])
+            break
+
+    return {
+        "success": True, 
+        "series": series, 
+        "chapters": chapters,
+        "storage_dir": os.path.abspath(storage_dir)
+    }
 
 @app.get("/api/series/{series_id}/cover")
 async def get_series_cover_endpoint(series_id: int):
@@ -550,10 +566,88 @@ async def get_series_cover_endpoint(series_id: int):
     # 4. Fallback: stylized SVG badge
     return Response(content=generate_svg_cover(series["title"]), media_type="image/svg+xml")
 
+@app.post("/api/library/{series_id}/open-folder")
+async def open_series_folder(series_id: int):
+    series = get_series_by_id(series_id)
+    if not series:
+        return JSONResponse({"success": False, "error": "Series not found"}, status_code=404)
+        
+    safe_title = re.sub(r'[\\/*?:"<>|]', "", series.get("slug") or series.get("title") or "series")
+    storage_dir = os.path.join(DOWNLOADS_DIR, safe_title)
+    chapters = get_chapters_for_series(series_id)
+    for c in chapters:
+        if c.get("file_path") and os.path.exists(os.path.dirname(c["file_path"])):
+            storage_dir = os.path.dirname(c["file_path"])
+            break
+            
+    os.makedirs(storage_dir, exist_ok=True)
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            os.startfile(storage_dir)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", storage_dir])
+        else:
+            subprocess.Popen(["xdg-open", storage_dir])
+        return {"success": True, "path": os.path.abspath(storage_dir)}
+    except Exception as e:
+        return {"success": False, "error": str(e), "path": os.path.abspath(storage_dir)}
+
 @app.delete("/api/library/{series_id}")
 async def remove_series(series_id: int):
+    series = get_series_by_id(series_id)
+    if not series:
+        return JSONResponse({"success": False, "error": "Series not found"}, status_code=404)
+
+    # 1. Delete all chapter files on disk
+    chapters = get_chapters_for_series(series_id)
+    for c in chapters:
+        fpath = c.get("file_path")
+        if fpath and os.path.exists(fpath):
+            try:
+                if os.path.isdir(fpath):
+                    shutil.rmtree(fpath, ignore_errors=True)
+                else:
+                    os.remove(fpath)
+            except Exception:
+                pass
+
+    # 2. Delete series folder if it exists
+    safe_title = re.sub(r'[\\/*?:"<>|]', "", series.get("slug") or series.get("title") or "")
+    if safe_title:
+        series_dir = os.path.join(DOWNLOADS_DIR, safe_title)
+        if os.path.exists(series_dir):
+            shutil.rmtree(series_dir, ignore_errors=True)
+
+    # 3. Delete cover if local file
+    cover_path = series.get("cover_path")
+    if cover_path and os.path.exists(cover_path):
+        try:
+            os.remove(cover_path)
+        except Exception:
+            pass
+
     ok = delete_series(series_id)
     return {"success": ok}
+
+@app.delete("/api/chapters/{chapter_id}")
+async def remove_chapter(chapter_id: int):
+    chapter = get_chapter_by_id(chapter_id)
+    if not chapter:
+        return JSONResponse({"success": False, "error": "Chapter not found"}, status_code=404)
+
+    fpath = chapter.get("file_path")
+    if fpath and os.path.exists(fpath):
+        try:
+            if os.path.isdir(fpath):
+                shutil.rmtree(fpath, ignore_errors=True)
+            else:
+                os.remove(fpath)
+        except Exception:
+            pass
+
+    ok = delete_chapter(chapter_id)
+    return {"success": ok, "chapter_id": chapter_id}
 
 @app.post("/api/library/update")
 async def trigger_library_update(background_tasks: BackgroundTasks):

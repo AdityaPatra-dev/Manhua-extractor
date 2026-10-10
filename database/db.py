@@ -191,7 +191,15 @@ def get_series_by_id(series_id: int, db_path: str = DEFAULT_DB_PATH) -> Optional
 def delete_series(series_id: int, db_path: str = DEFAULT_DB_PATH) -> bool:
     conn = get_connection(db_path)
     with conn:
+        conn.execute("DELETE FROM chapters WHERE series_id = ?", (series_id,))
         cursor = conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
+    conn.close()
+    return cursor.rowcount > 0
+
+def delete_chapter(chapter_id: int, db_path: str = DEFAULT_DB_PATH) -> bool:
+    conn = get_connection(db_path)
+    with conn:
+        cursor = conn.execute("DELETE FROM chapters WHERE id = ?", (chapter_id,))
     conn.close()
     return cursor.rowcount > 0
 

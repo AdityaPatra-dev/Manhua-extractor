@@ -94,6 +94,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentCatalogChapters = [];
   let currentCatalogUrl = "";
   let currentSeriesTitle = "";
+  const selectedCatalogUrls = new Set();
+  let lastHandledProgressStatus = null;
 
   const chapterUrlInput = document.getElementById("chapter-url");
   const btnInspect = document.getElementById("btn-inspect");
@@ -199,11 +201,12 @@ document.addEventListener("DOMContentLoaded", () => {
     listContainer.innerHTML = filtered.map(ch => {
       const chTitle = ch.title || `Chapter ${ch.chapter_num}`;
       const isSaved = ch.is_downloaded;
+      const isChecked = selectedCatalogUrls.has(ch.url);
       const encodedUrl = encodeURIComponent(ch.url);
       return `
         <div class="catalog-chapter-row" data-url="${ch.url}">
           <div class="catalog-chapter-left">
-            <input type="checkbox" class="cat-ch-checkbox" data-url="${ch.url}" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent);">
+            <input type="checkbox" class="cat-ch-checkbox" data-url="${ch.url}" ${isChecked ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent);">
             <div style="cursor: pointer;" onclick="toggleCatalogCheckbox('${ch.url}')">
               <strong style="font-size: 0.95rem; color: var(--text-main);">${chTitle}</strong>
               ${ch.read_status === 1 ? '<span style="margin-left: 6px; font-size: 0.75rem; color: #a78bfa;">✓ Read</span>' : ''}
@@ -224,7 +227,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const checkboxes = listContainer.querySelectorAll(".cat-ch-checkbox");
     checkboxes.forEach(cb => {
-      cb.addEventListener("change", updateCatalogSelectedCount);
+      cb.addEventListener("change", (e) => {
+        const u = cb.getAttribute("data-url");
+        if (cb.checked) {
+          selectedCatalogUrls.add(u);
+        } else {
+          selectedCatalogUrls.delete(u);
+        }
+        updateCatalogSelectedCount();
+      });
     });
     updateCatalogSelectedCount();
   }
@@ -233,14 +244,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const cb = document.querySelector(`.cat-ch-checkbox[data-url="${url}"]`);
     if (cb) {
       cb.checked = !cb.checked;
+      if (cb.checked) {
+        selectedCatalogUrls.add(url);
+      } else {
+        selectedCatalogUrls.delete(url);
+      }
+      updateCatalogSelectedCount();
+    } else {
+      if (selectedCatalogUrls.has(url)) {
+        selectedCatalogUrls.delete(url);
+      } else {
+        selectedCatalogUrls.add(url);
+      }
       updateCatalogSelectedCount();
     }
   };
 
   function updateCatalogSelectedCount() {
-    const selected = document.querySelectorAll(".cat-ch-checkbox:checked");
     if (catSelectedCount) {
-      catSelectedCount.textContent = selected.length;
+      catSelectedCount.textContent = selectedCatalogUrls.size;
     }
   }
 
@@ -269,7 +291,11 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnSelectAll) {
     btnSelectAll.addEventListener("click", () => {
       const checkboxes = document.querySelectorAll(".cat-ch-checkbox");
-      checkboxes.forEach(cb => cb.checked = true);
+      checkboxes.forEach(cb => {
+        cb.checked = true;
+        const u = cb.getAttribute("data-url");
+        if (u) selectedCatalogUrls.add(u);
+      });
       updateCatalogSelectedCount();
     });
   }
@@ -278,14 +304,14 @@ document.addEventListener("DOMContentLoaded", () => {
     btnDeselectAll.addEventListener("click", () => {
       const checkboxes = document.querySelectorAll(".cat-ch-checkbox");
       checkboxes.forEach(cb => cb.checked = false);
+      selectedCatalogUrls.clear();
       updateCatalogSelectedCount();
     });
   }
 
   if (btnDownloadSelected) {
     btnDownloadSelected.addEventListener("click", () => {
-      const selected = document.querySelectorAll(".cat-ch-checkbox:checked");
-      const urls = Array.from(selected).map(cb => cb.getAttribute("data-url")).filter(Boolean);
+      const urls = Array.from(selectedCatalogUrls);
       startCatalogDownload(urls);
     });
   }
@@ -300,6 +326,8 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast("Please select at least one chapter to download.", "info");
       return;
     }
+    selectedCatalogUrls.clear();
+    updateCatalogSelectedCount();
 
     const format = document.getElementById("output-format").value;
     const maxWidth = parseInt(document.getElementById("max-width").value) || 1080;
@@ -477,13 +505,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const progActions = document.getElementById("prog-completed-actions");
         if (state.is_running) {
+          lastHandledProgressStatus = "running";
           if (progActions) progActions.classList.add("hidden");
         } else if (state.status === "completed") {
           btnStartDownload.disabled = false;
           if (btnDownloadSelected) btnDownloadSelected.disabled = false;
-          loadLibrary();
-          if (currentCatalogUrl) {
-            inspectSeries(currentCatalogUrl, true);
+          if (lastHandledProgressStatus !== "completed") {
+            lastHandledProgressStatus = "completed";
+            loadLibrary();
+            if (currentCatalogUrl) {
+              inspectSeries(currentCatalogUrl, true);
+            }
           }
           if (progActions && state.last_downloaded_chapter_id) {
             progActions.classList.remove("hidden");
@@ -521,6 +553,10 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  function escapeAttr(str) {
+    return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  }
+
   // --- Library Tab ---
   async function loadLibrary() {
     const grid = document.getElementById("library-grid");
@@ -539,8 +575,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 📥 <strong>${s.downloaded_chapters || 0}</strong> chapters downloaded<br>
                 Engine: ${s.engine || 'Auto'}
               </p>
-              <div class="series-card-actions">
-                <button class="btn btn-primary" style="padding: 6px 10px; font-size: 0.8rem; width: 100%; margin-top: 6px;" onclick="event.stopPropagation(); openSeriesModal(${s.id})">📖 View Chapters</button>
+              <div class="series-card-actions" style="display: flex; gap: 6px; margin-top: 6px;">
+                <button class="btn btn-primary" style="padding: 6px 10px; font-size: 0.8rem; flex: 1;" onclick="event.stopPropagation(); openSeriesModal(${s.id})">📖 View Chapters</button>
+                <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(s.title)}')">🗑️</button>
               </div>
             </div>
           </div>
@@ -561,6 +598,44 @@ document.addEventListener("DOMContentLoaded", () => {
   modalClose.addEventListener("click", () => {
     seriesModal.classList.add("hidden");
   });
+
+  window.deleteSeriesPrompt = async function(seriesId, title) {
+    if (!confirm(`Are you sure you want to delete "${title}" and all its downloaded chapters? This will remove the files from disk.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/library/${seriesId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Deleted "${title}"`, "success");
+        if (seriesModal) seriesModal.classList.add("hidden");
+        loadLibrary();
+      } else {
+        showToast("Failed to delete series: " + (data.error || "Unknown error"), "error");
+      }
+    } catch (err) {
+      showToast("Error deleting series: " + err.message, "error");
+    }
+  };
+
+  window.deleteChapterPrompt = async function(chapterId, seriesId, title) {
+    if (!confirm(`Are you sure you want to delete "${title}"? This will remove the file from disk.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/chapters/${chapterId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Deleted chapter`, "success");
+        openSeriesModal(seriesId);
+        loadLibrary();
+      } else {
+        showToast("Failed to delete chapter: " + (data.error || "Unknown error"), "error");
+      }
+    } catch (err) {
+      showToast("Error deleting chapter: " + err.message, "error");
+    }
+  };
 
   window.openSeriesModal = async function(seriesId) {
     try {
@@ -583,6 +658,43 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.genres) metaParts.push(`🏷️ ${s.genres}`);
         if (s.year) metaParts.push(`📅 ${s.year}`);
         document.getElementById("modal-meta-tags").innerHTML = metaParts.length > 0 ? metaParts.join(" &bull; ") : "<em>No author/genre metadata cached yet.</em>";
+
+        // Storage location wiring
+        const storageInput = document.getElementById("modal-storage-path");
+        if (storageInput) {
+          storageInput.value = data.storage_dir || "Not stored yet";
+        }
+        const btnCopyStorage = document.getElementById("btn-copy-storage-path");
+        if (btnCopyStorage) {
+          btnCopyStorage.onclick = () => {
+            if (data.storage_dir) {
+              navigator.clipboard.writeText(data.storage_dir);
+              showToast("Storage path copied to clipboard!", "success");
+            }
+          };
+        }
+        const btnOpenStorage = document.getElementById("btn-open-storage-folder");
+        if (btnOpenStorage) {
+          btnOpenStorage.onclick = async () => {
+            try {
+              const res = await fetch(`/api/library/${seriesId}/open-folder`, { method: "POST" });
+              const oData = await res.json();
+              if (oData.success) {
+                showToast("Storage folder opened in file manager!", "success");
+              } else {
+                showToast("Stored at: " + (oData.path || data.storage_dir), "info");
+              }
+            } catch (err) {
+              showToast("Stored at: " + (data.storage_dir || ""), "info");
+            }
+          };
+        }
+        const btnDeleteSeries = document.getElementById("modal-btn-delete-series");
+        if (btnDeleteSeries) {
+          btnDeleteSeries.onclick = () => {
+            deleteSeriesPrompt(seriesId, s.title);
+          };
+        }
 
         const btnRefreshMeta = document.getElementById("modal-btn-refresh-meta");
         if (btnRefreshMeta) {
@@ -610,15 +722,16 @@ document.addEventListener("DOMContentLoaded", () => {
         const chList = document.getElementById("modal-chapters-list");
         if (data.chapters && data.chapters.length > 0) {
           chList.innerHTML = data.chapters.map(c => `
-            <div class="modal-chapter-row">
+            <div class="modal-chapter-row" id="modal-ch-${c.id}">
               <div>
                 <strong>${c.title || `Chapter ${c.chapter_num}`}</strong>
                 <span class="chapter-badge-format">${c.file_format || 'PDF'}</span>
                 <span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 0.5rem;">(${c.panel_count || 0} panels)</span>
               </div>
-              <div style="display: flex; gap: 0.5rem;">
+              <div style="display: flex; gap: 0.5rem; align-items: center;">
                 ${c.status === 'completed' ? `<button class="btn btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;" onclick="openReader(${c.id})">📖 Read</button>` : `<span style="font-size: 0.8rem; color: var(--warning);">${c.status}</span>`}
                 ${c.status === 'completed' ? `<a href="/api/download/file/${c.id}" class="btn btn-secondary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem; text-decoration: none;" download>💾 File</a>` : ''}
+                <button class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.85rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete Chapter" onclick="deleteChapterPrompt(${c.id}, ${seriesId}, '${escapeAttr(c.title || `Chapter ${c.chapter_num}`)}')">🗑️</button>
               </div>
             </div>
           `).join("");
