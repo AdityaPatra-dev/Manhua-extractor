@@ -290,11 +290,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (btnSelectAll) {
     btnSelectAll.addEventListener("click", () => {
+      currentCatalogChapters.forEach(ch => {
+        if (ch.url) selectedCatalogUrls.add(ch.url);
+      });
       const checkboxes = document.querySelectorAll(".cat-ch-checkbox");
       checkboxes.forEach(cb => {
         cb.checked = true;
-        const u = cb.getAttribute("data-url");
-        if (u) selectedCatalogUrls.add(u);
       });
       updateCatalogSelectedCount();
     });
@@ -326,8 +327,6 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast("Please select at least one chapter to download.", "info");
       return;
     }
-    selectedCatalogUrls.clear();
-    updateCatalogSelectedCount();
 
     const format = document.getElementById("output-format").value;
     const maxWidth = parseInt(document.getElementById("max-width").value) || 1080;
@@ -360,6 +359,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await res.json();
       if (data.success) {
+        selectedCatalogUrls.clear();
+        updateCatalogSelectedCount();
+        const checkboxes = document.querySelectorAll(".cat-ch-checkbox");
+        checkboxes.forEach(cb => cb.checked = false);
+
         if (window.AndroidApp && typeof window.AndroidApp.notifyDownloadStarted === "function") {
           window.AndroidApp.notifyDownloadStarted();
         }
@@ -424,8 +428,56 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Start Download ---
   const btnStartDownload = document.getElementById("btn-start-download");
   const progressCard = document.getElementById("progress-card");
+  const btnPauseDownload = document.getElementById("btn-pause-download");
+  const btnStopDownload = document.getElementById("btn-stop-download");
+
+  if (btnPauseDownload) {
+    btnPauseDownload.addEventListener("click", async () => {
+      try {
+        const isCurrentlyPaused = btnPauseDownload.getAttribute("data-paused") === "true";
+        const endpoint = isCurrentlyPaused ? "/api/download/resume" : "/api/download/pause";
+        btnPauseDownload.disabled = true;
+        const res = await fetch(endpoint, { method: "POST" });
+        const data = await res.json();
+        if (!data.success) {
+          showToast(data.error || data.message || "Failed to toggle pause", "error");
+        }
+      } catch (err) {
+        showToast(`Pause/Resume error: ${err.message}`, "error");
+      } finally {
+        btnPauseDownload.disabled = false;
+      }
+    });
+  }
+
+  if (btnStopDownload) {
+    btnStopDownload.addEventListener("click", async () => {
+      try {
+        btnStopDownload.disabled = true;
+        btnStopDownload.textContent = "⏹️ Stopping...";
+        const res = await fetch("/api/download/stop", { method: "POST" });
+        const data = await res.json();
+        if (!data.success) {
+          showToast(data.error || data.message || "Failed to stop download", "error");
+        } else {
+          showToast("Download stop requested.", "info");
+        }
+      } catch (err) {
+        showToast(`Stop error: ${err.message}`, "error");
+      } finally {
+        btnStopDownload.disabled = false;
+        btnStopDownload.textContent = "⏹️ Stop";
+      }
+    });
+  }
 
   btnStartDownload.addEventListener("click", async () => {
+    // If chapters are selected in the catalog, prioritize downloading the selected chapters!
+    if (selectedCatalogUrls && selectedCatalogUrls.size > 0) {
+      startCatalogDownload(Array.from(selectedCatalogUrls));
+      return;
+    }
+
     const url = chapterUrlInput.value.trim();
     if (!url) {
       showToast("Please enter a chapter URL first.", "info");
@@ -504,44 +556,74 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const progActions = document.getElementById("prog-completed-actions");
+        const progControls = document.getElementById("prog-control-actions");
+
         if (state.is_running) {
           lastHandledProgressStatus = "running";
           if (progActions) progActions.classList.add("hidden");
-        } else if (state.status === "completed") {
-          btnStartDownload.disabled = false;
-          if (btnDownloadSelected) btnDownloadSelected.disabled = false;
-          if (lastHandledProgressStatus !== "completed") {
-            lastHandledProgressStatus = "completed";
-            loadLibrary();
-            if (currentCatalogUrl) {
-              inspectSeries(currentCatalogUrl, true);
+          if (progControls) progControls.style.display = "flex";
+          if (btnStartDownload) btnStartDownload.disabled = true;
+          if (btnDownloadSelected) btnDownloadSelected.disabled = true;
+
+          if (btnPauseDownload) {
+            btnPauseDownload.disabled = false;
+            if (state.is_paused) {
+              btnPauseDownload.setAttribute("data-paused", "true");
+              btnPauseDownload.textContent = "▶️ Resume";
+              btnPauseDownload.className = "btn btn-primary";
+            } else {
+              btnPauseDownload.setAttribute("data-paused", "false");
+              btnPauseDownload.textContent = "⏸️ Pause";
+              btnPauseDownload.className = "btn btn-secondary";
             }
           }
-          if (progActions && state.last_downloaded_chapter_id) {
-            progActions.classList.remove("hidden");
-            const btnRead = document.getElementById("btn-prog-read-now");
-            const btnLib = document.getElementById("btn-prog-view-library");
-            if (btnRead) {
-              if (state.last_downloaded_chapter_num) {
-                btnRead.textContent = `📖 Read Chapter ${state.last_downloaded_chapter_num} Now`;
+          if (btnStopDownload) btnStopDownload.disabled = false;
+        } else {
+          if (progControls) progControls.style.display = "none";
+          if (btnStartDownload) btnStartDownload.disabled = false;
+          if (btnDownloadSelected) btnDownloadSelected.disabled = false;
+
+          if (state.status === "completed") {
+            if (lastHandledProgressStatus !== "completed") {
+              lastHandledProgressStatus = "completed";
+              loadLibrary();
+              if (currentCatalogUrl) {
+                inspectSeries(currentCatalogUrl, true);
               }
-              btnRead.onclick = () => {
-                openReader(state.last_downloaded_chapter_id);
-              };
             }
-            if (btnLib) {
-              btnLib.onclick = () => {
-                switchTab("tab-library");
-                if (state.last_downloaded_series_id) {
-                  openSeriesModal(state.last_downloaded_series_id);
+            if (progActions && state.last_downloaded_chapter_id) {
+              progActions.classList.remove("hidden");
+              const btnRead = document.getElementById("btn-prog-read-now");
+              const btnLib = document.getElementById("btn-prog-view-library");
+              if (btnRead) {
+                if (state.last_downloaded_chapter_num) {
+                  btnRead.textContent = `📖 Read Chapter ${state.last_downloaded_chapter_num} Now`;
                 }
-              };
+                btnRead.onclick = () => {
+                  openReader(state.last_downloaded_chapter_id);
+                };
+              }
+              if (btnLib) {
+                btnLib.onclick = () => {
+                  switchTab("tab-library");
+                  if (state.last_downloaded_series_id) {
+                    openSeriesModal(state.last_downloaded_series_id);
+                  }
+                };
+              }
+            }
+          } else if (state.status === "cancelled") {
+            if (lastHandledProgressStatus !== "cancelled") {
+              lastHandledProgressStatus = "cancelled";
+              showToast(state.message || "Download stopped.", "info");
+              loadLibrary();
+            }
+          } else if (state.status === "error") {
+            if (lastHandledProgressStatus !== "error") {
+              lastHandledProgressStatus = "error";
+              showToast(`Download error: ${state.message}`, "error");
             }
           }
-        } else if (state.status === "error") {
-          btnStartDownload.disabled = false;
-          if (btnDownloadSelected) btnDownloadSelected.disabled = false;
-          showToast(`Download error: ${state.message}`, "error");
         }
       } catch (e) {
         console.error("SSE parse error", e);

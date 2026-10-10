@@ -139,7 +139,8 @@ async def download_panels_stream(
     staging_dir: Optional[str] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
     image_format: str = "JPEG",
-    webp_quality: int = 80
+    webp_quality: int = 80,
+    is_cancelled_callback: Optional[Callable[[], bool]] = None
 ) -> List[bytes]:
     """
     Download a list of panel image URLs concurrently with retry logic,
@@ -156,8 +157,8 @@ async def download_panels_stream(
 
     if aiohttp is not None:
         async with aiohttp.ClientSession() as session:
-            tasks = [
-                fetch_single_panel(
+            task_objs = [
+                asyncio.create_task(fetch_single_panel(
                     session=session,
                     semaphore=semaphore,
                     url=url,
@@ -168,21 +169,30 @@ async def download_panels_stream(
                     staging_dir=staging_dir,
                     image_format=image_format,
                     webp_quality=webp_quality
-                )
+                ))
                 for i, url in enumerate(image_urls)
             ]
             completed = 0
-            total = len(tasks)
-            for fut in asyncio.as_completed(tasks):
-                res = await fut
-                results.append(res)
-                if res[1] is not None:
-                    completed += 1
-                if progress_callback:
-                    progress_callback(completed, total)
+            total = len(task_objs)
+            try:
+                for fut in asyncio.as_completed(task_objs):
+                    if is_cancelled_callback and is_cancelled_callback():
+                        for t in task_objs:
+                            t.cancel()
+                        return []
+                    res = await fut
+                    results.append(res)
+                    if res[1] is not None:
+                        completed += 1
+                    if progress_callback:
+                        progress_callback(completed, total)
+            except asyncio.CancelledError:
+                for t in task_objs:
+                    t.cancel()
+                return []
     else:
-        tasks = [
-            fetch_single_panel(
+        task_objs = [
+            asyncio.create_task(fetch_single_panel(
                 session=None,
                 semaphore=semaphore,
                 url=url,
@@ -193,18 +203,27 @@ async def download_panels_stream(
                 staging_dir=staging_dir,
                 image_format=image_format,
                 webp_quality=webp_quality
-            )
+            ))
             for i, url in enumerate(image_urls)
         ]
         completed = 0
-        total = len(tasks)
-        for fut in asyncio.as_completed(tasks):
-            res = await fut
-            results.append(res)
-            if res[1] is not None:
-                completed += 1
-            if progress_callback:
-                progress_callback(completed, total)
+        total = len(task_objs)
+        try:
+            for fut in asyncio.as_completed(task_objs):
+                if is_cancelled_callback and is_cancelled_callback():
+                    for t in task_objs:
+                        t.cancel()
+                    return []
+                res = await fut
+                results.append(res)
+                if res[1] is not None:
+                    completed += 1
+                if progress_callback:
+                    progress_callback(completed, total)
+        except asyncio.CancelledError:
+            for t in task_objs:
+                t.cancel()
+            return []
 
     # Sort strictly by original panel index and exclude None
     sorted_bytes = [b for idx, b in sorted(results, key=lambda x: x[0]) if b is not None]

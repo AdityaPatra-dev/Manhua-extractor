@@ -90,6 +90,8 @@ async def start_periodic_scheduler():
 # Global Download State & Progress Queues
 download_progress = {
     "is_running": False,
+    "is_paused": False,
+    "is_cancelled": False,
     "current_url": None,
     "series_title": "",
     "chapter_num": 0,
@@ -254,6 +256,8 @@ def save_series_cover_locally(
 async def run_download_job(req: DownloadRequest):
     global download_progress
     download_progress["is_running"] = True
+    download_progress["is_paused"] = False
+    download_progress["is_cancelled"] = False
     download_progress["status"] = "starting"
     download_progress["message"] = "Starting extraction..."
 
@@ -268,6 +272,21 @@ async def run_download_job(req: DownloadRequest):
 
     try:
         while chapters_processed < target_count:
+            if download_progress.get("is_cancelled"):
+                download_progress["status"] = "cancelled"
+                download_progress["message"] = "Download stopped by user."
+                break
+
+            while download_progress.get("is_paused") and not download_progress.get("is_cancelled"):
+                download_progress["status"] = "paused"
+                download_progress["message"] = "Download paused."
+                await asyncio.sleep(0.5)
+
+            if download_progress.get("is_cancelled"):
+                download_progress["status"] = "cancelled"
+                download_progress["message"] = "Download stopped by user."
+                break
+
             if specific_urls:
                 current_url = specific_urls[chapters_processed]
             elif not current_url:
@@ -283,6 +302,11 @@ async def run_download_job(req: DownloadRequest):
             data = dispatcher.analyze_url(current_url)
             if not data.get("success") or not data.get("pages"):
                 download_progress["message"] = f"Failed to extract panels from {current_url}"
+                break
+
+            if download_progress.get("is_cancelled"):
+                download_progress["status"] = "cancelled"
+                download_progress["message"] = "Download stopped by user."
                 break
 
             series_title = data.get("series_title") or "Unknown Series"
@@ -331,8 +355,14 @@ async def run_download_job(req: DownloadRequest):
                 staging_dir=staging_dir,
                 progress_callback=on_progress,
                 image_format=req.image_format,
-                webp_quality=req.webp_quality
+                webp_quality=req.webp_quality,
+                is_cancelled_callback=lambda: download_progress.get("is_cancelled", False)
             )
+
+            if download_progress.get("is_cancelled"):
+                download_progress["status"] = "cancelled"
+                download_progress["message"] = "Download stopped by user."
+                break
 
             if not panel_bytes:
                 download_progress["status"] = "error"
@@ -456,11 +486,14 @@ async def run_download_job(req: DownloadRequest):
             # Small breather between chapters
             await asyncio.sleep(1)
 
-        if chapters_processed > 0:
+        if download_progress.get("is_cancelled"):
+            download_progress["status"] = "cancelled"
+            download_progress["message"] = f"Download stopped. {chapters_processed} chapter(s) saved."
+        elif chapters_processed > 0:
             download_progress["status"] = "completed"
             download_progress["message"] = f"Successfully downloaded {chapters_processed} chapter(s)!"
         else:
-            if download_progress.get("status") != "error":
+            if download_progress.get("status") not in ("error", "cancelled"):
                 download_progress["status"] = "error"
                 download_progress["message"] = "Download failed: No chapters or panels could be downloaded."
     except Exception as e:
@@ -468,15 +501,47 @@ async def run_download_job(req: DownloadRequest):
         download_progress["message"] = f"Error: {str(e)}"
     finally:
         download_progress["is_running"] = False
+        download_progress["is_paused"] = False
 
 @app.post("/api/download")
 async def start_download(req: DownloadRequest, background_tasks: BackgroundTasks):
     global download_progress
     if download_progress["is_running"]:
-        return JSONResponse({"success": False, "error": "A download task is already in progress."}, status_code=400)
+        return JSONResponse({"success": False, "error": "A download task is already in progress. Stop it first if you wish to start a new one."}, status_code=400)
 
     background_tasks.add_task(run_download_job, req)
     return {"success": True, "message": "Download task launched in background."}
+
+@app.post("/api/download/pause")
+async def pause_download():
+    global download_progress
+    if not download_progress.get("is_running"):
+        return JSONResponse({"success": False, "error": "No download currently in progress."}, status_code=400)
+    download_progress["is_paused"] = True
+    download_progress["status"] = "paused"
+    download_progress["message"] = "Download paused."
+    return {"success": True, "message": "Download paused."}
+
+@app.post("/api/download/resume")
+async def resume_download():
+    global download_progress
+    if not download_progress.get("is_running"):
+        return JSONResponse({"success": False, "error": "No download currently in progress."}, status_code=400)
+    download_progress["is_paused"] = False
+    download_progress["status"] = "downloading"
+    download_progress["message"] = "Resuming download..."
+    return {"success": True, "message": "Download resumed."}
+
+@app.post("/api/download/stop")
+async def stop_download():
+    global download_progress
+    if not download_progress.get("is_running"):
+        return JSONResponse({"success": False, "error": "No download currently in progress."}, status_code=400)
+    download_progress["is_cancelled"] = True
+    download_progress["is_paused"] = False
+    download_progress["status"] = "stopping"
+    download_progress["message"] = "Stopping download..."
+    return {"success": True, "message": "Download stop signal sent."}
 
 @app.get("/api/download/progress")
 async def get_progress_stream(request: Request):
