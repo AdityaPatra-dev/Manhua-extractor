@@ -103,8 +103,9 @@ class MainActivity : AppCompatActivity() {
                 allowFileAccess = true
                 allowContentAccess = true
                 cacheMode = WebSettings.LOAD_DEFAULT
-                useWideViewPort = true
-                loadWithOverviewMode = true
+                useWideViewPort = false
+                loadWithOverviewMode = false
+                textZoom = 100
                 builtInZoomControls = false
                 displayZoomControls = false
                 mediaPlaybackRequiresUserGesture = false

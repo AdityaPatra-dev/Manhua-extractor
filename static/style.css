@@ -20,6 +20,9 @@
   margin: 0;
   padding: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
@@ -774,85 +777,89 @@ input:focus, select:focus {
 }
 
 /* Mobile Viewport Adjustments (Phones & Android WebView) */
+/* Mobile Viewport & Android Native Phone Ergonomics */
 @media (max-width: 768px) {
   body {
-    padding: 0.75rem;
-    padding-bottom: 5.5rem; /* Room for sticky bottom nav */
+    padding: 0.5rem;
+    padding-bottom: 5.2rem; /* Clean clearance for sticky bottom dock */
   }
 
+  .app-container {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+
+  /* Compact native-feel header */
   .app-header {
-    margin-bottom: 1rem;
-    padding-bottom: 0.75rem;
-    flex-direction: column;
-    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.6rem;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .brand {
     gap: 0.5rem;
   }
 
+  .brand-icon {
+    font-size: 1.5rem;
+  }
+
   .brand h1 {
-    font-size: 1.15rem;
+    font-size: 1.05rem;
+    font-weight: 700;
   }
 
   .subtitle {
-    font-size: 0.78rem;
-  }
-
-  /* Sleek sticky bottom app navigation */
-  .nav-tabs {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 1000;
-    background: rgba(19, 27, 46, 0.96);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-radius: 0;
-    border-top: 1px solid var(--border-color);
-    border-left: none;
-    border-right: none;
-    border-bottom: none;
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) 8px;
-    margin: 0;
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
-  }
-
-  .nav-tab {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 6px 2px;
     font-size: 0.72rem;
-    border-radius: 8px;
-    min-height: 48px;
-    gap: 2px;
-    text-align: center;
   }
 
   #btn-phone-connect {
     display: none;
   }
 
+  /* Compact Card Containers */
   .card {
-    padding: 1.1rem;
-    margin-bottom: 1rem;
-    border-radius: 10px;
+    padding: 0.85rem;
+    margin-bottom: 0.75rem;
+    border-radius: 12px;
+  }
+
+  .card h2 {
+    font-size: 1.15rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .card-desc {
+    font-size: 0.8rem;
+    margin-bottom: 0.85rem;
+    line-height: 1.35;
+  }
+
+  .input-group label {
+    font-size: 0.78rem;
+    margin-bottom: 0.35rem;
   }
 
   /* Full-width URL input with stacked 2-column action buttons */
   .input-form-responsive {
+    display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.5rem;
+    width: 100%;
   }
 
   .input-form-responsive input {
     width: 100%;
-    font-size: 0.95rem;
-    padding: 0.75rem;
+    font-size: 0.88rem;
+    padding: 0.65rem 0.75rem;
+    height: 44px;
+    border-radius: 8px;
   }
 
   .input-button-grid {
@@ -864,63 +871,248 @@ input:focus, select:focus {
 
   .input-button-grid .btn {
     width: 100%;
-    padding: 0.7rem 0.4rem;
+    height: 42px;
+    padding: 0 0.5rem;
     font-size: 0.82rem;
+    font-weight: 600;
     text-align: center;
     justify-content: center;
     display: flex;
     align-items: center;
+    border-radius: 8px;
+  }
+
+  /* Options Grid - 2 Compact Columns for Mobile */
+  .options-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+  }
+
+  .option-field label {
+    font-size: 0.75rem;
+    margin-bottom: 0.2rem;
+    color: var(--text-muted);
+  }
+
+  .option-field select,
+  .option-field input {
+    padding: 0.45rem 0.6rem;
+    font-size: 0.82rem;
+    height: 40px;
+    border-radius: 8px;
+  }
+
+  /* Full-width option fields (e.g. checkboxes) */
+  .option-field[style*="display: flex"] {
+    grid-column: 1 / -1;
+    font-size: 0.78rem;
+    margin-top: 4px !important;
+  }
+
+  .action-bar {
+    margin-top: 0.75rem;
+  }
+
+  .btn-large {
+    width: 100%;
+    height: 46px;
+    padding: 0 1rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    border-radius: 10px;
+    justify-content: center;
+  }
+
+  /* Interactive Chapter Catalog */
+  .catalog-card {
+    padding: 0.75rem !important;
+    border-radius: 10px !important;
+  }
+
+  .catalog-header {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 0.75rem !important;
+    align-items: flex-start !important;
+    text-align: left !important;
+    margin-bottom: 0.75rem !important;
+  }
+
+  .catalog-cover {
+    width: 65px !important;
+    height: 90px !important;
+    border-radius: 6px !important;
+    flex-shrink: 0 !important;
+  }
+
+  #cat-series-title {
+    font-size: 1.05rem !important;
+    margin: 2px 0 4px 0 !important;
+    line-height: 1.25;
+  }
+
+  #cat-stats {
+    font-size: 0.78rem !important;
+    margin-bottom: 2px !important;
+  }
+
+  #cat-synopsis {
+    font-size: 0.75rem !important;
+    line-height: 1.3 !important;
+  }
+
+  .catalog-toolbar {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    padding: 8px 0 !important;
+  }
+
+  .catalog-toolbar > div:first-child {
+    display: flex !important;
+    gap: 4px !important;
+    width: 100% !important;
+  }
+
+  #cat-filter-input {
+    flex: 1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 38px !important;
+    font-size: 0.82rem !important;
+    padding: 0 8px !important;
+  }
+
+  #btn-select-all,
+  #btn-deselect-all {
+    height: 38px !important;
+    padding: 0 10px !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    flex-shrink: 0 !important;
+  }
+
+  #btn-download-selected {
+    width: 100% !important;
+    height: 42px !important;
+    font-size: 0.88rem !important;
+    font-weight: 600 !important;
+    justify-content: center !important;
+    border-radius: 8px !important;
+  }
+
+  .catalog-chapters-list {
+    max-height: 320px !important;
+  }
+
+  .catalog-chapter-row {
+    padding: 8px 10px !important;
+    min-height: 44px !important;
+    border-radius: 6px !important;
+    font-size: 0.82rem !important;
+  }
+
+  .catalog-chapter-row input[type="checkbox"] {
+    width: 18px !important;
+    height: 18px !important;
+    flex-shrink: 0 !important;
   }
 
   /* 2-column mobile manga library grid */
   .library-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 0.65rem !important;
+  }
+
+  .series-card {
+    border-radius: 10px !important;
   }
 
   .series-cover {
-    height: 180px;
+    height: 185px !important;
   }
 
   .series-details {
-    padding: 0.65rem;
+    padding: 0.55rem !important;
   }
 
   .series-title {
-    font-size: 0.88rem;
-    line-height: 1.25;
+    font-size: 0.85rem !important;
+    line-height: 1.25 !important;
   }
 
   .series-meta {
-    font-size: 0.72rem;
+    font-size: 0.72rem !important;
   }
 
-  .catalog-header {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
+  .series-card-actions {
+    margin-top: 0.4rem !important;
+    display: flex !important;
+    gap: 0.35rem !important;
   }
 
-  .catalog-header img {
-    margin: 0 auto;
+  .series-card-actions .btn {
+    padding: 0.35rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    flex: 1 !important;
+    justify-content: center !important;
+    height: 34px !important;
   }
 
-  .catalog-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .catalog-chapter-row {
-    padding: 8px 10px;
-  }
-
+  /* Reader Topbar & Viewport */
   .reader-topbar {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8rem;
+    padding: 0.4rem 0.6rem !important;
+    font-size: 0.8rem !important;
+    height: 46px !important;
   }
 
   .reader-title-info {
-    font-size: 0.8rem;
+    font-size: 0.78rem !important;
+  }
+
+  /* Sleek sticky bottom app navigation dock */
+  .nav-tabs {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 1000 !important;
+    background: rgba(15, 23, 42, 0.98) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border-top: 1px solid var(--border-color) !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    display: flex !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 8px)) 6px !important;
+    margin: 0 !important;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.6) !important;
+  }
+
+  .nav-tab {
+    flex: 1 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 4px 2px !important;
+    font-size: 0.72rem !important;
+    border-radius: 8px !important;
+    min-height: 44px !important;
+    gap: 2px !important;
+    text-align: center !important;
+    font-weight: 500 !important;
+  }
+
+  .nav-tab.active {
+    background: rgba(99, 102, 241, 0.2) !important;
+    color: #fff !important;
+    font-weight: 600 !important;
   }
 }
 
