@@ -13,9 +13,11 @@ class ModernSSRExtractor(BaseExtractor):
     def can_handle(self, soup: BeautifulSoup, url: str, html: str) -> bool:
         if "asurascans.com" in url or "asuracomic" in url or "asuratoons" in url:
             return True
+        if "webdexscans.com" in url:
+            return True
         if soup.find("astro-island") or "data-astro-cid" in html:
             return True
-        if soup.find("script", id="__NEXT_DATA__"):
+        if soup.find("script", id="__NEXT_DATA__") or "self.__next_f" in html or "/_next/static" in html:
             return True
         return False
 
@@ -116,7 +118,20 @@ class ModernSSRExtractor(BaseExtractor):
             except Exception:
                 pass
 
-        # 3. Direct DOM images inside chapter viewer
+        # 3. Next.js App Router (self.__next_f chunks / JSON payloads)
+        if "self.__next_f" in html or "/_next/static" in html or "webdexscans.com" in url:
+            app_router_urls = re.findall(
+                r'https?://[a-zA-Z0-9.\-_]+/(?:chapters|uploads|manga|comics)/[a-zA-Z0-9_\-\./]+?\.(?:webp|jpg|jpeg|png)',
+                html,
+                re.I
+            )
+            if app_router_urls:
+                clean_urls = [self.clean_image_url(u, base_url) for u in app_router_urls]
+                clean_urls = [u for u in clean_urls if u]
+                if clean_urls:
+                    return self.deduplicate_urls(clean_urls)
+
+        # 4. Direct DOM images inside chapter viewer
         images = soup.find_all("img", attrs={"data-page-index": True})
         if not images:
             images = soup.select("div[data-page] img")
@@ -134,15 +149,15 @@ class ModernSSRExtractor(BaseExtractor):
 
     def extract_next_chapter(self, soup: BeautifulSoup, current_url: str) -> Optional[str]:
         # 1. Check Astro nextChapter
-        # Look for next chapter URL format on Asura: /comics/{series}/chapter/{next_num}
         parsed = urlparse(current_url)
-        m = re.search(r'/(comics|series)/([^/]+)/chapter/(\d+)', current_url, re.I)
+        m = re.search(r'/(comics|series)/([^/]+)/chapter([-_/])(\d+)', current_url, re.I)
         if m:
             prefix = m.group(1)
             series_slug = m.group(2)
-            current_num = int(m.group(3))
+            sep = m.group(3)
+            current_num = int(m.group(4))
             next_num = current_num + 1
-            return f"{parsed.scheme}://{parsed.netloc}/{prefix}/{series_slug}/chapter/{next_num}"
+            return f"{parsed.scheme}://{parsed.netloc}/{prefix}/{series_slug}/chapter{sep}{next_num}"
 
         # 2. Check next button in DOM
         cand = soup.select_one("a[rel='next'], a:contains('Next')")
