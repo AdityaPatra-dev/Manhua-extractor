@@ -13,6 +13,7 @@ from .madara import MadaraExtractor
 from .modern_ssr import ModernSSRExtractor
 from .mangastream import MangaStreamExtractor
 from .aggregator import AggregatorExtractor
+from .mangapeak import MangaPeakExtractor
 from .heuristic import HeuristicExtractor
 
 DEFAULT_HEADERS = {
@@ -38,6 +39,7 @@ class ExtractorDispatcher:
             MadaraExtractor(),
             MangaStreamExtractor(),
             AggregatorExtractor(),
+            MangaPeakExtractor(),
             HeuristicExtractor()
         ]
         self.cffi_session = cffi_requests.Session(impersonate="chrome124") if HAS_CURL_CFFI else None
