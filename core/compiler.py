@@ -3,7 +3,10 @@ import zipfile
 from io import BytesIO
 from typing import List, Optional
 from PIL import Image
-import img2pdf
+try:
+    import img2pdf
+except ImportError:
+    img2pdf = None
 
 def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
     """Compile a list of JPEG image bytes into a single PDF document."""
@@ -11,26 +14,29 @@ def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
         return False
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    try:
-        pdf_bytes = img2pdf.convert(image_bytes_list)
-        with open(output_path, "wb") as f:
-            f.write(pdf_bytes)
-        return True
-    except Exception:
-        # Fallback to Pillow PDF assembly if img2pdf fails on an unusual JPEG stream
+    if img2pdf is not None:
         try:
-            pil_images = [Image.open(BytesIO(b)) for b in image_bytes_list]
-            if pil_images:
-                pil_images[0].save(
-                    output_path,
-                    "PDF",
-                    resolution=100.0,
-                    save_all=True,
-                    append_images=pil_images[1:]
-                )
-                return True
+            pdf_bytes = img2pdf.convert(image_bytes_list)
+            with open(output_path, "wb") as f:
+                f.write(pdf_bytes)
+            return True
         except Exception:
-            return False
+            pass
+
+    # Fallback to Pillow PDF assembly if img2pdf is unavailable or fails
+    try:
+        pil_images = [Image.open(BytesIO(b)) for b in image_bytes_list]
+        if pil_images:
+            pil_images[0].save(
+                output_path,
+                "PDF",
+                resolution=100.0,
+                save_all=True,
+                append_images=pil_images[1:]
+            )
+            return True
+    except Exception:
+        return False
     return False
 
 def detect_image_extension(img_bytes: bytes) -> str:

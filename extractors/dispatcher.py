@@ -1,7 +1,10 @@
 import re
 from typing import Dict, List, Optional, Any, Tuple
 from bs4 import BeautifulSoup
-import cloudscraper
+try:
+    import cloudscraper
+except ImportError:
+    cloudscraper = None
 import requests
 
 from .base import BaseExtractor
@@ -37,9 +40,12 @@ class ExtractorDispatcher:
             HeuristicExtractor()
         ]
         self.cffi_session = cffi_requests.Session(impersonate="chrome124") if HAS_CURL_CFFI else None
-        try:
-            self.scraper = cloudscraper.create_scraper()
-        except Exception:
+        if cloudscraper is not None:
+            try:
+                self.scraper = cloudscraper.create_scraper()
+            except Exception:
+                self.scraper = requests.Session()
+        else:
             self.scraper = requests.Session()
 
     def fetch_page(self, url: str) -> Tuple[int, str, BeautifulSoup]:

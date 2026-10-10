@@ -3,8 +3,12 @@ import os
 import shutil
 import hashlib
 import re
-from typing import List, Optional, Callable, Tuple
-import aiohttp
+from typing import List, Optional, Callable, Tuple, Any
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
+import requests
 from .optimizer import optimize_panel_image
 
 DEFAULT_CONCURRENCY = 6
@@ -31,7 +35,7 @@ def cleanup_staging_dir(staging_dir: Optional[str]) -> bool:
 
 
 async def fetch_single_panel(
-    session: aiohttp.ClientSession,
+    session: Any,
     semaphore: asyncio.Semaphore,
     url: str,
     index: int,
@@ -59,28 +63,37 @@ async def fetch_single_panel(
     async with semaphore:
         for attempt in range(retries):
             try:
-                timeout = aiohttp.ClientTimeout(total=30)
-                async with session.get(url, headers=headers, timeout=timeout) as response:
-                    if response.status == 200:
-                        raw_bytes = await response.read()
-                        optimized = optimize_panel_image(
-                            raw_bytes,
-                            max_width=max_width,
-                            jpeg_quality=jpeg_quality,
-                            image_format=image_format,
-                            webp_quality=webp_quality
-                        )
-                        if optimized:
-                            if staging_dir:
-                                try:
-                                    os.makedirs(staging_dir, exist_ok=True)
-                                    ext = "webp" if (image_format or "JPEG").upper() == "WEBP" else "jpg"
-                                    stage_file = os.path.join(staging_dir, f"panel_{index:04d}.{ext}")
-                                    with open(stage_file, "wb") as f:
-                                        f.write(optimized)
-                                except Exception:
-                                    pass
-                            return index, optimized
+                raw_bytes = None
+                if aiohttp is not None and session is not None and isinstance(session, aiohttp.ClientSession):
+                    timeout = aiohttp.ClientTimeout(total=30)
+                    async with session.get(url, headers=headers, timeout=timeout) as response:
+                        if response.status == 200:
+                            raw_bytes = await response.read()
+                else:
+                    def _sync_fetch() -> Optional[bytes]:
+                        resp = requests.get(url, headers=headers, timeout=30)
+                        return resp.content if resp.status_code == 200 else None
+                    raw_bytes = await asyncio.to_thread(_sync_fetch)
+
+                if raw_bytes:
+                    optimized = optimize_panel_image(
+                        raw_bytes,
+                        max_width=max_width,
+                        jpeg_quality=jpeg_quality,
+                        image_format=image_format,
+                        webp_quality=webp_quality
+                    )
+                    if optimized:
+                        if staging_dir:
+                            try:
+                                os.makedirs(staging_dir, exist_ok=True)
+                                ext = "webp" if (image_format or "JPEG").upper() == "WEBP" else "jpg"
+                                stage_file = os.path.join(staging_dir, f"panel_{index:04d}.{ext}")
+                                with open(stage_file, "wb") as f:
+                                    f.write(optimized)
+                            except Exception:
+                                pass
+                        return index, optimized
             except Exception:
                 if attempt < retries - 1:
                     await asyncio.sleep(1.0 * (attempt + 1))
@@ -110,11 +123,35 @@ async def download_panels_stream(
     semaphore = asyncio.Semaphore(concurrency)
     results = []
 
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for i, url in enumerate(image_urls):
-            t = fetch_single_panel(
-                session=session,
+    if aiohttp is not None:
+        async with aiohttp.ClientSession() as session:
+            tasks = [
+                fetch_single_panel(
+                    session=session,
+                    semaphore=semaphore,
+                    url=url,
+                    index=i,
+                    headers=headers,
+                    max_width=max_width,
+                    jpeg_quality=jpeg_quality,
+                    staging_dir=staging_dir,
+                    image_format=image_format,
+                    webp_quality=webp_quality
+                )
+                for i, url in enumerate(image_urls)
+            ]
+            completed = 0
+            total = len(tasks)
+            for fut in asyncio.as_completed(tasks):
+                res = await fut
+                results.append(res)
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, total)
+    else:
+        tasks = [
+            fetch_single_panel(
+                session=None,
                 semaphore=semaphore,
                 url=url,
                 index=i,
@@ -125,9 +162,8 @@ async def download_panels_stream(
                 image_format=image_format,
                 webp_quality=webp_quality
             )
-            tasks.append(t)
-
-
+            for i, url in enumerate(image_urls)
+        ]
         completed = 0
         total = len(tasks)
         for fut in asyncio.as_completed(tasks):
