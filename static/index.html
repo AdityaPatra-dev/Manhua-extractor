@@ -76,6 +76,22 @@
           </div>
 
           <div class="option-field">
+            <label for="image-encoding">Image Compression</label>
+            <select id="image-encoding">
+              <option value="jpeg">Standard JPEG (75% Quality)</option>
+              <option value="webp">High-Efficiency WebP (40-70% Smaller, Komga/Mihon)</option>
+            </select>
+          </div>
+
+          <div class="option-field">
+            <label for="upscale-factor">AI Super-Resolution</label>
+            <select id="upscale-factor">
+              <option value="1">Off (Original Resolution)</option>
+              <option value="2">2x AI Upscale (Waifu2x / Real-ESRGAN / Lanczos)</option>
+            </select>
+          </div>
+
+          <div class="option-field">
             <label for="max-width">Max Width (Downsampling)</label>
             <select id="max-width">
               <option value="1080">1080px (Fast, Lightweight)</option>
@@ -88,6 +104,7 @@
             <input type="checkbox" id="slice-eink" style="width: auto; cursor: pointer;">
             <label for="slice-eink" style="margin: 0; cursor: pointer;">📱 <strong>Kindle / E-Ink Slicer</strong> (Auto-split tall webtoon strips into readable book pages)</label>
           </div>
+
 
           <div class="option-field" style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
             <input type="checkbox" id="filter-promos" checked style="width: auto; cursor: pointer;">
@@ -298,6 +315,21 @@
           <div id="flaresolverr-status" style="margin-top: 6px; font-size: 0.85rem; font-weight: 600;"></div>
         </div>
       </div>
+
+      <div class="card">
+        <h2>AI Super-Resolution Microservice (Waifu2x / Real-ESRGAN)</h2>
+        <p class="card-desc">Upscale low-resolution scans and sharpen line art using an external neural upscaler container or local CLI.</p>
+
+        <div class="input-group">
+          <label for="setting-upscaler-url">AI Upscaler Endpoint</label>
+          <div class="input-with-button">
+            <input type="text" id="setting-upscaler-url" placeholder="http://localhost:5000/upscale">
+            <button id="btn-test-upscaler" class="btn btn-secondary">Test Connection</button>
+          </div>
+          <div id="upscaler-status" style="margin-top: 6px; font-size: 0.85rem; font-weight: 600;"></div>
+        </div>
+      </div>
+
 
       <div class="card">
         <h2>Promotional & Ad Page Filter</h2>

@@ -101,6 +101,10 @@ class DownloadRequest(BaseModel):
     format: str = "pdf"   # pdf, cbz, folder
     max_width: int = 1080
     quality: int = 75
+    image_format: str = "jpeg" # jpeg, webp
+    webp_quality: int = 80
+    upscale_scale: int = 1     # 1 = off, 2 = 2x, 4 = 4x
+    upscale_engine: str = "auto" # auto, api, waifu2x, realesrgan, lanczos
     slice_eink: bool = False
     aspect_ratio: float = 1.414
     filter_promos: bool = True
@@ -219,10 +223,12 @@ async def run_download_job(req: DownloadRequest):
             panel_bytes = await download_panels_stream(
                 image_urls=pages,
                 referer=current_url,
-                max_width=req.max_width,
+                max_width=req.max_width if req.upscale_scale <= 1 else None,
                 jpeg_quality=req.quality,
                 staging_dir=staging_dir,
-                progress_callback=on_progress
+                progress_callback=on_progress,
+                image_format=req.image_format,
+                webp_quality=req.webp_quality
             )
 
             if not panel_bytes:
@@ -239,6 +245,17 @@ async def run_download_job(req: DownloadRequest):
                         panel_bytes = clean_panels
                         download_progress["total_panels"] = len(panel_bytes)
 
+            # AI Super-Resolution Upscaling (Waifu2x / Real-ESRGAN / Lanczos)
+            if req.upscale_scale > 1:
+                download_progress["status"] = "upscaling"
+                download_progress["message"] = f"Upscaling {len(panel_bytes)} panels ({req.upscale_scale}x)..."
+                from core.upscaler import upscale_panel
+                upscaler_url = get_setting("ai_upscaler_url", "http://localhost:5000/upscale")
+                panel_bytes = [
+                    upscale_panel(b, scale=req.upscale_scale, engine=req.upscale_engine, endpoint=upscaler_url)
+                    for b in panel_bytes
+                ]
+
             # Smart E-Ink / Kindle slicing
             if req.slice_eink:
                 download_progress["status"] = "slicing"
@@ -249,6 +266,7 @@ async def run_download_job(req: DownloadRequest):
                     jpeg_quality=req.quality
                 )
                 download_progress["total_panels"] = len(panel_bytes)
+
 
             # Compile into chosen format
             download_progress["status"] = "compiling"
@@ -460,7 +478,10 @@ async def serve_chapter_page(chapter_id: int, page_index: int):
     if not img_bytes:
         return JSONResponse({"error": "Page image could not be decoded."}, status_code=404)
 
-    return Response(content=img_bytes, media_type="image/jpeg")
+    media_type = "image/webp" if (len(img_bytes) >= 12 and img_bytes[:4] == b"RIFF" and img_bytes[8:12] == b"WEBP") else "image/jpeg"
+    return Response(content=img_bytes, media_type=media_type)
+
+
 
 @app.post("/api/chapter/{chapter_id}/progress")
 async def update_reading_state(chapter_id: int, req: ProgressUpdateRequest):
@@ -693,6 +714,26 @@ async def refresh_series_meta(series_id: int):
         updated = get_series_by_id(series_id)
         return {"success": True, "series": dict(updated)}
     return {"success": False, "error": "No metadata found"}
+
+
+# --- AI Super-Resolution Endpoints ---
+
+@app.get("/api/settings/upscaler-status")
+async def get_upscaler_status():
+    from core.upscaler import get_available_upscalers, is_upscaler_api_available, DEFAULT_UPSCALER_URL
+    endpoint = get_setting("ai_upscaler_url", DEFAULT_UPSCALER_URL)
+    status = get_available_upscalers()
+    status["api_online"] = is_upscaler_api_available(endpoint)
+    return {"success": True, "status": status, "endpoint": endpoint}
+
+
+@app.post("/api/settings/test-upscaler")
+async def test_upscaler_conn(data: Dict[str, str]):
+    from core.upscaler import is_upscaler_api_available, DEFAULT_UPSCALER_URL
+    endpoint = data.get("url") or get_setting("ai_upscaler_url", DEFAULT_UPSCALER_URL)
+    ok = is_upscaler_api_available(endpoint)
+    return {"success": ok}
+
 
 
 

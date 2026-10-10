@@ -120,7 +120,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const format = document.getElementById("output-format").value;
     const maxWidth = parseInt(document.getElementById("max-width").value) || 1080;
     const sliceEink = document.getElementById("slice-eink").checked;
-    const filterPromos = document.getElementById("filter-promos") ? document.getElementById("filter-promos").checked : true;
+    const imageFormat = document.getElementById("image-encoding") ? document.getElementById("image-encoding").value : "jpeg";
+    const upscaleScale = document.getElementById("upscale-factor") ? parseInt(document.getElementById("upscale-factor").value, 10) : 1;
 
     btnStartDownload.disabled = true;
 
@@ -134,10 +135,13 @@ document.addEventListener("DOMContentLoaded", () => {
           count,
           format,
           max_width: maxWidth,
+          image_format: imageFormat,
+          upscale_scale: upscaleScale,
           slice_eink: sliceEink,
           filter_promos: filterPromos
         })
       });
+
 
       const data = await res.json();
       if (data.success) {
@@ -515,6 +519,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.mal_enabled) document.getElementById("setting-mal-enabled").value = s.mal_enabled;
         if (s.mal_token) document.getElementById("setting-mal-token").value = s.mal_token;
         if (s.flaresolverr_url) document.getElementById("setting-flaresolverr-url").value = s.flaresolverr_url;
+        if (s.ai_upscaler_url) document.getElementById("setting-upscaler-url").value = s.ai_upscaler_url;
       }
       loadPromoSignatures();
     } catch (e) {
@@ -638,7 +643,8 @@ document.addEventListener("DOMContentLoaded", () => {
         anilist_token: document.getElementById("setting-anilist-token").value.trim(),
         mal_enabled: document.getElementById("setting-mal-enabled").value,
         mal_token: document.getElementById("setting-mal-token").value.trim(),
-        flaresolverr_url: document.getElementById("setting-flaresolverr-url") ? document.getElementById("setting-flaresolverr-url").value.trim() : ""
+        flaresolverr_url: document.getElementById("setting-flaresolverr-url") ? document.getElementById("setting-flaresolverr-url").value.trim() : "",
+        ai_upscaler_url: document.getElementById("setting-upscaler-url") ? document.getElementById("setting-upscaler-url").value.trim() : ""
       };
 
       btnSaveSettings.textContent = "Saving...";
@@ -744,6 +750,54 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+
+  const btnTestUpscaler = document.getElementById("btn-test-upscaler");
+  if (btnTestUpscaler) {
+    btnTestUpscaler.addEventListener("click", async () => {
+      const url = document.getElementById("setting-upscaler-url").value.trim() || "http://localhost:5000/upscale";
+      btnTestUpscaler.textContent = "Testing...";
+      btnTestUpscaler.disabled = true;
+      const statusElem = document.getElementById("upscaler-status");
+      try {
+        const res = await fetch("/api/settings/test-upscaler", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        const statRes = await fetch("/api/settings/upscaler-status");
+        const statData = await statRes.json();
+        const statusObj = (statData && statData.status) || {};
+
+        const localEngines = [];
+        if (statusObj.waifu2x_cli) localEngines.push("waifu2x-ncnn-vulkan");
+        if (statusObj.realesrgan_cli) localEngines.push("realesrgan-ncnn-vulkan");
+
+        let msg = "";
+        if (data.success) {
+          msg = "✅ AI Upscaler microservice is online!";
+          statusElem.style.color = "var(--success)";
+        } else {
+          msg = "ℹ️ REST API offline. ";
+          if (localEngines.length > 0) {
+            msg += `Local CLI detected (${localEngines.join(", ")}).`;
+            statusElem.style.color = "var(--success)";
+          } else {
+            msg += "Lanczos-4 high-quality fallback will be used.";
+            statusElem.style.color = "var(--warning)";
+          }
+        }
+        statusElem.textContent = msg;
+      } catch (e) {
+        statusElem.style.color = "var(--danger)";
+        statusElem.textContent = "❌ Network error: " + e.message;
+      } finally {
+        btnTestUpscaler.textContent = "Test Connection";
+        btnTestUpscaler.disabled = false;
+      }
+    });
+  }
+
 
 
   // Switch tabs also triggers promo list load if settings tab
