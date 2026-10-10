@@ -21,7 +21,8 @@ from database.db import (
     init_db,
     get_or_create_series,
     add_or_update_chapter,
-    get_all_promo_signatures
+    get_all_promo_signatures,
+    update_series_rich_metadata
 )
 from extractors.dispatcher import dispatcher
 from core.downloader import (
@@ -164,8 +165,22 @@ def download_series(
             print(f"[✅] Created Compressed PDF: {output_file}")
         elif out_format == "cbz":
             output_file = os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.cbz")
-            print(f"[*] Compiling CBZ archive with ComicInfo.xml metadata...")
-            compile_cbz(panel_bytes, output_file, series_title=series_title, chapter_num=current_ch_num, source_url=current_url)
+            print(f"[*] Compiling CBZ archive with rich ComicInfo.xml metadata...")
+            try:
+                from core.metadata import fetch_rich_metadata
+                meta = fetch_rich_metadata(series_title)
+                update_series_rich_metadata(series_id, meta)
+            except Exception:
+                meta = None
+            compile_cbz(
+                panel_bytes,
+                output_file,
+                series_title=series_title,
+                chapter_num=current_ch_num,
+                source_url=current_url,
+                chapter_title=f"Chapter {current_ch_num}",
+                metadata=meta
+            )
             print(f"[✅] Created CBZ: {output_file}")
         else:
             output_file = os.path.join(series_dir, f"Ch_{ch_str}")
