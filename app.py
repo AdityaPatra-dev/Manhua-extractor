@@ -26,7 +26,8 @@ from database.db import (
     get_all_settings
 )
 from extractors.dispatcher import dispatcher
-from core.downloader import download_panels_stream
+from core.downloader import download_panels_stream, get_staging_dir, cleanup_staging_dir
+from core.slicer import slice_chapter_panels
 from core.compiler import (
     compile_pdf,
     compile_cbz,
@@ -94,6 +95,8 @@ class DownloadRequest(BaseModel):
     format: str = "pdf"   # pdf, cbz, folder
     max_width: int = 1080
     quality: int = 75
+    slice_eink: bool = False
+    aspect_ratio: float = 1.414
     save_dir: Optional[str] = None
 
 class TestSiteRequest(BaseModel):
@@ -187,18 +190,33 @@ async def run_download_job(req: DownloadRequest):
             download_progress["status"] = "downloading"
             download_progress["message"] = f"Downloading {len(pages)} panels..."
 
+            # Deterministic staging directory for panel resume
+            staging_dir = get_staging_dir(base_save_dir, series_slug, chapter_num)
+
             # Download panels
             panel_bytes = await download_panels_stream(
                 image_urls=pages,
                 referer=current_url,
                 max_width=req.max_width,
                 jpeg_quality=req.quality,
+                staging_dir=staging_dir,
                 progress_callback=on_progress
             )
 
             if not panel_bytes:
                 download_progress["message"] = f"Could not download panels for Chapter {chapter_num}"
                 break
+
+            # Smart E-Ink / Kindle slicing
+            if req.slice_eink:
+                download_progress["status"] = "slicing"
+                download_progress["message"] = f"Slicing webtoon ribbons into e-ink pages..."
+                panel_bytes = slice_chapter_panels(
+                    panel_bytes,
+                    target_aspect_ratio=req.aspect_ratio,
+                    jpeg_quality=req.quality
+                )
+                download_progress["total_panels"] = len(panel_bytes)
 
             # Compile into chosen format
             download_progress["status"] = "compiling"
@@ -217,6 +235,10 @@ async def run_download_job(req: DownloadRequest):
             else: # folder
                 output_file = os.path.join(series_dir, f"Ch_{ch_str}")
                 save_raw_images(panel_bytes, output_file)
+
+            # Compilation successful: clean up staging files
+            cleanup_staging_dir(staging_dir)
+
 
             file_size = os.path.getsize(output_file) if os.path.exists(output_file) and os.path.isfile(output_file) else 0
 

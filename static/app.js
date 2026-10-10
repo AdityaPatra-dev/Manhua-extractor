@@ -119,6 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const count = parseInt(document.getElementById("chapter-count").value) || 1;
     const format = document.getElementById("output-format").value;
     const maxWidth = parseInt(document.getElementById("max-width").value) || 1080;
+    const sliceEink = document.getElementById("slice-eink").checked;
 
     btnStartDownload.disabled = true;
 
@@ -131,7 +132,8 @@ document.addEventListener("DOMContentLoaded", () => {
           mode,
           count,
           format,
-          max_width: maxWidth
+          max_width: maxWidth,
+          slice_eink: sliceEink
         })
       });
 
