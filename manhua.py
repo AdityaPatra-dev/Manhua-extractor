@@ -45,9 +45,13 @@ def download_series(
     dest_input: str = "",
     slice_eink: bool = False,
     aspect_ratio: float = 1.414,
-    filter_promos: bool = True
+    filter_promos: bool = True,
+    image_format: str = "jpeg",
+    webp_quality: int = 80,
+    upscale_scale: int = 1,
+    upscale_engine: str = "auto"
 ):
-    """Core download worker supporting resume cache and smart e-ink slicing."""
+    """Core download worker supporting resume cache, WebP compression, upscaling, and smart e-ink slicing."""
     print("\n[*] Analyzing page layout and detecting CMS engine...")
     data = dispatcher.analyze_url(pasted_url)
     if not data.get("success") or not data.get("pages"):
@@ -127,10 +131,12 @@ def download_series(
                 image_urls=current_panels,
                 referer=current_url,
                 concurrency=DEFAULT_CONCURRENCY,
-                max_width=1080,
+                max_width=1080 if upscale_scale <= 1 else None,
                 jpeg_quality=75,
                 staging_dir=staging_dir,
-                progress_callback=on_step
+                progress_callback=on_step,
+                image_format=image_format,
+                webp_quality=webp_quality
             )
         )
         pbar.close()
@@ -148,11 +154,24 @@ def download_series(
                     print(f"[*] Trimmed {removed} recurring promotional credit pages.")
                     panel_bytes = clean_panels
 
+        # AI Super-Resolution Upscaling (Waifu2x / Real-ESRGAN / Lanczos)
+        if upscale_scale > 1:
+            print(f"[*] Upscaling {len(panel_bytes)} panels ({upscale_scale}x using {upscale_engine})...")
+            from core.upscaler import upscale_panel
+            from database.db import get_setting
+            upscaler_url = get_setting("ai_upscaler_url", "http://localhost:5000/upscale")
+            panel_bytes = [
+                upscale_panel(b, scale=upscale_scale, engine=upscale_engine, endpoint=upscaler_url)
+                for b in panel_bytes
+            ]
+            print(f"[✅] Upscaling complete.")
+
         # Smart Kindle/E-Ink Slicing for tall webtoon strips
         if slice_eink:
             print(f"[*] Slicing continuous webtoon ribbons into e-ink pages...")
             panel_bytes = slice_chapter_panels(panel_bytes, target_aspect_ratio=aspect_ratio)
             print(f"[*] Formatted into {len(panel_bytes)} readable pages.")
+
 
         safe_slug = series_slug.replace('-', '_')
         ch_str = f"{current_ch_num:g}".replace('.', '_')
@@ -239,10 +258,22 @@ def run_cli_downloader():
     print("\nSelect Output Format:")
     print(" 1 -> Compressed PDF (Default, optimized for mobile/Termux)")
     print(" 2 -> CBZ Comic Archive (With ComicInfo.xml metadata)")
-    print(" 3 -> Raw JPEG Folder")
+    print(" 3 -> Raw Image Folder (JPEG/WebP)")
     fmt_choice = input("> ").strip()
     fmt_map = {"1": "pdf", "2": "cbz", "3": "folder"}
     out_format = fmt_map.get(fmt_choice, "pdf")
+
+    print("\nSelect Image Encoding:")
+    print(" 1 -> Standard JPEG (75% quality)")
+    print(" 2 -> High-Efficiency WebP (40-70% smaller file size, Komga/Mihon compatible)")
+    enc_choice = input("> ").strip()
+    image_format = "webp" if enc_choice == "2" else "jpeg"
+
+    print("\nAI Super-Resolution Upscaling:")
+    print(" 1 -> Off (1x Original Resolution)")
+    print(" 2 -> 2x AI Upscale (Waifu2x / Real-ESRGAN / Lanczos)")
+    upscale_choice = input("> ").strip()
+    upscale_scale = 2 if upscale_choice == "2" else 1
 
     print("\nSmart E-Ink / Kindle Mode:")
     print(" Automatically cut tall vertical webtoon strips into book pages?")
@@ -260,7 +291,9 @@ def run_cli_downloader():
         total_chapters=total_chapters,
         out_format=out_format,
         dest_input=dest_input,
-        slice_eink=slice_eink
+        slice_eink=slice_eink,
+        image_format=image_format,
+        upscale_scale=upscale_scale
     )
 
 
@@ -277,6 +310,9 @@ def main():
     parser.add_argument("--count", "-c", type=int, default=1, help="Number of chapters to download (default: 1)")
     parser.add_argument("--format", "-f", choices=["pdf", "cbz", "folder"], default="pdf", help="Output format (default: pdf)")
     parser.add_argument("--dest", "-d", type=str, default="", help="Destination folder (default: downloads/)")
+    parser.add_argument("--encoding", "-e", choices=["jpeg", "webp"], default="jpeg", help="Image encoding (default: jpeg)")
+    parser.add_argument("--upscale", type=int, choices=[1, 2, 4], default=1, help="AI Super-Resolution upscale factor (default: 1 = off)")
+    parser.add_argument("--upscale-engine", choices=["auto", "api", "waifu2x", "realesrgan", "lanczos"], default="auto", help="Upscaling engine (default: auto)")
     parser.add_argument("--eink", "-s", action="store_true", help="Slice vertical webtoon strips for Kindle/E-Ink devices")
     parser.add_argument("--trim-promos", action="store_true", default=True, help="Automatically trim known promotional/ad pages (default: True)")
     parser.add_argument("--no-trim-promos", action="store_false", dest="trim_promos", help="Disable promotional page trimming")
@@ -322,10 +358,14 @@ def main():
             out_format=args.format,
             dest_input=args.dest,
             slice_eink=args.eink,
-            filter_promos=args.trim_promos
+            filter_promos=args.trim_promos,
+            image_format=args.encoding,
+            upscale_scale=args.upscale,
+            upscale_engine=args.upscale_engine
         )
     else:
         run_cli_downloader()
+
 
 
 if __name__ == "__main__":
