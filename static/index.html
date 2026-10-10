@@ -23,6 +23,7 @@
         <button class="nav-tab active" data-tab="tab-download">📥 Downloader</button>
         <button class="nav-tab" data-tab="tab-library">📚 Library (<span id="library-count">0</span>)</button>
         <button class="nav-tab" data-tab="tab-lab">🧪 Compatibility Lab</button>
+        <button class="nav-tab" data-tab="tab-settings">⚙️ Settings</button>
       </nav>
     </header>
 
@@ -114,7 +115,10 @@
     <main id="tab-library" class="tab-content">
       <div class="library-header">
         <h2>Your Saved Library</h2>
-        <input type="text" id="library-search" placeholder="Search series..." class="search-input">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <input type="text" id="library-search" placeholder="Search series..." class="search-input">
+          <button id="btn-update-library" class="btn btn-secondary">🔄 Check Updates</button>
+        </div>
       </div>
       <div id="library-grid" class="library-grid">
         <p class="empty-state">No downloaded series in the database yet. Download a chapter to start building your library!</p>
@@ -161,6 +165,71 @@
             </tbody>
           </table>
         </div>
+    </main>
+
+    <!-- TAB 4: SETTINGS -->
+    <main id="tab-settings" class="tab-content">
+      <div class="card">
+        <h2>Auto-Updater & Scheduler</h2>
+        <p class="card-desc">Automatically check your library for new chapter releases in the background.</p>
+
+        <div class="options-grid">
+          <div class="option-field">
+            <label for="setting-auto-update">Periodic Auto-Update</label>
+            <select id="setting-auto-update">
+              <option value="false">Disabled (Manual only)</option>
+              <option value="true">Enabled (Background worker)</option>
+            </select>
+          </div>
+          <div class="option-field">
+            <label for="setting-interval">Check Interval (Hours)</label>
+            <input type="number" id="setting-interval" min="1" max="72" value="6">
+          </div>
+          <div class="option-field">
+            <label for="setting-preferred-format">Preferred Format</label>
+            <select id="setting-preferred-format">
+              <option value="pdf">PDF Document</option>
+              <option value="cbz">CBZ Comic Archive</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Notification Webhooks</h2>
+        <p class="card-desc">Receive instant push notifications when new chapters are downloaded.</p>
+
+        <div class="input-group">
+          <label for="setting-discord-webhook">Discord Webhook URL</label>
+          <div class="input-with-button">
+            <input type="text" id="setting-discord-webhook" placeholder="https://discord.com/api/webhooks/...">
+            <button id="btn-test-discord" class="btn btn-secondary">Test Discord</button>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label for="setting-ntfy-topic">Ntfy Topic URL (Push Notifications)</label>
+          <div class="input-with-button">
+            <input type="text" id="setting-ntfy-topic" placeholder="https://ntfy.sh/my_manga_updates">
+            <button id="btn-test-ntfy" class="btn btn-secondary">Test Ntfy</button>
+          </div>
+        </div>
+
+        <div class="options-grid" style="margin-bottom: 0;">
+          <div class="option-field">
+            <label for="setting-telegram-token">Telegram Bot Token</label>
+            <input type="text" id="setting-telegram-token" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11">
+          </div>
+          <div class="option-field">
+            <label for="setting-telegram-chat">Telegram Chat ID</label>
+            <input type="text" id="setting-telegram-chat" placeholder="-100123456789">
+          </div>
+        </div>
+
+        <div class="action-bar" style="margin-top: 1.5rem;">
+          <button id="btn-save-settings" class="btn btn-primary btn-large">💾 Save Settings</button>
+        </div>
+        <p id="settings-status-msg" style="margin-top: 0.75rem; text-align: center; color: var(--success); font-weight: 600;" class="hidden"></p>
       </div>
     </main>
   </div>

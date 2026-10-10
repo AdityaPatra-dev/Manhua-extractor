@@ -16,9 +16,34 @@ document.addEventListener("DOMContentLoaded", () => {
         loadLibrary();
       } else if (targetId === "tab-lab") {
         loadDiagnosticsTable();
+      } else if (targetId === "tab-settings") {
+        loadSettings();
       }
     });
   });
+
+  // --- Library Update Button ---
+  const btnUpdateLibrary = document.getElementById("btn-update-library");
+  if (btnUpdateLibrary) {
+    btnUpdateLibrary.addEventListener("click", async () => {
+      btnUpdateLibrary.textContent = "Checking...";
+      btnUpdateLibrary.disabled = true;
+      try {
+        const res = await fetch("/api/library/update", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          alert("Library update started in background! Monitor progress on the Downloader tab.");
+        } else {
+          alert("Error: " + data.error);
+        }
+      } catch (e) {
+        alert("Network error: " + e.message);
+      } finally {
+        btnUpdateLibrary.textContent = "🔄 Check Updates";
+        btnUpdateLibrary.disabled = false;
+      }
+    });
+  }
 
   // --- Download Options Visibility ---
   const downloadModeSelect = document.getElementById("download-mode");
@@ -402,6 +427,112 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       console.error("Error loading diagnostics table", e);
     }
+  }
+
+  // --- Settings Tab Handlers ---
+  async function loadSettings() {
+    try {
+      const res = await fetch("/api/settings");
+      const data = await res.json();
+      if (data.success && data.settings) {
+        const s = data.settings;
+        if (s.auto_update_enabled) document.getElementById("setting-auto-update").value = s.auto_update_enabled;
+        if (s.auto_update_interval_hours) document.getElementById("setting-interval").value = s.auto_update_interval_hours;
+        if (s.preferred_format) document.getElementById("setting-preferred-format").value = s.preferred_format;
+        if (s.discord_webhook_url) document.getElementById("setting-discord-webhook").value = s.discord_webhook_url;
+        if (s.ntfy_topic_url) document.getElementById("setting-ntfy-topic").value = s.ntfy_topic_url;
+        if (s.telegram_bot_token) document.getElementById("setting-telegram-token").value = s.telegram_bot_token;
+        if (s.telegram_chat_id) document.getElementById("setting-telegram-chat").value = s.telegram_chat_id;
+      }
+    } catch (e) {
+      console.error("Error loading settings", e);
+    }
+  }
+
+  const btnSaveSettings = document.getElementById("btn-save-settings");
+  if (btnSaveSettings) {
+    btnSaveSettings.addEventListener("click", async () => {
+      const payload = {
+        auto_update_enabled: document.getElementById("setting-auto-update").value,
+        auto_update_interval_hours: document.getElementById("setting-interval").value,
+        preferred_format: document.getElementById("setting-preferred-format").value,
+        discord_webhook_url: document.getElementById("setting-discord-webhook").value.trim(),
+        ntfy_topic_url: document.getElementById("setting-ntfy-topic").value.trim(),
+        telegram_bot_token: document.getElementById("setting-telegram-token").value.trim(),
+        telegram_chat_id: document.getElementById("setting-telegram-chat").value.trim()
+      };
+
+      btnSaveSettings.textContent = "Saving...";
+      btnSaveSettings.disabled = true;
+
+      try {
+        const res = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        const msg = document.getElementById("settings-status-msg");
+        if (data.success) {
+          msg.textContent = "✅ Settings successfully saved!";
+          msg.classList.remove("hidden");
+          setTimeout(() => msg.classList.add("hidden"), 3000);
+        }
+      } catch (e) {
+        alert("Failed to save settings: " + e.message);
+      } finally {
+        btnSaveSettings.textContent = "💾 Save Settings";
+        btnSaveSettings.disabled = false;
+      }
+    });
+  }
+
+  const btnTestDiscord = document.getElementById("btn-test-discord");
+  if (btnTestDiscord) {
+    btnTestDiscord.addEventListener("click", async () => {
+      const target = document.getElementById("setting-discord-webhook").value.trim();
+      if (!target) return alert("Please enter a Discord Webhook URL first.");
+      btnTestDiscord.textContent = "Testing...";
+      btnTestDiscord.disabled = true;
+      try {
+        const res = await fetch("/api/settings/test-notification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel: "discord", target })
+        });
+        const data = await res.json();
+        alert(data.success ? "✅ Discord webhook test sent successfully!" : "❌ Discord webhook test failed. Verify URL.");
+      } catch (e) {
+        alert("Test error: " + e.message);
+      } finally {
+        btnTestDiscord.textContent = "Test Discord";
+        btnTestDiscord.disabled = false;
+      }
+    });
+  }
+
+  const btnTestNtfy = document.getElementById("btn-test-ntfy");
+  if (btnTestNtfy) {
+    btnTestNtfy.addEventListener("click", async () => {
+      const target = document.getElementById("setting-ntfy-topic").value.trim();
+      if (!target) return alert("Please enter an Ntfy Topic URL first.");
+      btnTestNtfy.textContent = "Testing...";
+      btnTestNtfy.disabled = true;
+      try {
+        const res = await fetch("/api/settings/test-notification", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel: "ntfy", target })
+        });
+        const data = await res.json();
+        alert(data.success ? "✅ Ntfy push test sent successfully!" : "❌ Ntfy push test failed.");
+      } catch (e) {
+        alert("Test error: " + e.message);
+      } finally {
+        btnTestNtfy.textContent = "Test Ntfy";
+        btnTestNtfy.disabled = false;
+      }
+    });
   }
 
   // Initial load
