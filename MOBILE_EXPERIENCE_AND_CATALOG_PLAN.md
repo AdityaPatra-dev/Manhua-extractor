@@ -132,9 +132,11 @@ flowchart TD
 
 ## 5. Verification Checklist
 
-- [ ] Pasting a series URL or chapter URL loads the full chapter list within 1–2 seconds.
-- [ ] Available chapters indicate whether they are already downloaded locally or online only.
+- [x] Pasting a series URL or chapter URL loads the full chapter list within 1–2 seconds.
+- [x] Available chapters indicate whether they are already downloaded locally or online only.
 - [ ] Downloading a chapter automatically switches its badge to 🟢 Downloaded and reveals the **"📖 Read"** button.
 - [ ] Clicking **"📖 Read"** opens the chapter in the vertical reader with Fullscreen support on mobile browsers (Chrome Android / Safari iOS).
 - [ ] Downloaded chapters are saved in lightweight WebP format by default.
 - [ ] OPDS feed and direct download links function smoothly on mobile devices.
+
+
