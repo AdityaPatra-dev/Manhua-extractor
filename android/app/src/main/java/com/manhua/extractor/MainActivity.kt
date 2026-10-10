@@ -2,12 +2,14 @@ package com.manhua.extractor
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -117,6 +119,16 @@ class MainActivity : AppCompatActivity() {
             }
 
             webChromeClient = object : WebChromeClient() {
+                override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Manhua Extractor")
+                        .setMessage(message ?: "")
+                        .setPositiveButton(android.R.string.ok) { _, _ -> result?.confirm() }
+                        .setOnCancelListener { result?.cancel() }
+                        .show()
+                    return true
+                }
+
                 override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                     if (customView != null) {
                         callback?.onCustomViewHidden()

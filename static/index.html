@@ -27,8 +27,8 @@
       </div>
       <nav class="nav-tabs">
         <button class="nav-tab active" data-tab="tab-download">📥 Downloader</button>
-        <button class="nav-tab" data-tab="tab-library">📚 Library (<span id="library-count">0</span>)</button>
-        <button class="nav-tab" data-tab="tab-lab">🧪 Compatibility Lab</button>
+        <button class="nav-tab" data-tab="tab-library">📚 Library <span id="library-count" class="tab-badge">0</span></button>
+        <button class="nav-tab" data-tab="tab-lab">🧪 Lab</button>
         <button class="nav-tab" data-tab="tab-settings">⚙️ Settings</button>
         <button id="btn-phone-connect" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" title="Phone & OPDS Access">📱 Phone</button>
       </nav>
@@ -42,10 +42,12 @@
 
         <div class="input-group">
           <label for="chapter-url">Manga / Manhua URL (Series Page or Chapter Link)</label>
-          <div class="input-with-button">
+          <div class="input-with-button input-form-responsive">
             <input type="text" id="chapter-url" placeholder="Paste series or chapter URL (e.g. Asura, Toonily, ManhuaPlus)..." autofocus>
-            <button id="btn-inspect" class="btn btn-primary">🔍 Browse Chapters</button>
-            <button id="btn-analyze" class="btn btn-secondary">⚡ Quick Analyze</button>
+            <div class="input-button-grid">
+              <button id="btn-inspect" class="btn btn-primary">🔍 Browse Chapters</button>
+              <button id="btn-analyze" class="btn btn-secondary">⚡ Quick Analyze</button>
+            </div>
           </div>
         </div>
 
@@ -115,8 +117,8 @@
           <div class="option-field">
             <label for="image-encoding">Image Compression</label>
             <select id="image-encoding">
-              <option value="webp" selected>High-Efficiency WebP (40-70% Smaller, Komga/Mihon)</option>
-              <option value="jpeg">Standard JPEG (75% Quality)</option>
+              <option value="jpeg" selected>Standard JPEG (Universal Compatibility)</option>
+              <option value="webp">High-Efficiency WebP (Supported Encoders)</option>
             </select>
           </div>
 
@@ -172,6 +174,12 @@
         <div class="progress-details">
           <span id="prog-message">Waiting for stream...</span>
           <span id="prog-chapter-tracker">Chapter 1 of 1</span>
+        </div>
+
+        <!-- Download Completion Actions -->
+        <div id="prog-completed-actions" class="hidden" style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 0.75rem;">
+          <button id="btn-prog-read-now" class="btn btn-primary" style="flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 6px;">📖 Read Chapter Now</button>
+          <button id="btn-prog-view-library" class="btn btn-secondary" style="flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 6px;">📚 View in Library</button>
         </div>
       </div>
     </main>
@@ -463,6 +471,8 @@
       <button id="reader-scroll-top" class="btn btn-secondary">↑ Top</button>
     </div>
   </div>
+
+  <div id="toast-container" class="toast-container"></div>
 
   <script src="/static/app.js"></script>
 </body>

@@ -1,24 +1,57 @@
 document.addEventListener("DOMContentLoaded", () => {
+  // --- Toast Notifications ---
+  function showToast(message, type = "info") {
+    const container = document.getElementById("toast-container");
+    if (!container) {
+      console.log(`[${type}] ${message}`);
+      return;
+    }
+    const toast = document.createElement("div");
+    toast.className = `toast toast-${type}`;
+    let icon = "ℹ️";
+    if (type === "success") icon = "✅";
+    if (type === "error") icon = "⚠️";
+    toast.innerHTML = `<span>${icon}</span><span style="flex: 1;">${message}</span>`;
+    container.appendChild(toast);
+    setTimeout(() => {
+      toast.style.animation = "toastOut 0.25s forwards";
+      setTimeout(() => toast.remove(), 250);
+    }, 3500);
+  }
+
   // --- Tab Navigation ---
   const navTabs = document.querySelectorAll(".nav-tab");
   const tabContents = document.querySelectorAll(".tab-content");
 
+  function switchTab(targetId) {
+    navTabs.forEach((t) => {
+      if (t.getAttribute("data-tab") === targetId) {
+        t.classList.add("active");
+      } else {
+        t.classList.remove("active");
+      }
+    });
+    tabContents.forEach((c) => {
+      if (c.id === targetId) {
+        c.classList.add("active");
+      } else {
+        c.classList.remove("active");
+      }
+    });
+
+    if (targetId === "tab-library") {
+      loadLibrary();
+    } else if (targetId === "tab-lab") {
+      loadDiagnosticsTable();
+    } else if (targetId === "tab-settings") {
+      loadSettings();
+    }
+  }
+
   navTabs.forEach((tab) => {
     tab.addEventListener("click", () => {
-      navTabs.forEach((t) => t.classList.remove("active"));
-      tabContents.forEach((c) => c.classList.remove("active"));
-
-      tab.classList.add("active");
       const targetId = tab.getAttribute("data-tab");
-      document.getElementById(targetId).classList.add("active");
-
-      if (targetId === "tab-library") {
-        loadLibrary();
-      } else if (targetId === "tab-lab") {
-        loadDiagnosticsTable();
-      } else if (targetId === "tab-settings") {
-        loadSettings();
-      }
+      switchTab(targetId);
     });
   });
 
@@ -32,12 +65,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const res = await fetch("/api/library/update", { method: "POST" });
         const data = await res.json();
         if (data.success) {
-          alert("Library update started in background! Monitor progress on the Downloader tab.");
+          showToast("Library update started in background! Monitor progress on Downloader tab.", "info");
         } else {
-          alert("Error: " + data.error);
+          showToast("Error: " + data.error, "error");
         }
       } catch (e) {
-        alert("Network error: " + e.message);
+        showToast("Network error: " + e.message, "error");
       } finally {
         btnUpdateLibrary.textContent = "🔄 Check Updates";
         btnUpdateLibrary.disabled = false;
@@ -75,7 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function inspectSeries(url, isSilent = false) {
     if (!url) {
-      if (!isSilent) alert("Please enter a valid manga or chapter URL.");
+      if (!isSilent) showToast("Please enter a valid manga or chapter URL.", "info");
       return;
     }
 
@@ -100,6 +133,9 @@ document.addEventListener("DOMContentLoaded", () => {
         // Populate catalog card header
         const coverImg = document.getElementById("cat-series-cover");
         if (coverImg) {
+          coverImg.onerror = function() {
+            this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="110"><rect fill="%231c2640" width="80" height="110"/><text fill="%2394a3b8" x="50%" y="50%" text-anchor="middle" font-size="10">No Cover</text></svg>';
+          };
           if (data.cover_url) {
             coverImg.src = data.cover_url;
             coverImg.style.display = "block";
@@ -131,10 +167,10 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         }
       } else {
-        if (!isSilent) alert(`Failed to inspect catalog: ${data.error || 'Unknown error'}`);
+        if (!isSilent) showToast(`Failed to inspect catalog: ${data.error || 'Unknown error'}`, "error");
       }
     } catch (err) {
-      if (!isSilent) alert(`Network error inspecting series: ${err.message}`);
+      if (!isSilent) showToast(`Network error inspecting series: ${err.message}`, "error");
     } finally {
       if (!isSilent && btnInspect) {
         btnInspect.textContent = "🔍 Browse Chapters";
@@ -261,7 +297,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function startCatalogDownload(urls) {
     if (!urls || urls.length === 0) {
-      alert("Please select at least one chapter to download.");
+      showToast("Please select at least one chapter to download.", "info");
       return;
     }
 
@@ -303,12 +339,12 @@ document.addEventListener("DOMContentLoaded", () => {
         progressCard.scrollIntoView({ behavior: "smooth" });
         listenToProgress();
       } else {
-        alert(`Error starting download: ${data.error}`);
+        showToast(`Error starting download: ${data.error}`, "error");
         if (btnStartDownload) btnStartDownload.disabled = false;
         if (btnDownloadSelected) btnDownloadSelected.disabled = false;
       }
     } catch (err) {
-      alert(`Failed to launch download: ${err.message}`);
+      showToast(`Failed to launch download: ${err.message}`, "error");
       if (btnStartDownload) btnStartDownload.disabled = false;
       if (btnDownloadSelected) btnDownloadSelected.disabled = false;
     }
@@ -318,7 +354,7 @@ document.addEventListener("DOMContentLoaded", () => {
   btnAnalyze.addEventListener("click", async () => {
     const url = chapterUrlInput.value.trim();
     if (!url) {
-      alert("Please enter a valid chapter URL.");
+      showToast("Please enter a valid chapter URL.", "info");
       return;
     }
 
@@ -347,10 +383,10 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         previewCard.classList.remove("hidden");
       } else {
-        alert(`Analysis failed: ${data.error || "Could not isolate chapter layout."}`);
+        showToast(`Analysis failed: ${data.error || "Could not isolate chapter layout."}`, "error");
       }
     } catch (err) {
-      alert(`Network error during analysis: ${err.message}`);
+      showToast(`Network error during analysis: ${err.message}`, "error");
     } finally {
       btnAnalyze.textContent = "Analyze";
       btnAnalyze.disabled = false;
@@ -364,7 +400,7 @@ document.addEventListener("DOMContentLoaded", () => {
   btnStartDownload.addEventListener("click", async () => {
     const url = chapterUrlInput.value.trim();
     if (!url) {
-      alert("Please enter a chapter URL first.");
+      showToast("Please enter a chapter URL first.", "info");
       return;
     }
 
@@ -405,11 +441,11 @@ document.addEventListener("DOMContentLoaded", () => {
         progressCard.classList.remove("hidden");
         listenToProgress();
       } else {
-        alert(`Error: ${data.error}`);
+        showToast(`Error: ${data.error}`, "error");
         btnStartDownload.disabled = false;
       }
     } catch (err) {
-      alert(`Failed to launch download: ${err.message}`);
+      showToast(`Failed to launch download: ${err.message}`, "error");
       btnStartDownload.disabled = false;
     }
   });
@@ -439,15 +475,41 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById("prog-panel-count").textContent = `${state.current_panel} / ${state.total_panels} panels`;
         }
 
-        if (!state.is_running && (state.status === "completed" || state.status === "error")) {
+        const progActions = document.getElementById("prog-completed-actions");
+        if (state.is_running) {
+          if (progActions) progActions.classList.add("hidden");
+        } else if (state.status === "completed") {
           btnStartDownload.disabled = false;
           if (btnDownloadSelected) btnDownloadSelected.disabled = false;
-          if (state.status === "completed") {
-            loadLibrary(); // update library count
-            if (currentCatalogUrl) {
-              inspectSeries(currentCatalogUrl, true); // silent refresh updates local badges & read now buttons!
+          loadLibrary();
+          if (currentCatalogUrl) {
+            inspectSeries(currentCatalogUrl, true);
+          }
+          if (progActions && state.last_downloaded_chapter_id) {
+            progActions.classList.remove("hidden");
+            const btnRead = document.getElementById("btn-prog-read-now");
+            const btnLib = document.getElementById("btn-prog-view-library");
+            if (btnRead) {
+              if (state.last_downloaded_chapter_num) {
+                btnRead.textContent = `📖 Read Chapter ${state.last_downloaded_chapter_num} Now`;
+              }
+              btnRead.onclick = () => {
+                openReader(state.last_downloaded_chapter_id);
+              };
+            }
+            if (btnLib) {
+              btnLib.onclick = () => {
+                switchTab("tab-library");
+                if (state.last_downloaded_series_id) {
+                  openSeriesModal(state.last_downloaded_series_id);
+                }
+              };
             }
           }
+        } else if (state.status === "error") {
+          btnStartDownload.disabled = false;
+          if (btnDownloadSelected) btnDownloadSelected.disabled = false;
+          showToast(`Download error: ${state.message}`, "error");
         }
       } catch (e) {
         console.error("SSE parse error", e);
@@ -470,13 +532,16 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("library-count").textContent = data.series.length;
         grid.innerHTML = data.series.map((s) => `
           <div class="series-card" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
-            <img class="series-cover" src="${s.cover_url || '/static/placeholder.jpg'}" alt="${s.title}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'250\\'><rect fill=\\'%231c2640\\' width=\\'200\\' height=\\'250\\'/><text fill=\\'%2394a3b8\\' x=\\'50%\\' y=\\'50%\\' text-anchor=\\'middle\\'>No Cover</text></svg>'">
+            <img class="series-cover" src="/api/series/${s.id}/cover" alt="${s.title}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
             <div class="series-details">
               <h4 class="series-title">${s.title}</h4>
               <p class="series-meta">
                 📥 <strong>${s.downloaded_chapters || 0}</strong> chapters downloaded<br>
                 Engine: ${s.engine || 'Auto'}
               </p>
+              <div class="series-card-actions">
+                <button class="btn btn-primary" style="padding: 6px 10px; font-size: 0.8rem; width: 100%; margin-top: 6px;" onclick="event.stopPropagation(); openSeriesModal(${s.id})">📖 View Chapters</button>
+              </div>
             </div>
           </div>
         `).join("");
@@ -504,7 +569,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (data.success && data.series) {
         const s = data.series;
         document.getElementById("modal-series-title").textContent = s.title;
-        document.getElementById("modal-series-cover").src = s.cover_url || "";
+        const coverEl = document.getElementById("modal-series-cover");
+        if (coverEl) {
+          coverEl.onerror = function() { this.src = '/static/placeholder.jpg'; };
+          coverEl.src = `/api/series/${seriesId}/cover`;
+        }
         document.getElementById("modal-engine-badge").textContent = `Engine: ${s.engine || 'Auto'}`;
         document.getElementById("modal-synopsis").textContent = s.synopsis || "Tracked in local library database.";
 
@@ -524,12 +593,13 @@ document.addEventListener("DOMContentLoaded", () => {
               const mRes = await fetch(`/api/series/${seriesId}/refresh-metadata`, { method: "POST" });
               const mData = await mRes.json();
               if (mData.success) {
+                showToast("Metadata successfully updated!", "success");
                 openSeriesModal(seriesId);
               } else {
-                alert("Could not find online metadata for this series.");
+                showToast("Could not find online metadata for this series.", "info");
               }
             } catch(err) {
-              alert("Error fetching metadata: " + err.message);
+              showToast("Error fetching metadata: " + err.message, "error");
             } finally {
               btnRefreshMeta.textContent = "🔄 Fetch MangaDex Metadata";
               btnRefreshMeta.disabled = false;
@@ -559,7 +629,7 @@ document.addEventListener("DOMContentLoaded", () => {
         seriesModal.classList.remove("hidden");
       }
     } catch (e) {
-      alert("Failed to load series: " + e.message);
+      showToast("Failed to load series: " + e.message, "error");
     }
   };
 
@@ -685,17 +755,21 @@ document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("webkitfullscreenchange", updateFsBtnText);
   }
 
-  readerClose.addEventListener("click", () => {
+  window.closeReader = function() {
     // If in fullscreen, exit fullscreen first
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
       else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     }
+    if (seriesModal) seriesModal.classList.add("hidden");
     readerView.classList.add("hidden");
     readerPagesContainer.innerHTML = "";
     currentReadingChapterId = null;
+    switchTab("tab-library");
     loadLibrary();
-  });
+  };
+
+  readerClose.addEventListener("click", window.closeReader);
 
   readerScrollTop.addEventListener("click", () => {
     readerView.scrollTo({ top: 0, behavior: "smooth" });
@@ -755,7 +829,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? `<button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="openReader(${data.prev_chapter_id})">❮ Previous Chapter</button>` 
                 : ''
               }
-              <button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="readerClose.click()">Back to Library</button>
+              <button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="closeReader()">Back to Library</button>
             </div>
           </div>
         `;
@@ -824,14 +898,14 @@ document.addEventListener("DOMContentLoaded", () => {
         btnElem.style.color = "#10b981";
         btnElem.style.borderColor = "#10b981";
         btnElem.style.opacity = "1";
-        alert("✅ Promotional page fingerprinted! Future chapter downloads will automatically trim this ad.");
+        showToast("✅ Promotional page fingerprinted! Future downloads will trim this ad.", "success");
       } else {
-        alert("Error marking promo: " + (data.error || "Unknown error"));
+        showToast("Error marking promo: " + (data.error || "Unknown error"), "error");
         btnElem.textContent = "🚫 Mark as Promo";
         btnElem.disabled = false;
       }
     } catch (e) {
-      alert("Network error: " + e.message);
+      showToast("Network error: " + e.message, "error");
       btnElem.textContent = "🚫 Mark as Promo";
       btnElem.disabled = false;
     }
@@ -852,7 +926,7 @@ document.addEventListener("DOMContentLoaded", () => {
   btnLabTest.addEventListener("click", async () => {
     const url = labUrlInput.value.trim();
     if (!url) {
-      alert("Please paste a URL to test.");
+      showToast("Please paste a URL to test.", "info");
       return;
     }
 
@@ -979,7 +1053,7 @@ document.addEventListener("DOMContentLoaded", () => {
         loadPromoSignatures();
       }
     } catch (e) {
-      alert("Error deleting signature: " + e.message);
+      showToast("Error deleting signature: " + e.message, "error");
     }
   };
 
@@ -987,7 +1061,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnVerifyAnilist) {
     btnVerifyAnilist.addEventListener("click", async () => {
       const token = document.getElementById("setting-anilist-token").value.trim();
-      if (!token) return alert("Please paste an AniList token first.");
+      if (!token) return showToast("Please paste an AniList token first.", "info");
       btnVerifyAnilist.textContent = "Checking...";
       btnVerifyAnilist.disabled = true;
       const statusElem = document.getElementById("anilist-status");
@@ -1001,13 +1075,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.success) {
           statusElem.style.color = "var(--success)";
           statusElem.textContent = `✅ Connected as: ${data.username} (ID: ${data.user_id})`;
+          showToast(`Connected as AniList user: ${data.username}`, "success");
         } else {
           statusElem.style.color = "var(--danger)";
           statusElem.textContent = `❌ Verification failed: ${data.error}`;
+          showToast(`Verification failed: ${data.error}`, "error");
         }
       } catch (e) {
         statusElem.style.color = "var(--danger)";
         statusElem.textContent = `❌ Network error: ${e.message}`;
+        showToast(`Network error: ${e.message}`, "error");
       } finally {
         btnVerifyAnilist.textContent = "Verify";
         btnVerifyAnilist.disabled = false;
@@ -1019,7 +1096,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnVerifyMal) {
     btnVerifyMal.addEventListener("click", async () => {
       const token = document.getElementById("setting-mal-token").value.trim();
-      if (!token) return alert("Please paste a MyAnimeList access token first.");
+      if (!token) return showToast("Please paste a MyAnimeList access token first.", "info");
       btnVerifyMal.textContent = "Checking...";
       btnVerifyMal.disabled = true;
       const statusElem = document.getElementById("mal-status");
@@ -1033,13 +1110,16 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data.success) {
           statusElem.style.color = "var(--success)";
           statusElem.textContent = `✅ Connected as: ${data.username} (ID: ${data.user_id})`;
+          showToast(`Connected as MyAnimeList user: ${data.username}`, "success");
         } else {
           statusElem.style.color = "var(--danger)";
           statusElem.textContent = `❌ Verification failed: ${data.error}`;
+          showToast(`Verification failed: ${data.error}`, "error");
         }
       } catch (e) {
         statusElem.style.color = "var(--danger)";
         statusElem.textContent = `❌ Network error: ${e.message}`;
+        showToast(`Network error: ${e.message}`, "error");
       } finally {
         btnVerifyMal.textContent = "Verify";
         btnVerifyMal.disabled = false;
@@ -1081,9 +1161,10 @@ document.addEventListener("DOMContentLoaded", () => {
           msg.textContent = "✅ Settings successfully saved!";
           msg.classList.remove("hidden");
           setTimeout(() => msg.classList.add("hidden"), 3000);
+          showToast("Settings successfully saved!", "success");
         }
       } catch (e) {
-        alert("Failed to save settings: " + e.message);
+        showToast("Failed to save settings: " + e.message, "error");
       } finally {
         btnSaveSettings.textContent = "💾 Save Settings";
         btnSaveSettings.disabled = false;
@@ -1095,7 +1176,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnTestDiscord) {
     btnTestDiscord.addEventListener("click", async () => {
       const target = document.getElementById("setting-discord-webhook").value.trim();
-      if (!target) return alert("Please enter a Discord Webhook URL first.");
+      if (!target) return showToast("Please enter a Discord Webhook URL first.", "info");
       btnTestDiscord.textContent = "Testing...";
       btnTestDiscord.disabled = true;
       try {
@@ -1105,9 +1186,9 @@ document.addEventListener("DOMContentLoaded", () => {
           body: JSON.stringify({ channel: "discord", target })
         });
         const data = await res.json();
-        alert(data.success ? "✅ Discord webhook test sent successfully!" : "❌ Discord webhook test failed. Verify URL.");
+        showToast(data.success ? "✅ Discord webhook test sent successfully!" : "❌ Discord webhook test failed. Verify URL.", data.success ? "success" : "error");
       } catch (e) {
-        alert("Test error: " + e.message);
+        showToast("Test error: " + e.message, "error");
       } finally {
         btnTestDiscord.textContent = "Test Discord";
         btnTestDiscord.disabled = false;
@@ -1119,7 +1200,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (btnTestNtfy) {
     btnTestNtfy.addEventListener("click", async () => {
       const target = document.getElementById("setting-ntfy-topic").value.trim();
-      if (!target) return alert("Please enter an Ntfy Topic URL first.");
+      if (!target) return showToast("Please enter an Ntfy Topic URL first.", "info");
       btnTestNtfy.textContent = "Testing...";
       btnTestNtfy.disabled = true;
       try {
@@ -1129,9 +1210,9 @@ document.addEventListener("DOMContentLoaded", () => {
           body: JSON.stringify({ channel: "ntfy", target })
         });
         const data = await res.json();
-        alert(data.success ? "✅ Ntfy push test sent successfully!" : "❌ Ntfy push test failed.");
+        showToast(data.success ? "✅ Ntfy push test sent successfully!" : "❌ Ntfy push test failed.", data.success ? "success" : "error");
       } catch (e) {
-        alert("Test error: " + e.message);
+        showToast("Test error: " + e.message, "error");
       } finally {
         btnTestNtfy.textContent = "Test Ntfy";
         btnTestNtfy.disabled = false;

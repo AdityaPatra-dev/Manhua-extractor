@@ -692,31 +692,233 @@ input:focus, select:focus {
   transform: translateY(-1px);
 }
 
-/* Mobile viewport adjustments */
-@media (max-width: 640px) {
+/* Toast Notifications (In-App WebView Friendly) */
+.toast-container {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: 90%;
+  width: 380px;
+}
+
+.toast {
+  background: rgba(19, 27, 46, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #fff;
+  border: 1px solid var(--border-color);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: toastIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  pointer-events: auto;
+}
+
+.toast.toast-success {
+  border-left: 4px solid var(--success);
+}
+
+.toast.toast-error {
+  border-left: 4px solid var(--danger);
+}
+
+.toast.toast-info {
+  border-left: 4px solid var(--accent);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Responsive Input Form Layout */
+.input-form-responsive {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+}
+
+.input-form-responsive input {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-button-grid {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Series Card Action Buttons */
+.series-card-actions {
+  margin-top: 0.6rem;
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* Mobile Viewport Adjustments (Phones & Android WebView) */
+@media (max-width: 768px) {
+  body {
+    padding: 0.75rem;
+    padding-bottom: 5.5rem; /* Room for sticky bottom nav */
+  }
+
+  .app-header {
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .brand h1 {
+    font-size: 1.15rem;
+  }
+
+  .subtitle {
+    font-size: 0.78rem;
+  }
+
+  /* Sleek sticky bottom app navigation */
+  .nav-tabs {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: rgba(19, 27, 46, 0.96);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: 0;
+    border-top: 1px solid var(--border-color);
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px)) 8px;
+    margin: 0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .nav-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 2px;
+    font-size: 0.72rem;
+    border-radius: 8px;
+    min-height: 48px;
+    gap: 2px;
+    text-align: center;
+  }
+
+  #btn-phone-connect {
+    display: none;
+  }
+
+  .card {
+    padding: 1.1rem;
+    margin-bottom: 1rem;
+    border-radius: 10px;
+  }
+
+  /* Full-width URL input with stacked 2-column action buttons */
+  .input-form-responsive {
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .input-form-responsive input {
+    width: 100%;
+    font-size: 0.95rem;
+    padding: 0.75rem;
+  }
+
+  .input-button-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .input-button-grid .btn {
+    width: 100%;
+    padding: 0.7rem 0.4rem;
+    font-size: 0.82rem;
+    text-align: center;
+    justify-content: center;
+    display: flex;
+    align-items: center;
+  }
+
+  /* 2-column mobile manga library grid */
+  .library-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .series-cover {
+    height: 180px;
+  }
+
+  .series-details {
+    padding: 0.65rem;
+  }
+
+  .series-title {
+    font-size: 0.88rem;
+    line-height: 1.25;
+  }
+
+  .series-meta {
+    font-size: 0.72rem;
+  }
+
   .catalog-header {
     flex-direction: column;
     align-items: center;
     text-align: center;
   }
+
   .catalog-header img {
     margin: 0 auto;
   }
+
   .catalog-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
-  .catalog-toolbar-left {
-    width: 100%;
-    justify-content: space-between;
-  }
+
   .catalog-chapter-row {
     padding: 8px 10px;
   }
+
   .reader-topbar {
     padding: 0.5rem 0.75rem;
     font-size: 0.8rem;
   }
+
   .reader-title-info {
     font-size: 0.8rem;
   }
