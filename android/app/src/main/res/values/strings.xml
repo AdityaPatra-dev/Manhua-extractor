@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Manhua Extractor</string>
+    <string name="channel_name">Download Service</string>
+    <string name="channel_description">Active manhua chapters downloading in the background</string>
+    <string name="notification_title">Manhua Extractor</string>
+    <string name="notification_starting">Starting background download...</string>
+</resources>

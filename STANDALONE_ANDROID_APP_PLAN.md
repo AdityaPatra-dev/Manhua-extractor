@@ -189,7 +189,7 @@ flowchart TD
 
 ## 6. Implementation Milestones
 
-- [ ] **Milestone 1**: Create `android/` project skeleton and configure Chaquopy with required Python wheels.
+- [x] **Milestone 1**: Create `android/` project skeleton and configure Chaquopy with required Python wheels.
 - [ ] **Milestone 2**: Create `android_entry.py` adapter to wire storage paths and background Uvicorn loop.
 - [ ] **Milestone 3**: Implement `MainActivity.kt` with hardware-accelerated WebView and readiness poller.
 - [ ] **Milestone 4**: Implement `DownloadForegroundService.kt` for background downloads with notifications.
@@ -200,3 +200,4 @@ flowchart TD
 
 ## 7. Next Action
 Once you confirm this plan, we will execute **Milestone 1** (setting up the Android project structure and Chaquopy configuration) step-by-step with atomic commits.
+

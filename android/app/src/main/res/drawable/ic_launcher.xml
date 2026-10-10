@@ -1,0 +1,21 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#4f46e5"
+        android:pathData="M0,0h108v108h-108z"/>
+    <!-- Book symbol -->
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M25,30 C38,26 48,30 54,34 C60,30 70,26 83,30 L83,76 C70,72 60,76 54,80 C48,76 38,72 25,76 Z"/>
+    <path
+        android:strokeColor="#6366f1"
+        android:strokeWidth="2"
+        android:pathData="M54,34 L54,80"/>
+    <!-- Lightning bolt -->
+    <path
+        android:fillColor="#f59e0b"
+        android:pathData="M58,40 L49,56 L55,56 L50,70 L60,52 L54,52 Z"/>
+</vector>
