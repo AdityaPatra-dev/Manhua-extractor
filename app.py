@@ -45,13 +45,20 @@ from core.updater import run_library_update
 from core.notifier import send_test_alert
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DOWNLOADS_DIR = os.path.join(BASE_DIR, "downloads")
+DOWNLOADS_DIR = os.environ.get("MANHUA_DOWNLOADS_DIR") or os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 # Initialize Database
 init_db()
 
 app = FastAPI(title="Universal Manhua Extractor & Library")
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "platform": "android" if os.environ.get("MANHUA_IS_ANDROID") else "desktop"
+    }
 
 # Mount static folder
 static_path = os.path.join(BASE_DIR, "static")

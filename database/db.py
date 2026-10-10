@@ -3,10 +3,11 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 
-DEFAULT_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "library.db")
+DEFAULT_DB_PATH = os.environ.get("MANHUA_DB_PATH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "library.db")
 
-def get_connection(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
+def get_connection(db_path: str = None) -> sqlite3.Connection:
+    target_path = db_path or os.environ.get("MANHUA_DB_PATH") or DEFAULT_DB_PATH
+    conn = sqlite3.connect(target_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
