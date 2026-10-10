@@ -51,16 +51,32 @@ class ExtractorDispatcher:
         else:
             self.scraper = requests.Session()
 
+    @staticmethod
+    def _is_challenge_page(html: str) -> bool:
+        if not html:
+            return True
+        lower = html.lower()
+        return any(marker in lower for marker in (
+            "just a moment",
+            "performing security verification",
+            "cf-browser-verification",
+            "challenges.cloudflare.com",
+            "cf-turnstile",
+            "__cf_chl_opt"
+        ))
+
     def fetch_page(self, url: str) -> Tuple[int, str, BeautifulSoup]:
-        """Fetch URL using curl_cffi Chrome impersonation, falling back to Cloudscraper."""
+        """Fetch URL using curl_cffi Chrome impersonation, falling back to Cloudscraper, then Browser Sidecar."""
         headers = DEFAULT_HEADERS.copy()
         headers["Referer"] = url
+        if self.cffi_session and "User-Agent" in self.cffi_session.headers:
+            headers["User-Agent"] = self.cffi_session.headers["User-Agent"]
 
-        # 1. Try curl_cffi with full Chrome 124 TLS signature
+        # 1. Try curl_cffi with full Chrome 124 TLS signature (includes cached clearance cookies)
         if self.cffi_session:
             try:
                 resp = self.cffi_session.get(url, headers=headers, timeout=25)
-                if resp.status_code == 200:
+                if resp.status_code == 200 and not self._is_challenge_page(resp.text):
                     html = resp.text
                     soup = BeautifulSoup(html, "html.parser")
                     return resp.status_code, html, soup
@@ -68,25 +84,46 @@ class ExtractorDispatcher:
                 pass
 
         # 2. Fallback to Cloudscraper
-        resp = self.scraper.get(url, headers=headers, timeout=25)
-        html = resp.text
-        soup = BeautifulSoup(html, "html.parser")
+        try:
+            resp = self.scraper.get(url, headers=headers, timeout=25)
+            html = resp.text
+            soup = BeautifulSoup(html, "html.parser")
+        except Exception:
+            resp = None
+            html = ""
+            soup = BeautifulSoup("", "html.parser")
 
-        # 3. Fallback to Browser Sidecar (FlareSolverr / Playwright) if blocked
-        if resp.status_code in (403, 503):
+        # 3. Fallback to Browser Sidecar (FlareSolverr / nodriver) if blocked
+        is_blocked = (resp is None) or (resp.status_code in (403, 503)) or self._is_challenge_page(html)
+        if is_blocked:
             try:
                 from .browser_sidecar import fetch_protected_page
                 from database.db import get_setting
                 flaresolverr_url = get_setting("flaresolverr_url", "http://localhost:8191/v1")
                 sidecar_res = fetch_protected_page(url, flaresolverr_url=flaresolverr_url)
                 if sidecar_res and sidecar_res.get("success") and sidecar_res.get("text"):
+                    # Cache clearance cookies and User-Agent in session so subsequent requests don't need browser!
+                    cookies = sidecar_res.get("cookies")
+                    user_agent = sidecar_res.get("user_agent")
+                    if cookies:
+                        if self.cffi_session:
+                            for k, v in cookies.items():
+                                self.cffi_session.cookies.set(k, v)
+                        for k, v in cookies.items():
+                            self.scraper.cookies.set(k, v)
+                    if user_agent:
+                        if self.cffi_session:
+                            self.cffi_session.headers["User-Agent"] = user_agent
+                        self.scraper.headers["User-Agent"] = user_agent
+
                     html = sidecar_res["text"]
                     soup = BeautifulSoup(html, "html.parser")
                     return 200, html, soup
             except Exception:
                 pass
 
-        return resp.status_code, html, soup
+        status_code = resp.status_code if resp is not None else 500
+        return status_code, html, soup
 
     def analyze_url(self, url: str) -> Dict[str, Any]:
         """Analyze a page, match the appropriate engine, and extract panels + navigation."""

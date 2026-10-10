@@ -218,9 +218,12 @@ class BaseExtractor(ABC):
         clean_series_path = re.sub(r'/(?:chapter|ch|c|ajax)[-_/\d].*$', '', parsed.path, flags=re.I).strip('/')
 
         for a in link_candidates:
-            # Skip links inside sidebar / recommendation containers
+            # Skip links inside unrelated widget / recommendation containers
             parent_classes = " ".join(a.find_parent().get("class", [])) if a.find_parent() else ""
-            if any(bad in parent_classes.lower() for bad in ("widget", "popular", "related", "sidebar", "footer", "comment")):
+            p_lower = parent_classes.lower()
+            if any(bad in p_lower for bad in ("widget", "popular", "related", "footer", "comment")) and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "volume")):
+                continue
+            if "sidebar" in p_lower and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "drawer")):
                 continue
 
             href = a.get("href", "").strip()

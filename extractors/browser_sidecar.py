@@ -95,6 +95,7 @@ def solve_with_playwright(target_url: str, timeout_seconds: int = 30) -> Optiona
 def solve_with_nodriver(target_url: str, timeout_seconds: int = 15) -> Optional[Dict[str, Any]]:
     """
     On-demand nodriver / Chrome CDP fallback for Cloudflare Turnstile challenges.
+    Launches Chrome completely off-screen so no windows pop open or interrupt the user.
     """
     try:
         import nodriver as uc
@@ -102,8 +103,9 @@ def solve_with_nodriver(target_url: str, timeout_seconds: int = 15) -> Optional[
         import concurrent.futures
 
         async def _run():
-            is_headless = not bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
-            browser = await uc.start(headless=is_headless)
+            c = uc.Config(headless=False)
+            c.add_argument("--window-position=-10000,-10000")
+            browser = await uc.start(c)
             try:
                 page = await browser.get(target_url)
                 for _ in range(timeout_seconds):
@@ -114,17 +116,30 @@ def solve_with_nodriver(target_url: str, timeout_seconds: int = 15) -> Optional[
                             break
                     except Exception:
                         pass
-                # Allow JS/hydration to settle
-                await asyncio.sleep(2)
+
+                # Allow client-side frameworks (Next.js, Vue, etc.) to hydrate DOM
+                for _ in range(5):
+                    await asyncio.sleep(1)
+                    try:
+                        imgs = await page.evaluate('document.querySelectorAll("img").length')
+                        if imgs and int(imgs) > 1:
+                            break
+                    except Exception:
+                        pass
+
+                cookies = await page.send(uc.cdp.network.get_cookies())
+                try:
+                    ua = await page.evaluate("navigator.userAgent")
+                except Exception:
+                    ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 content = await page.get_content()
-                cookies_cdp = await page.send(uc.cdp.network.get_cookies())
-                cookie_dict = {c.name: c.value for c in cookies_cdp} if cookies_cdp else {}
+                cookie_dict = {c.name: c.value for c in cookies} if cookies else {}
                 return {
                     "success": True,
                     "status_code": 200,
                     "text": content,
                     "cookies": cookie_dict,
-                    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+                    "user_agent": ua
                 }
             finally:
                 browser.stop()
