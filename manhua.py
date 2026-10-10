@@ -23,21 +23,26 @@ from database.db import (
     add_or_update_chapter
 )
 from extractors.dispatcher import dispatcher
-from core.downloader import download_panels_stream
+from core.downloader import (
+    download_panels_stream,
+    get_staging_dir,
+    cleanup_staging_dir
+)
+from core.slicer import slice_chapter_panels
 from core.compiler import compile_pdf, compile_cbz, save_raw_images
 
 DEFAULT_CONCURRENCY = 6
 
-def run_cli_downloader():
-    print("=" * 65)
-    print("   UNIVERSAL MANHUA EXTRACTOR & DATABASE (95%+ ENGINE)   ")
-    print("=" * 65)
 
-    pasted_url = input("\nPaste the chapter URL:\n> ").strip()
-    if not pasted_url:
-        print("[-] Error: URL cannot be empty.")
-        return
-
+def download_series(
+    pasted_url: str,
+    total_chapters: int = 1,
+    out_format: str = "pdf",
+    dest_input: str = "",
+    slice_eink: bool = False,
+    aspect_ratio: float = 1.414
+):
+    """Core download worker supporting resume cache and smart e-ink slicing."""
     print("\n[*] Analyzing page layout and detecting CMS engine...")
     data = dispatcher.analyze_url(pasted_url)
     if not data.get("success") or not data.get("pages"):
@@ -57,26 +62,6 @@ def run_cli_downloader():
     print(f"[✅] Isolated Panels: {total_panels}")
     if data.get("next_chapter_url"):
         print(f"[✅] Next Chapter   : {data.get('next_chapter_url')}")
-
-    try:
-        total_chapters = int(input("\nHow many chapters do you want to download? (1 = single):\n> ") or "1")
-    except ValueError:
-        print("[-] Invalid number. Defaulting to 1.")
-        total_chapters = 1
-
-    print("\nSelect Output Format:")
-    print(" 1 -> Compressed PDF (Default, optimized for mobile/Termux)")
-    print(" 2 -> CBZ Comic Archive (With ComicInfo.xml metadata)")
-    print(" 3 -> Raw JPEG Folder")
-    fmt_choice = input("> ").strip()
-    fmt_map = {"1": "pdf", "2": "cbz", "3": "folder"}
-    out_format = fmt_map.get(fmt_choice, "pdf")
-
-    # Safe destination directory
-    print("\nWhere would you like to save your downloads?")
-    print(" -> Press [ENTER] for default 'downloads/' directory")
-    print(" -> Or type custom location (e.g. /storage/emulated/0/manhua/ )")
-    dest_input = input("> ").strip()
 
     base_dir = dest_input if dest_input else os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
     safe_folder_name = re.sub(r'[\\/*?:"<>|]', "", series_title)
@@ -99,6 +84,8 @@ def run_cli_downloader():
     )
 
     print(f"\n[+] Saving to: {series_dir}")
+    if slice_eink:
+        print(f"[+] E-Ink / Kindle Mode: Enabled (aspect ratio ~{aspect_ratio})")
     print("=" * 65)
 
     current_url = pasted_url
@@ -127,6 +114,7 @@ def run_cli_downloader():
             pbar.n = done
             pbar.refresh()
 
+        staging_dir = get_staging_dir(base_dir, series_slug, current_ch_num)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         panel_bytes = loop.run_until_complete(
@@ -136,6 +124,7 @@ def run_cli_downloader():
                 concurrency=DEFAULT_CONCURRENCY,
                 max_width=1080,
                 jpeg_quality=75,
+                staging_dir=staging_dir,
                 progress_callback=on_step
             )
         )
@@ -144,6 +133,12 @@ def run_cli_downloader():
         if not panel_bytes:
             print(f"[-] No panels could be downloaded for Chapter {current_ch_num}.")
             continue
+
+        # Smart Kindle/E-Ink Slicing for tall webtoon strips
+        if slice_eink:
+            print(f"[*] Slicing continuous webtoon ribbons into e-ink pages...")
+            panel_bytes = slice_chapter_panels(panel_bytes, target_aspect_ratio=aspect_ratio)
+            print(f"[*] Formatted into {len(panel_bytes)} readable pages.")
 
         safe_slug = series_slug.replace('-', '_')
         ch_str = f"{current_ch_num:g}".replace('.', '_')
@@ -163,6 +158,9 @@ def run_cli_downloader():
             output_file = os.path.join(series_dir, f"Ch_{ch_str}")
             save_raw_images(panel_bytes, output_file)
             print(f"[✅] Saved raw images to: {output_file}")
+
+        # Download & compilation verified, clean up staging files
+        cleanup_staging_dir(staging_dir)
 
         file_size = os.path.getsize(output_file) if os.path.exists(output_file) and os.path.isfile(output_file) else 0
 
@@ -187,6 +185,51 @@ def run_cli_downloader():
     print(f"[📁] Output directory: {series_dir}")
     print("=" * 65)
 
+
+def run_cli_downloader():
+    print("=" * 65)
+    print("   UNIVERSAL MANHUA EXTRACTOR & DATABASE (95%+ ENGINE)   ")
+    print("=" * 65)
+
+    pasted_url = input("\nPaste the chapter URL:\n> ").strip()
+    if not pasted_url:
+        print("[-] Error: URL cannot be empty.")
+        return
+
+    try:
+        total_chapters = int(input("\nHow many chapters do you want to download? (1 = single):\n> ") or "1")
+    except ValueError:
+        print("[-] Invalid number. Defaulting to 1.")
+        total_chapters = 1
+
+    print("\nSelect Output Format:")
+    print(" 1 -> Compressed PDF (Default, optimized for mobile/Termux)")
+    print(" 2 -> CBZ Comic Archive (With ComicInfo.xml metadata)")
+    print(" 3 -> Raw JPEG Folder")
+    fmt_choice = input("> ").strip()
+    fmt_map = {"1": "pdf", "2": "cbz", "3": "folder"}
+    out_format = fmt_map.get(fmt_choice, "pdf")
+
+    print("\nSmart E-Ink / Kindle Mode:")
+    print(" Automatically cut tall vertical webtoon strips into book pages?")
+    slice_choice = input(" [y/N]: ").strip().lower()
+    slice_eink = slice_choice.startswith("y")
+
+    # Safe destination directory
+    print("\nWhere would you like to save your downloads?")
+    print(" -> Press [ENTER] for default 'downloads/' directory")
+    print(" -> Or type custom location (e.g. /storage/emulated/0/manhua/ )")
+    dest_input = input("> ").strip()
+
+    download_series(
+        pasted_url=pasted_url,
+        total_chapters=total_chapters,
+        out_format=out_format,
+        dest_input=dest_input,
+        slice_eink=slice_eink
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Universal Manhua Extractor & Database")
     parser.add_argument("--web", "-w", action="store_true", help="Launch the Web GUI dashboard on http://localhost:8000")
@@ -194,6 +237,13 @@ def main():
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host address for Web GUI (default: 0.0.0.0)")
     parser.add_argument("--test", "-t", type=str, help="Test URL compatibility and print diagnostic report")
     parser.add_argument("--update-library", "-u", action="store_true", help="Check all library series for new chapters and download them")
+
+    # Batch / headless download arguments
+    parser.add_argument("--url", "-U", type=str, help="Direct chapter URL to download in batch mode")
+    parser.add_argument("--count", "-c", type=int, default=1, help="Number of chapters to download (default: 1)")
+    parser.add_argument("--format", "-f", choices=["pdf", "cbz", "folder"], default="pdf", help="Output format (default: pdf)")
+    parser.add_argument("--dest", "-d", type=str, default="", help="Destination folder (default: downloads/)")
+    parser.add_argument("--eink", "-s", action="store_true", help="Slice vertical webtoon strips for Kindle/E-Ink devices")
 
     args = parser.parse_args()
 
@@ -229,6 +279,14 @@ def main():
         else:
             print("\n[❌] TEST FAILED!")
             print(f" - Error: {res.get('error')}")
+    elif args.url:
+        download_series(
+            pasted_url=args.url,
+            total_chapters=args.count,
+            out_format=args.format,
+            dest_input=args.dest,
+            slice_eink=args.eink
+        )
     else:
         run_cli_downloader()
 
