@@ -36,6 +36,11 @@ from .metadata import (
     fetch_rich_metadata,
     generate_rich_comicinfo
 )
+from .upscaler import (
+    upscale_panel,
+    is_upscaler_api_available,
+    get_available_upscalers
+)
 
 __all__ = [
     "optimize_panel_image",
@@ -63,8 +68,12 @@ __all__ = [
     "update_mal_progress",
     "sync_trackers",
     "fetch_rich_metadata",
-    "generate_rich_comicinfo"
+    "generate_rich_comicinfo",
+    "upscale_panel",
+    "is_upscaler_api_available",
+    "get_available_upscalers"
 ]
+
 
 
 
