@@ -286,6 +286,20 @@
       </div>
 
       <div class="card">
+        <h2>Anti-Bot & Cloudflare Bypass Sidecar</h2>
+        <p class="card-desc">Route Turnstile-protected domains through an external FlareSolverr container to bypass interactive challenge checkboxes.</p>
+
+        <div class="input-group">
+          <label for="setting-flaresolverr-url">FlareSolverr Endpoint</label>
+          <div class="input-with-button">
+            <input type="text" id="setting-flaresolverr-url" placeholder="http://localhost:8191/v1">
+            <button id="btn-test-flaresolverr" class="btn btn-secondary">Test Connection</button>
+          </div>
+          <div id="flaresolverr-status" style="margin-top: 6px; font-size: 0.85rem; font-weight: 600;"></div>
+        </div>
+      </div>
+
+      <div class="card">
         <h2>Promotional & Ad Page Filter</h2>
         <p class="card-desc">Registered perceptual hash signatures that will be automatically detected and trimmed from downloads.</p>
         <div id="promo-signatures-list" style="margin-top: 1rem;">
@@ -307,7 +321,9 @@
           <img id="modal-series-cover" src="" alt="Cover" class="modal-cover">
           <div>
             <span id="modal-engine-badge" class="preview-badge">Engine</span>
+            <div id="modal-meta-tags" style="margin: 6px 0; font-size: 0.85rem; color: var(--text-muted);"></div>
             <p id="modal-synopsis" class="modal-synopsis"></p>
+            <button id="modal-btn-refresh-meta" class="btn btn-secondary" style="margin-top: 8px; font-size: 0.8rem;">🔄 Fetch MangaDex Metadata</button>
           </div>
         </div>
         <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Chapters</h4>

@@ -263,7 +263,25 @@ async def run_download_job(req: DownloadRequest):
                 compile_pdf(panel_bytes, output_file)
             elif req.format == "cbz":
                 output_file = os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.cbz")
-                compile_cbz(panel_bytes, output_file, series_title=series_title, chapter_num=chapter_num, source_url=current_url)
+                series_meta = get_series_by_id(series_id)
+                if not series_meta or not series_meta.get("author") or series_meta.get("author") == "Unknown":
+                    try:
+                        from core.metadata import fetch_rich_metadata
+                        fetched_meta = fetch_rich_metadata(series_title)
+                        if fetched_meta:
+                            update_series_rich_metadata(series_id, fetched_meta)
+                            series_meta = get_series_by_id(series_id)
+                    except Exception:
+                        pass
+                compile_cbz(
+                    panel_bytes,
+                    output_file,
+                    series_title=series_title,
+                    chapter_num=chapter_num,
+                    source_url=current_url,
+                    chapter_title=f"Chapter {chapter_num}",
+                    metadata=dict(series_meta) if series_meta else None
+                )
             else: # folder
                 output_file = os.path.join(series_dir, f"Ch_{ch_str}")
                 save_raw_images(panel_bytes, output_file)
@@ -651,5 +669,30 @@ async def mark_page_as_promo(req: MarkPromoRequest):
 
     sig_id = add_promo_signature(phash=phash, label=req.label, match_threshold=req.threshold)
     return {"success": True, "id": sig_id, "phash": phash}
+
+
+# --- Anti-Bot & Sidecar Endpoints ---
+
+@app.post("/api/settings/test-flaresolverr")
+async def test_flaresolverr_conn(data: Dict[str, str]):
+    endpoint = data.get("url", "http://localhost:8191/v1")
+    from extractors.browser_sidecar import is_flaresolverr_available
+    ok = is_flaresolverr_available(endpoint)
+    return {"success": ok}
+
+
+@app.post("/api/series/{series_id}/refresh-metadata")
+async def refresh_series_meta(series_id: int):
+    s = get_series_by_id(series_id)
+    if not s:
+        return JSONResponse({"success": False, "error": "Series not found"}, status_code=404)
+    from core.metadata import fetch_rich_metadata
+    meta = fetch_rich_metadata(s["title"])
+    if meta:
+        update_series_rich_metadata(series_id, meta)
+        updated = get_series_by_id(series_id)
+        return {"success": True, "series": dict(updated)}
+    return {"success": False, "error": "No metadata found"}
+
 
 

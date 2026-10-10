@@ -243,6 +243,35 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("modal-engine-badge").textContent = `Engine: ${s.engine || 'Auto'}`;
         document.getElementById("modal-synopsis").textContent = s.synopsis || "Tracked in local library database.";
 
+        const metaParts = [];
+        if (s.author) metaParts.push(`✍️ <strong>${s.author}</strong>`);
+        if (s.artist) metaParts.push(`🎨 <strong>${s.artist}</strong>`);
+        if (s.genres) metaParts.push(`🏷️ ${s.genres}`);
+        if (s.year) metaParts.push(`📅 ${s.year}`);
+        document.getElementById("modal-meta-tags").innerHTML = metaParts.length > 0 ? metaParts.join(" &bull; ") : "<em>No author/genre metadata cached yet.</em>";
+
+        const btnRefreshMeta = document.getElementById("modal-btn-refresh-meta");
+        if (btnRefreshMeta) {
+          btnRefreshMeta.onclick = async () => {
+            btnRefreshMeta.textContent = "Fetching...";
+            btnRefreshMeta.disabled = true;
+            try {
+              const mRes = await fetch(`/api/series/${seriesId}/refresh-metadata`, { method: "POST" });
+              const mData = await mRes.json();
+              if (mData.success) {
+                openSeriesModal(seriesId);
+              } else {
+                alert("Could not find online metadata for this series.");
+              }
+            } catch(err) {
+              alert("Error fetching metadata: " + err.message);
+            } finally {
+              btnRefreshMeta.textContent = "🔄 Fetch MangaDex Metadata";
+              btnRefreshMeta.disabled = false;
+            }
+          };
+        }
+
         const chList = document.getElementById("modal-chapters-list");
         if (data.chapters && data.chapters.length > 0) {
           chList.innerHTML = data.chapters.map(c => `
@@ -485,6 +514,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.anilist_token) document.getElementById("setting-anilist-token").value = s.anilist_token;
         if (s.mal_enabled) document.getElementById("setting-mal-enabled").value = s.mal_enabled;
         if (s.mal_token) document.getElementById("setting-mal-token").value = s.mal_token;
+        if (s.flaresolverr_url) document.getElementById("setting-flaresolverr-url").value = s.flaresolverr_url;
       }
       loadPromoSignatures();
     } catch (e) {
@@ -607,7 +637,8 @@ document.addEventListener("DOMContentLoaded", () => {
         anilist_enabled: document.getElementById("setting-anilist-enabled").value,
         anilist_token: document.getElementById("setting-anilist-token").value.trim(),
         mal_enabled: document.getElementById("setting-mal-enabled").value,
-        mal_token: document.getElementById("setting-mal-token").value.trim()
+        mal_token: document.getElementById("setting-mal-token").value.trim(),
+        flaresolverr_url: document.getElementById("setting-flaresolverr-url") ? document.getElementById("setting-flaresolverr-url").value.trim() : ""
       };
 
       btnSaveSettings.textContent = "Saving...";
@@ -682,6 +713,38 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+
+  const btnTestFlaresolverr = document.getElementById("btn-test-flaresolverr");
+  if (btnTestFlaresolverr) {
+    btnTestFlaresolverr.addEventListener("click", async () => {
+      const url = document.getElementById("setting-flaresolverr-url").value.trim() || "http://localhost:8191/v1";
+      btnTestFlaresolverr.textContent = "Testing...";
+      btnTestFlaresolverr.disabled = true;
+      const statusElem = document.getElementById("flaresolverr-status");
+      try {
+        const res = await fetch("/api/settings/test-flaresolverr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        if (data.success) {
+          statusElem.style.color = "var(--success)";
+          statusElem.textContent = "✅ FlareSolverr is online and accessible!";
+        } else {
+          statusElem.style.color = "var(--danger)";
+          statusElem.textContent = "❌ Could not reach FlareSolverr container. Check URL and Docker container status.";
+        }
+      } catch (e) {
+        statusElem.style.color = "var(--danger)";
+        statusElem.textContent = "❌ Network error: " + e.message;
+      } finally {
+        btnTestFlaresolverr.textContent = "Test Connection";
+        btnTestFlaresolverr.disabled = false;
+      }
+    });
+  }
+
 
   // Switch tabs also triggers promo list load if settings tab
   const settingsTabBtn = document.querySelector('[data-tab="settings"]');
