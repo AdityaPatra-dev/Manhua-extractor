@@ -91,10 +91,13 @@ class ExtractorDispatcher:
         status_code, html, soup = self.fetch_page(url)
 
         if status_code != 200:
+            error_msg = f"HTTP {status_code}"
+            if status_code in (403, 503) and ("cloudflare" in html.lower() or "just a moment" in html.lower() or "challenges.cloudflare.com" in html.lower()):
+                error_msg = f"Cloudflare Bot Protection (HTTP {status_code}) - Site requires an interactive browser challenge"
             return {
                 "success": False,
                 "status_code": status_code,
-                "error": f"HTTP {status_code}",
+                "error": error_msg,
                 "url": url,
             }
 
@@ -136,9 +139,12 @@ class ExtractorDispatcher:
         """
         status_code, html, soup = self.fetch_page(url)
         if status_code != 200:
+            error_msg = f"Failed to connect (HTTP {status_code})"
+            if status_code in (403, 503) and ("cloudflare" in html.lower() or "just a moment" in html.lower() or "challenges.cloudflare.com" in html.lower()):
+                error_msg = f"Cloudflare Bot Protection (HTTP {status_code}) - Site requires an interactive browser challenge"
             return {
                 "success": False,
-                "error": f"Failed to connect (HTTP {status_code})",
+                "error": error_msg,
                 "status_code": status_code,
                 "url": url
             }
