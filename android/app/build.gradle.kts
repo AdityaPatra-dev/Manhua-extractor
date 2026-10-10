@@ -31,10 +31,7 @@ android {
                     install("requests==2.32.3")
                     install("httpx==0.27.2")
                     install("beautifulsoup4==4.12.3")
-                    install("pillow==10.4.0")
-                    install("reportlab==4.2.5")
-                    install("numpy==1.26.4")
-                    install("lxml==5.3.0")
+                    install("pillow")
                 }
             }
         }
