@@ -158,18 +158,20 @@ Currently, downloads run sequentially in a single job. Interrupting the script r
 | **Discord / Telegram / Ntfy Webhooks** | ⚡ Medium | 🟢 Low | **v1.2** | ✅ **COMPLETE** |
 | **Kindle / E-Ink Smart Strip Slicer** | ⚡ Medium | 🟡 Medium | **v1.3** | ✅ **COMPLETE** |
 | **Panel-Level Cache & Resume** | 🔥 High | 🟡 Medium | **v1.3** | ✅ **COMPLETE** |
-| **AniList / MAL Tracker Sync** | ⚡ Medium | 🟡 Medium | **v1.4** | ⏳ Next Up |
-| **Promotional & Ad Page Trimming (pHash)**| ⚡ Medium | 🟡 Medium | **v1.4** | ⏳ Next Up |
-| **Playwright Stealth Headless Fallback** | ⚡ Medium | 🔴 High | **v2.0** | Planned |
+| **AniList / MAL Tracker Sync** | ⚡ Medium | 🟡 Medium | **v1.4** | ✅ **COMPLETE** |
+| **Promotional & Ad Page Trimming (pHash)**| ⚡ Medium | 🟡 Medium | **v1.4** | ✅ **COMPLETE** |
+| **Playwright Stealth Headless Fallback** | ⚡ Medium | 🔴 High | **v2.0** | ⏳ Next Up |
+| **MangaDex / ComicInfo.xml Rich Metadata Scraper** | ⚡ Medium | 🟡 Medium | **v2.0** | ⏳ Next Up |
 | **AI Waifu2x Upscaling Pipeline** | 💡 Optional | 🔴 High | **v2.1** | Research |
 
 ---
 
 ## 9. Next Recommended Action
 
-1. **v1.4 Priority 1: AniList / MyAnimeList Progress Synchronization**:
-   * Integrate OAuth/token credentials in the Settings modal so reading progress updates both locally and on the user's remote AniList / MAL list.
-2. **v1.4 Priority 2: Promotional / Ad Page Trimming (pHash)**:
-   * Implement perceptual image hashing (`imagehash`) to automatically detect and trim recurrent credit/ad pages from compiled archives.
+1. **v2.0 Priority 1: Headless Sidecar (Playwright Stealth / Undetected Chrome)**:
+   * Provide an optional lightweight headless driver fallback that spins up only when encountering interactive Cloudflare Turnstile checkboxes, grabs `cf_clearance` cookies, and passes them to the async download engine.
+2. **v2.0 Priority 2: MangaDex API Rich Metadata Scraper**:
+   * Auto-fetch author, artist, tags, genres, and synopsis from MangaDex/AniList APIs to inject complete, rich `<ComicInfo.xml>` for Komga and Kavita.
+
 
 
