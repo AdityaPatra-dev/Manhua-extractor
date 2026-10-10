@@ -8,11 +8,14 @@ from database.db import (
     get_all_series,
     get_chapters_for_series,
     add_or_update_chapter,
-    get_setting
+    get_setting,
+    get_all_promo_signatures
 )
 from extractors.dispatcher import dispatcher
 from core.downloader import download_panels_stream, get_staging_dir, cleanup_staging_dir
 from core.compiler import compile_pdf, compile_cbz, save_raw_images
+from core.ad_filter import filter_chapter_panels
+from core.scrobbler import sync_trackers
 from core.notifier import dispatch_notification
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -98,6 +101,13 @@ async def check_series_updates(
         if not panel_bytes:
             break
 
+        # Filter recurring promotional / ad pages
+        known_sigs = get_all_promo_signatures()
+        if known_sigs:
+            clean_panels, removed = filter_chapter_panels(panel_bytes, known_signatures=known_sigs)
+            if removed > 0:
+                panel_bytes = clean_panels
+
         safe_slug = series_slug.replace('-', '_')
         ch_str = f"{ch_num:g}".replace('.', '_')
         output_file = ""
@@ -114,7 +124,6 @@ async def check_series_updates(
 
         # Download completed and compiled successfully, clear staging
         cleanup_staging_dir(staging_dir)
-
 
         file_size = os.path.getsize(output_file) if os.path.exists(output_file) and os.path.isfile(output_file) else 0
 
@@ -134,6 +143,17 @@ async def check_series_updates(
 
         downloaded_now.append(ch_num)
         downloaded_nums.add(ch_num)
+
+        # Scrobble tracker progress
+        try:
+            sync_trackers(
+                title=series_title,
+                chapter_num=ch_num,
+                anilist_id=series.get("anilist_id"),
+                mal_id=series.get("mal_id")
+            )
+        except Exception:
+            pass
 
         # Send push notification
         dispatch_notification(
