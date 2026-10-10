@@ -38,9 +38,11 @@ def compile_cbz(
     output_path: str,
     series_title: Optional[str] = None,
     chapter_num: Optional[float] = None,
-    source_url: Optional[str] = None
+    source_url: Optional[str] = None,
+    chapter_title: Optional[str] = None,
+    metadata: Optional[dict] = None
 ) -> bool:
-    """Compile images into a standard CBZ archive with ComicInfo.xml metadata."""
+    """Compile images into a standard CBZ archive with rich ComicInfo.xml metadata."""
     if not image_bytes_list:
         return False
 
@@ -53,7 +55,17 @@ def compile_cbz(
                 zf.writestr(page_name, img_bytes)
 
             # Generate ComicInfo.xml
-            comic_info = f"""<?xml version="1.0" encoding="utf-8"?>
+            if metadata:
+                from core.metadata import generate_rich_comicinfo
+                comic_info = generate_rich_comicinfo(
+                    metadata=metadata,
+                    chapter_num=chapter_num or 1.0,
+                    chapter_title=chapter_title,
+                    page_count=len(image_bytes_list),
+                    source_url=source_url
+                )
+            else:
+                comic_info = f"""<?xml version="1.0" encoding="utf-8"?>
 <ComicInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
   <Series>{series_title or 'Unknown Series'}</Series>
   <Number>{chapter_num or 1}</Number>

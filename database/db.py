@@ -96,6 +96,22 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             conn.execute("ALTER TABLE series ADD COLUMN mal_id INTEGER")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN mangadex_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN genres TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN tags TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN year INTEGER")
+        except sqlite3.OperationalError:
+            pass
     conn.close()
 
 # --- Series Operations ---
@@ -341,5 +357,43 @@ def update_series_trackers(
             WHERE id = ?
         """, (anilist_id, mal_id, series_id))
     conn.close()
+
+
+def update_series_rich_metadata(
+    series_id: int,
+    metadata: Dict[str, Any],
+    db_path: str = DEFAULT_DB_PATH
+) -> None:
+    conn = get_connection(db_path)
+    genres_str = ", ".join(metadata.get("genres") or []) if isinstance(metadata.get("genres"), list) else metadata.get("genres")
+    tags_str = ", ".join(metadata.get("tags") or []) if isinstance(metadata.get("tags"), list) else metadata.get("tags")
+    with conn:
+        conn.execute("""
+            UPDATE series
+            SET author = COALESCE(?, author),
+                artist = COALESCE(?, artist),
+                synopsis = COALESCE(?, synopsis),
+                genres = COALESCE(?, genres),
+                tags = COALESCE(?, tags),
+                year = COALESCE(?, year),
+                status = COALESCE(?, status),
+                mangadex_id = COALESCE(?, mangadex_id),
+                anilist_id = COALESCE(?, anilist_id),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (
+            metadata.get("author"),
+            metadata.get("artist"),
+            metadata.get("synopsis"),
+            genres_str,
+            tags_str,
+            metadata.get("year"),
+            metadata.get("status"),
+            metadata.get("mangadex_id"),
+            metadata.get("anilist_id"),
+            series_id
+        ))
+    conn.close()
+
 
 

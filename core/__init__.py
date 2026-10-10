@@ -32,6 +32,11 @@ from .scrobbler import (
     sync_trackers
 )
 
+from .metadata import (
+    fetch_rich_metadata,
+    generate_rich_comicinfo
+)
+
 __all__ = [
     "optimize_panel_image",
     "download_panels_stream",
@@ -56,7 +61,10 @@ __all__ = [
     "verify_mal_token",
     "search_mal_manga",
     "update_mal_progress",
-    "sync_trackers"
+    "sync_trackers",
+    "fetch_rich_metadata",
+    "generate_rich_comicinfo"
 ]
+
 
 

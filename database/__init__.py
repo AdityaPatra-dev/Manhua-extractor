@@ -16,7 +16,8 @@ from .db import (
     add_promo_signature,
     get_all_promo_signatures,
     delete_promo_signature,
-    update_series_trackers
+    update_series_trackers,
+    update_series_rich_metadata
 )
 
 
