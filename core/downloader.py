@@ -39,17 +39,20 @@ async def fetch_single_panel(
     max_width: Optional[int] = 1080,
     jpeg_quality: int = 75,
     retries: int = 3,
-    staging_dir: Optional[str] = None
+    staging_dir: Optional[str] = None,
+    image_format: str = "JPEG",
+    webp_quality: int = 80
 ) -> Tuple[int, Optional[bytes]]:
     # Check if panel was already cached in staging
     if staging_dir:
         try:
-            stage_file = os.path.join(staging_dir, f"panel_{index:04d}.jpg")
-            if os.path.exists(stage_file) and os.path.getsize(stage_file) > 512:
-                with open(stage_file, "rb") as f:
-                    cached_bytes = f.read()
-                if cached_bytes:
-                    return index, cached_bytes
+            for ext in ("webp", "jpg", "png"):
+                stage_file = os.path.join(staging_dir, f"panel_{index:04d}.{ext}")
+                if os.path.exists(stage_file) and os.path.getsize(stage_file) > 512:
+                    with open(stage_file, "rb") as f:
+                        cached_bytes = f.read()
+                    if cached_bytes:
+                        return index, cached_bytes
         except Exception:
             pass
 
@@ -60,12 +63,19 @@ async def fetch_single_panel(
                 async with session.get(url, headers=headers, timeout=timeout) as response:
                     if response.status == 200:
                         raw_bytes = await response.read()
-                        optimized = optimize_panel_image(raw_bytes, max_width=max_width, jpeg_quality=jpeg_quality)
+                        optimized = optimize_panel_image(
+                            raw_bytes,
+                            max_width=max_width,
+                            jpeg_quality=jpeg_quality,
+                            image_format=image_format,
+                            webp_quality=webp_quality
+                        )
                         if optimized:
                             if staging_dir:
                                 try:
                                     os.makedirs(staging_dir, exist_ok=True)
-                                    stage_file = os.path.join(staging_dir, f"panel_{index:04d}.jpg")
+                                    ext = "webp" if (image_format or "JPEG").upper() == "WEBP" else "jpg"
+                                    stage_file = os.path.join(staging_dir, f"panel_{index:04d}.{ext}")
                                     with open(stage_file, "wb") as f:
                                         f.write(optimized)
                                 except Exception:
@@ -83,11 +93,13 @@ async def download_panels_stream(
     max_width: Optional[int] = 1080,
     jpeg_quality: int = 75,
     staging_dir: Optional[str] = None,
-    progress_callback: Optional[Callable[[int, int], None]] = None
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    image_format: str = "JPEG",
+    webp_quality: int = 80
 ) -> List[bytes]:
     """
     Download a list of panel image URLs concurrently with retry logic,
-    disk staging cache, and progress reporting.
+    disk staging cache, image compression (JPEG/WebP), and progress reporting.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -109,9 +121,12 @@ async def download_panels_stream(
                 headers=headers,
                 max_width=max_width,
                 jpeg_quality=jpeg_quality,
-                staging_dir=staging_dir
+                staging_dir=staging_dir,
+                image_format=image_format,
+                webp_quality=webp_quality
             )
             tasks.append(t)
+
 
         completed = 0
         total = len(tasks)

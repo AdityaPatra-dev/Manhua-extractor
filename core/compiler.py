@@ -33,6 +33,15 @@ def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
             return False
     return False
 
+def detect_image_extension(img_bytes: bytes) -> str:
+    """Detect appropriate file extension from image header bytes."""
+    if len(img_bytes) >= 12 and img_bytes[:4] == b"RIFF" and img_bytes[8:12] == b"WEBP":
+        return "webp"
+    if len(img_bytes) >= 8 and img_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    return "jpg"
+
+
 def compile_cbz(
     image_bytes_list: List[bytes],
     output_path: str,
@@ -51,7 +60,8 @@ def compile_cbz(
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
             # Write page files
             for i, img_bytes in enumerate(image_bytes_list):
-                page_name = f"page_{i+1:03d}.jpg"
+                ext = detect_image_extension(img_bytes)
+                page_name = f"page_{i+1:03d}.{ext}"
                 zf.writestr(page_name, img_bytes)
 
             # Generate ComicInfo.xml
@@ -86,12 +96,14 @@ def save_raw_images(image_bytes_list: List[bytes], folder_path: str) -> bool:
     try:
         os.makedirs(folder_path, exist_ok=True)
         for i, img_bytes in enumerate(image_bytes_list):
-            file_name = os.path.join(folder_path, f"{i+1:03d}.jpg")
+            ext = detect_image_extension(img_bytes)
+            file_name = os.path.join(folder_path, f"{i+1:03d}.{ext}")
             with open(file_name, "wb") as f:
                 f.write(img_bytes)
         return True
     except Exception:
         return False
+
 
 def get_chapter_page_count(file_path: str, file_format: str) -> int:
     """Return total number of pages in a compiled chapter (CBZ, Folder, or PDF)."""

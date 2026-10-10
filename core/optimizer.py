@@ -8,13 +8,16 @@ Image.MAX_IMAGE_PIXELS = None
 def optimize_panel_image(
     raw_bytes: bytes,
     max_width: Optional[int] = 1080,
-    jpeg_quality: int = 75
+    jpeg_quality: int = 75,
+    image_format: str = "JPEG",
+    webp_quality: int = 80
 ) -> Optional[bytes]:
     """
-    Safely process, resize, and convert a panel image to clean RGB JPEG bytes.
+    Safely process, resize, and convert a panel image to clean JPEG, WebP, or PNG bytes.
     - Handles RGBA / LA transparency by compositing over pure white background.
     - Prevents black background artifacts.
-    - Bilinear downscales if width > max_width to keep mobile/Termux RAM and storage lightweight.
+    - Downscales if width > max_width to keep mobile/Termux RAM and storage lightweight.
+    - Supports format="JPEG", format="WEBP" (with 40-70% file size savings), or format="PNG".
     """
     try:
         with Image.open(BytesIO(raw_bytes)) as im:
@@ -34,8 +37,15 @@ def optimize_panel_image(
                 im = im.resize((max_width, new_height), Image.Resampling.BILINEAR)
 
             out_buf = BytesIO()
-            im.save(out_buf, format="JPEG", quality=jpeg_quality, optimize=True)
+            fmt = (image_format or "JPEG").upper()
+            if fmt == "WEBP":
+                im.save(out_buf, format="WEBP", quality=webp_quality, method=4)
+            elif fmt == "PNG":
+                im.save(out_buf, format="PNG", optimize=True)
+            else:
+                im.save(out_buf, format="JPEG", quality=jpeg_quality, optimize=True)
             return out_buf.getvalue()
     except Exception:
         return None
+
 
