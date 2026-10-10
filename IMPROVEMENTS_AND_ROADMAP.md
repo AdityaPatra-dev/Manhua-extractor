@@ -160,18 +160,20 @@ Currently, downloads run sequentially in a single job. Interrupting the script r
 | **Panel-Level Cache & Resume** | 🔥 High | 🟡 Medium | **v1.3** | ✅ **COMPLETE** |
 | **AniList / MAL Tracker Sync** | ⚡ Medium | 🟡 Medium | **v1.4** | ✅ **COMPLETE** |
 | **Promotional & Ad Page Trimming (pHash)**| ⚡ Medium | 🟡 Medium | **v1.4** | ✅ **COMPLETE** |
-| **Playwright Stealth Headless Fallback** | ⚡ Medium | 🔴 High | **v2.0** | ⏳ Next Up |
-| **MangaDex / ComicInfo.xml Rich Metadata Scraper** | ⚡ Medium | 🟡 Medium | **v2.0** | ⏳ Next Up |
-| **AI Waifu2x Upscaling Pipeline** | 💡 Optional | 🔴 High | **v2.1** | Research |
+| **Cloudflare Turnstile Bypass Sidecar (FlareSolverr / Playwright)** | ⚡ Medium | 🟡 Medium | **v2.0** | ✅ **COMPLETE** |
+| **MangaDex / ComicInfo.xml Rich Metadata Scraper** | ⚡ Medium | 🟡 Medium | **v2.0** | ✅ **COMPLETE** |
+| **AI Waifu2x / Real-ESRGAN Upscaling Pipeline** | 💡 Optional | 🔴 High | **v2.1** | In Progress / Research |
+| **Next-Gen WebP / AVIF Direct Panel Compression** | ⚡ Medium | 🟡 Medium | **v2.1** | In Progress / Research |
 
 ---
 
 ## 9. Next Recommended Action
 
-1. **v2.0 Priority 1: Headless Sidecar (Playwright Stealth / Undetected Chrome)**:
-   * Provide an optional lightweight headless driver fallback that spins up only when encountering interactive Cloudflare Turnstile checkboxes, grabs `cf_clearance` cookies, and passes them to the async download engine.
-2. **v2.0 Priority 2: MangaDex API Rich Metadata Scraper**:
-   * Auto-fetch author, artist, tags, genres, and synopsis from MangaDex/AniList APIs to inject complete, rich `<ComicInfo.xml>` for Komga and Kavita.
+1. **v2.1 Priority 1: Next-Gen WebP / AVIF Panel Compression**:
+   * Add optional high-efficiency image re-encoding pipeline (Pillow WebP with quality presets 80-90%) yielding 40-60% disk storage savings in CBZ archives without perceptual quality degradation.
+2. **v2.1 Priority 2: AI Super-Resolution (Waifu2x / Real-ESRGAN Microservice Connector)**:
+   * Provide optional integration for upscaling low-res legacy manhua scans (e.g. 720p to 1440p/4K) using local ONNX / PyTorch models or external microservice endpoints.
+
 
 
 
