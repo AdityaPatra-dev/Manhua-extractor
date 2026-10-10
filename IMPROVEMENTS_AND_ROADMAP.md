@@ -156,20 +156,20 @@ Currently, downloads run sequentially in a single job. Interrupting the script r
 | **OPDS Server Feed for Tachiyomi/Mihon** | 🔥 High | 🟡 Medium | **v1.2** | ✅ **COMPLETE** |
 | **Scheduled Auto-Updater Worker** | 🔥 High | 🟡 Medium | **v1.2** | ✅ **COMPLETE** |
 | **Discord / Telegram / Ntfy Webhooks** | ⚡ Medium | 🟢 Low | **v1.2** | ✅ **COMPLETE** |
-| **Kindle / E-Ink Smart Strip Slicer** | ⚡ Medium | 🟡 Medium | **v1.3** | ⏳ Next Up |
-| **Panel-Level Cache & Resume** | 🔥 High | 🟡 Medium | **v1.3** | ⏳ Next Up |
-| **AniList / MAL Tracker Sync** | ⚡ Medium | 🟡 Medium | **v1.4** | Planned |
+| **Kindle / E-Ink Smart Strip Slicer** | ⚡ Medium | 🟡 Medium | **v1.3** | ✅ **COMPLETE** |
+| **Panel-Level Cache & Resume** | 🔥 High | 🟡 Medium | **v1.3** | ✅ **COMPLETE** |
+| **AniList / MAL Tracker Sync** | ⚡ Medium | 🟡 Medium | **v1.4** | ⏳ Next Up |
+| **Promotional & Ad Page Trimming (pHash)**| ⚡ Medium | 🟡 Medium | **v1.4** | ⏳ Next Up |
 | **Playwright Stealth Headless Fallback** | ⚡ Medium | 🔴 High | **v2.0** | Planned |
-| **Ad / Credit Page Trimming (pHash)** | ⚡ Medium | 🟡 Medium | **v2.0** | Planned |
 | **AI Waifu2x Upscaling Pipeline** | 💡 Optional | 🔴 High | **v2.1** | Research |
 
 ---
 
 ## 9. Next Recommended Action
 
-1. **v1.3 Priority 1: Kindle / E-Ink Smart Strip Slicer**:
-   * Implement automated whitespace detection in `core/optimizer.py` to intelligently segment long vertical webtoon strips into reader-friendly aspect ratios (e.g. 1264x1680) for e-readers and low-memory devices.
-2. **v1.3 Priority 2: Panel-Level Download Staging & Resumption**:
-   * Add panel-level caching in `core/downloader.py` using `.staging/{chapter_hash}/` to resume interrupted chapter downloads without refetching already completed panels.
+1. **v1.4 Priority 1: AniList / MyAnimeList Progress Synchronization**:
+   * Integrate OAuth/token credentials in the Settings modal so reading progress updates both locally and on the user's remote AniList / MAL list.
+2. **v1.4 Priority 2: Promotional / Ad Page Trimming (pHash)**:
+   * Implement perceptual image hashing (`imagehash`) to automatically detect and trim recurrent credit/ad pages from compiled archives.
 
 
