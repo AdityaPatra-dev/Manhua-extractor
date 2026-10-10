@@ -34,10 +34,39 @@
         <p class="card-desc">Paste the URL of any manga/manhua chapter. The engine will auto-detect the layout.</p>
 
         <div class="input-group">
-          <label for="chapter-url">Chapter URL</label>
+          <label for="chapter-url">Manga / Manhua URL (Series Page or Chapter Link)</label>
           <div class="input-with-button">
-            <input type="text" id="chapter-url" placeholder="https://example.com/manga/title/chapter-1/" autofocus>
-            <button id="btn-analyze" class="btn btn-secondary">Analyze</button>
+            <input type="text" id="chapter-url" placeholder="Paste series or chapter URL (e.g. Asura, Toonily, ManhuaPlus)..." autofocus>
+            <button id="btn-inspect" class="btn btn-primary">🔍 Browse Chapters</button>
+            <button id="btn-analyze" class="btn btn-secondary">⚡ Quick Analyze</button>
+          </div>
+        </div>
+
+        <!-- Interactive Series Chapter Catalog (Populated when inspected) -->
+        <div id="series-catalog-card" class="card catalog-card hidden" style="margin-bottom: 1.5rem; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border);">
+          <div class="catalog-header" style="display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 1rem;">
+            <img id="cat-series-cover" src="" alt="Cover" class="catalog-cover" style="width: 80px; height: 110px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border);">
+            <div class="catalog-header-info" style="flex: 1;">
+              <span id="cat-engine-badge" class="preview-badge" style="margin-bottom: 4px;">Engine</span>
+              <h3 id="cat-series-title" style="margin: 4px 0 6px 0; font-size: 1.25rem;">Series Title</h3>
+              <p id="cat-stats" style="color: var(--accent); font-weight: 600; font-size: 0.9rem; margin-bottom: 4px;">Loading catalog...</p>
+              <p id="cat-synopsis" style="color: var(--text-muted); font-size: 0.85rem; max-height: 48px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;"></p>
+            </div>
+          </div>
+
+          <div class="catalog-toolbar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-bottom: 10px;">
+            <div style="display: flex; gap: 6px; align-items: center; flex: 1; min-width: 200px;">
+              <input type="text" id="cat-filter-input" placeholder="Search chapters (e.g. 50)..." style="padding: 6px 10px; font-size: 0.85rem; border-radius: 4px; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border); width: 180px;">
+              <button id="btn-select-all" class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;">Select All</button>
+              <button id="btn-deselect-all" class="btn btn-secondary" style="padding: 5px 10px; font-size: 0.8rem;">Deselect</button>
+            </div>
+            <div>
+              <button id="btn-download-selected" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.85rem; font-weight: 600;">⬇️ Download Selected (<span id="cat-selected-count">0</span>)</button>
+            </div>
+          </div>
+
+          <div id="catalog-chapters-list" class="catalog-chapters-list" style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 4px;">
+            <!-- Dynamically populated chapters -->
           </div>
         </div>
 
@@ -50,6 +79,7 @@
             <p class="preview-next" id="preview-next-text"></p>
           </div>
         </div>
+
 
         <div class="options-grid">
           <div class="option-field">
@@ -78,10 +108,11 @@
           <div class="option-field">
             <label for="image-encoding">Image Compression</label>
             <select id="image-encoding">
+              <option value="webp" selected>High-Efficiency WebP (40-70% Smaller, Komga/Mihon)</option>
               <option value="jpeg">Standard JPEG (75% Quality)</option>
-              <option value="webp">High-Efficiency WebP (40-70% Smaller, Komga/Mihon)</option>
             </select>
           </div>
+
 
           <div class="option-field">
             <label for="upscale-factor">AI Super-Resolution</label>
@@ -371,10 +402,12 @@
       <div class="reader-title-info">
         <strong id="reader-series-title">Series Title</strong> - <span id="reader-chapter-title">Chapter</span>
       </div>
-      <div class="reader-nav-btns">
+      <div class="reader-nav-btns" style="display: flex; gap: 6px; align-items: center;">
+        <button id="reader-fullscreen-btn" class="btn btn-secondary" title="Toggle Fullscreen">⛶ Fullscreen</button>
         <button id="reader-prev-btn" class="btn btn-secondary" disabled>‹ Prev</button>
         <button id="reader-next-btn" class="btn btn-secondary" disabled>Next ›</button>
       </div>
+
     </div>
     <div id="reader-pages-container" class="reader-container"></div>
     <div class="reader-bottom-hud">

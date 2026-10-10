@@ -57,11 +57,261 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // --- Analyze URL ---
+  // --- Series Chapter Catalog Inspector ---
+  let currentCatalogChapters = [];
+  let currentCatalogUrl = "";
+  let currentSeriesTitle = "";
+
   const chapterUrlInput = document.getElementById("chapter-url");
+  const btnInspect = document.getElementById("btn-inspect");
   const btnAnalyze = document.getElementById("btn-analyze");
   const previewCard = document.getElementById("analyze-preview");
+  const seriesCatalogCard = document.getElementById("series-catalog-card");
+  const catFilterInput = document.getElementById("cat-filter-input");
+  const btnSelectAll = document.getElementById("btn-select-all");
+  const btnDeselectAll = document.getElementById("btn-deselect-all");
+  const btnDownloadSelected = document.getElementById("btn-download-selected");
+  const catSelectedCount = document.getElementById("cat-selected-count");
 
+  async function inspectSeries(url, isSilent = false) {
+    if (!url) {
+      if (!isSilent) alert("Please enter a valid manga or chapter URL.");
+      return;
+    }
+
+    if (!isSilent && btnInspect) {
+      btnInspect.textContent = "🔍 Browsing...";
+      btnInspect.disabled = true;
+    }
+
+    try {
+      const res = await fetch("/api/inspect-series", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        currentCatalogChapters = data.chapters || [];
+        currentCatalogUrl = url;
+        currentSeriesTitle = data.series_title || "Unknown Series";
+
+        // Populate catalog card header
+        const coverImg = document.getElementById("cat-series-cover");
+        if (coverImg) {
+          if (data.cover_url) {
+            coverImg.src = data.cover_url;
+            coverImg.style.display = "block";
+          } else {
+            coverImg.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="110"><rect fill="%231c2640" width="80" height="110"/><text fill="%2394a3b8" x="50%" y="50%" text-anchor="middle" font-size="10">No Cover</text></svg>';
+          }
+        }
+        const badgeElem = document.getElementById("cat-engine-badge");
+        if (badgeElem) badgeElem.textContent = `Engine: ${data.engine_name || 'Auto'}`;
+
+        const titleElem = document.getElementById("cat-series-title");
+        if (titleElem) titleElem.textContent = data.series_title || "Discovered Series";
+
+        const statsElem = document.getElementById("cat-stats");
+        if (statsElem) {
+          statsElem.textContent = `📊 ${data.total_chapters} chapters found (${data.downloaded_count} downloaded)`;
+        }
+
+        const synElem = document.getElementById("cat-synopsis");
+        if (synElem) {
+          synElem.textContent = data.synopsis || "Select chapters below to download or read.";
+        }
+
+        renderCatalogChapters(catFilterInput ? catFilterInput.value.trim() : "");
+        if (seriesCatalogCard) {
+          seriesCatalogCard.classList.remove("hidden");
+          if (!isSilent) {
+            seriesCatalogCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          }
+        }
+      } else {
+        if (!isSilent) alert(`Failed to inspect catalog: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      if (!isSilent) alert(`Network error inspecting series: ${err.message}`);
+    } finally {
+      if (!isSilent && btnInspect) {
+        btnInspect.textContent = "🔍 Browse Chapters";
+        btnInspect.disabled = false;
+      }
+    }
+  }
+
+  function renderCatalogChapters(filterText = "") {
+    const listContainer = document.getElementById("catalog-chapters-list");
+    if (!listContainer) return;
+
+    const filter = (filterText || "").toLowerCase();
+    const filtered = currentCatalogChapters.filter(ch => {
+      const titleStr = (ch.title || `Chapter ${ch.chapter_num}`).toLowerCase();
+      const numStr = String(ch.chapter_num);
+      return !filter || titleStr.includes(filter) || numStr.includes(filter);
+    });
+
+    if (filtered.length === 0) {
+      listContainer.innerHTML = '<p style="padding: 1rem; color: var(--text-muted); text-align: center;">No matching chapters found.</p>';
+      updateCatalogSelectedCount();
+      return;
+    }
+
+    listContainer.innerHTML = filtered.map(ch => {
+      const chTitle = ch.title || `Chapter ${ch.chapter_num}`;
+      const isSaved = ch.is_downloaded;
+      const encodedUrl = encodeURIComponent(ch.url);
+      return `
+        <div class="catalog-chapter-row" data-url="${ch.url}">
+          <div class="catalog-chapter-left">
+            <input type="checkbox" class="cat-ch-checkbox" data-url="${ch.url}" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent);">
+            <div style="cursor: pointer;" onclick="toggleCatalogCheckbox('${ch.url}')">
+              <strong style="font-size: 0.95rem; color: var(--text-main);">${chTitle}</strong>
+              ${ch.read_status === 1 ? '<span style="margin-left: 6px; font-size: 0.75rem; color: #a78bfa;">✓ Read</span>' : ''}
+            </div>
+          </div>
+          <div class="catalog-chapter-right">
+            ${isSaved 
+              ? `<span class="badge-local">🟢 Saved</span>
+                 <button class="btn-read-now" onclick="openReader(${ch.chapter_id})">📖 Read Now</button>
+                 <a href="/api/download/file/${ch.chapter_id}" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; text-decoration: none;" download title="Save ${ch.file_format || 'CBZ'}">💾</a>`
+              : `<span class="badge-online">⚪ Online</span>
+                 <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" onclick="window.downloadSingleCatalogChapter('${encodedUrl}')">⬇️ Download</button>`
+            }
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const checkboxes = listContainer.querySelectorAll(".cat-ch-checkbox");
+    checkboxes.forEach(cb => {
+      cb.addEventListener("change", updateCatalogSelectedCount);
+    });
+    updateCatalogSelectedCount();
+  }
+
+  window.toggleCatalogCheckbox = function(url) {
+    const cb = document.querySelector(`.cat-ch-checkbox[data-url="${url}"]`);
+    if (cb) {
+      cb.checked = !cb.checked;
+      updateCatalogSelectedCount();
+    }
+  };
+
+  function updateCatalogSelectedCount() {
+    const selected = document.querySelectorAll(".cat-ch-checkbox:checked");
+    if (catSelectedCount) {
+      catSelectedCount.textContent = selected.length;
+    }
+  }
+
+  if (btnInspect) {
+    btnInspect.addEventListener("click", () => {
+      const url = chapterUrlInput.value.trim();
+      inspectSeries(url);
+    });
+  }
+
+  if (chapterUrlInput) {
+    chapterUrlInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        btnInspect.click();
+      }
+    });
+  }
+
+  if (catFilterInput) {
+    catFilterInput.addEventListener("input", () => {
+      renderCatalogChapters(catFilterInput.value.trim());
+    });
+  }
+
+  if (btnSelectAll) {
+    btnSelectAll.addEventListener("click", () => {
+      const checkboxes = document.querySelectorAll(".cat-ch-checkbox");
+      checkboxes.forEach(cb => cb.checked = true);
+      updateCatalogSelectedCount();
+    });
+  }
+
+  if (btnDeselectAll) {
+    btnDeselectAll.addEventListener("click", () => {
+      const checkboxes = document.querySelectorAll(".cat-ch-checkbox");
+      checkboxes.forEach(cb => cb.checked = false);
+      updateCatalogSelectedCount();
+    });
+  }
+
+  if (btnDownloadSelected) {
+    btnDownloadSelected.addEventListener("click", () => {
+      const selected = document.querySelectorAll(".cat-ch-checkbox:checked");
+      const urls = Array.from(selected).map(cb => cb.getAttribute("data-url")).filter(Boolean);
+      startCatalogDownload(urls);
+    });
+  }
+
+  window.downloadSingleCatalogChapter = function(encodedUrl) {
+    const url = decodeURIComponent(encodedUrl);
+    startCatalogDownload([url]);
+  };
+
+  async function startCatalogDownload(urls) {
+    if (!urls || urls.length === 0) {
+      alert("Please select at least one chapter to download.");
+      return;
+    }
+
+    const format = document.getElementById("output-format").value;
+    const maxWidth = parseInt(document.getElementById("max-width").value) || 1080;
+    const sliceEink = document.getElementById("slice-eink").checked;
+    const imageFormat = document.getElementById("image-encoding") ? document.getElementById("image-encoding").value : "webp";
+    const upscaleScale = document.getElementById("upscale-factor") ? parseInt(document.getElementById("upscale-factor").value, 10) : 1;
+    const filterPromosElem = document.getElementById("filter-promos");
+    const filterPromos = filterPromosElem ? filterPromosElem.checked : true;
+
+    if (btnStartDownload) btnStartDownload.disabled = true;
+    if (btnDownloadSelected) btnDownloadSelected.disabled = true;
+
+    try {
+      const res = await fetch("/api/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: urls[0],
+          chapter_urls: urls,
+          mode: "range",
+          count: urls.length,
+          format: format,
+          max_width: maxWidth,
+          image_format: imageFormat,
+          upscale_scale: upscaleScale,
+          slice_eink: sliceEink,
+          filter_promos: filterPromos
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        progressCard.classList.remove("hidden");
+        progressCard.scrollIntoView({ behavior: "smooth" });
+        listenToProgress();
+      } else {
+        alert(`Error starting download: ${data.error}`);
+        if (btnStartDownload) btnStartDownload.disabled = false;
+        if (btnDownloadSelected) btnDownloadSelected.disabled = false;
+      }
+    } catch (err) {
+      alert(`Failed to launch download: ${err.message}`);
+      if (btnStartDownload) btnStartDownload.disabled = false;
+      if (btnDownloadSelected) btnDownloadSelected.disabled = false;
+    }
+  }
+
+  // --- Analyze URL ---
   btnAnalyze.addEventListener("click", async () => {
     const url = chapterUrlInput.value.trim();
     if (!url) {
@@ -120,8 +370,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const format = document.getElementById("output-format").value;
     const maxWidth = parseInt(document.getElementById("max-width").value) || 1080;
     const sliceEink = document.getElementById("slice-eink").checked;
-    const imageFormat = document.getElementById("image-encoding") ? document.getElementById("image-encoding").value : "jpeg";
+    const imageFormat = document.getElementById("image-encoding") ? document.getElementById("image-encoding").value : "webp";
     const upscaleScale = document.getElementById("upscale-factor") ? parseInt(document.getElementById("upscale-factor").value, 10) : 1;
+    const filterPromosElem = document.getElementById("filter-promos");
+    const filterPromos = filterPromosElem ? filterPromosElem.checked : true;
 
     btnStartDownload.disabled = true;
 
@@ -141,7 +393,6 @@ document.addEventListener("DOMContentLoaded", () => {
           filter_promos: filterPromos
         })
       });
-
 
       const data = await res.json();
       if (data.success) {
@@ -184,8 +435,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!state.is_running && (state.status === "completed" || state.status === "error")) {
           btnStartDownload.disabled = false;
+          if (btnDownloadSelected) btnDownloadSelected.disabled = false;
           if (state.status === "completed") {
             loadLibrary(); // update library count
+            if (currentCatalogUrl) {
+              inspectSeries(currentCatalogUrl, true); // silent refresh updates local badges & read now buttons!
+            }
           }
         }
       } catch (e) {
