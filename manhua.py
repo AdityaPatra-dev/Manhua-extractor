@@ -20,7 +20,8 @@ except ImportError:
 from database.db import (
     init_db,
     get_or_create_series,
-    add_or_update_chapter
+    add_or_update_chapter,
+    get_all_promo_signatures
 )
 from extractors.dispatcher import dispatcher
 from core.downloader import (
@@ -29,6 +30,8 @@ from core.downloader import (
     cleanup_staging_dir
 )
 from core.slicer import slice_chapter_panels
+from core.ad_filter import filter_chapter_panels
+from core.scrobbler import sync_trackers
 from core.compiler import compile_pdf, compile_cbz, save_raw_images
 
 DEFAULT_CONCURRENCY = 6
@@ -40,7 +43,8 @@ def download_series(
     out_format: str = "pdf",
     dest_input: str = "",
     slice_eink: bool = False,
-    aspect_ratio: float = 1.414
+    aspect_ratio: float = 1.414,
+    filter_promos: bool = True
 ):
     """Core download worker supporting resume cache and smart e-ink slicing."""
     print("\n[*] Analyzing page layout and detecting CMS engine...")
@@ -134,6 +138,15 @@ def download_series(
             print(f"[-] No panels could be downloaded for Chapter {current_ch_num}.")
             continue
 
+        # Filter recurring promotional / ad pages
+        if filter_promos:
+            known_sigs = get_all_promo_signatures()
+            if known_sigs:
+                clean_panels, removed = filter_chapter_panels(panel_bytes, known_signatures=known_sigs)
+                if removed > 0:
+                    print(f"[*] Trimmed {removed} recurring promotional credit pages.")
+                    panel_bytes = clean_panels
+
         # Smart Kindle/E-Ink Slicing for tall webtoon strips
         if slice_eink:
             print(f"[*] Slicing continuous webtoon ribbons into e-ink pages...")
@@ -177,6 +190,12 @@ def download_series(
             file_size=file_size,
             status="completed"
         )
+
+        # Scrobble reading progress to configured trackers
+        try:
+            sync_trackers(title=series_title, chapter_num=current_ch_num)
+        except Exception:
+            pass
 
         current_url = ch_data.get("next_chapter_url")
 
@@ -244,6 +263,8 @@ def main():
     parser.add_argument("--format", "-f", choices=["pdf", "cbz", "folder"], default="pdf", help="Output format (default: pdf)")
     parser.add_argument("--dest", "-d", type=str, default="", help="Destination folder (default: downloads/)")
     parser.add_argument("--eink", "-s", action="store_true", help="Slice vertical webtoon strips for Kindle/E-Ink devices")
+    parser.add_argument("--trim-promos", action="store_true", default=True, help="Automatically trim known promotional/ad pages (default: True)")
+    parser.add_argument("--no-trim-promos", action="store_false", dest="trim_promos", help="Disable promotional page trimming")
 
     args = parser.parse_args()
 
@@ -285,10 +306,12 @@ def main():
             total_chapters=args.count,
             out_format=args.format,
             dest_input=args.dest,
-            slice_eink=args.eink
+            slice_eink=args.eink,
+            filter_promos=args.trim_promos
         )
     else:
         run_cli_downloader()
+
 
 if __name__ == "__main__":
     main()
