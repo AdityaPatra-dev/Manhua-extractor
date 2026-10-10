@@ -37,11 +37,6 @@ android {
                     install("lxml==5.3.0")
                 }
             }
-            sourceSets {
-                getByName("main") {
-                    srcDir("../..") // includes root python modules (app.py, core/, extractors/, etc.)
-                }
-            }
         }
     }
 
@@ -70,6 +65,23 @@ android {
     buildFeatures {
         viewBinding = true
     }
+}
+
+tasks.register<Copy>("copyPythonSources") {
+    from("${rootProject.projectDir}/..") {
+        include("app.py")
+        include("android_entry.py")
+        include("manhua.py")
+        include("core/**")
+        include("extractors/**")
+        include("database/**")
+        include("static/**")
+    }
+    into("${projectDir}/src/main/python")
+}
+
+tasks.named("preBuild") {
+    dependsOn("copyPythonSources")
 }
 
 dependencies {

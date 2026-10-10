@@ -13,5 +13,7 @@ android/app/build/
 *.apk
 *.aab
 local.properties
+android/app/src/main/python/
+
 
 
