@@ -84,3 +84,4 @@ The Android version packages the entire Manhua Extractor engine inside an APK us
 For massive downloads (e.g., 50+ chapters at once):
 1. Go to your phone's **Settings** → **Apps** → **Manhua Extractor** → **Battery**.
 2. Select **"Unrestricted"** so Android's aggressive battery savers never pause your downloads.
+
