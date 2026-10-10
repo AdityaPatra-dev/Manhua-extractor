@@ -113,3 +113,82 @@ class BaseExtractor(ABC):
                 clean.append(u)
         return clean
 
+    def extract_chapter_list(self, soup: BeautifulSoup, url: str, html: str) -> List[Dict[str, Any]]:
+        """
+        Extract complete catalog of chapters from series or reader page.
+        Returns list of dicts: [{"chapter_num": float, "title": str, "url": str}]
+        """
+        parsed = urlparse(url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        chapters: List[Dict[str, Any]] = []
+        seen_urls = set()
+
+        # 1. Check <select> elements (common on reader pages)
+        for sel in soup.find_all("select"):
+            classes = " ".join(sel.get("class", []))
+            sel_id = sel.get("id", "")
+            if re.search(r'chapter|navi|select|reader', f"{classes} {sel_id}", re.I):
+                for opt in sel.find_all("option"):
+                    val = opt.get("value") or opt.get("data-redirect") or opt.get("data-url")
+                    if not val or val in ("#", "0", ""):
+                        continue
+                    full_url = urljoin(url, val)
+                    if full_url in seen_urls or not full_url.startswith("http"):
+                        continue
+                    title = opt.get_text(strip=True)
+                    ch_num = self.extract_chapter_number(full_url, title)
+                    seen_urls.add(full_url)
+                    chapters.append({
+                        "chapter_num": ch_num,
+                        "title": title or f"Chapter {ch_num:g}",
+                        "url": full_url
+                    })
+
+        # 2. Check <a> links (common on series pages & reader sidebars)
+        selectors = [
+            "li.wp-manga-chapter a",
+            "div.eplister a",
+            "#chapterlist a",
+            "ul.row-content-chapter a",
+            "div.chapter-list a",
+            "ul.version-chap a",
+            "a[href*='/chapter-']",
+            "a[href*='/chapter/']",
+            "a[href*='/c-']"
+        ]
+        link_candidates = []
+        for selector in selectors:
+            found = soup.select(selector)
+            if found:
+                link_candidates.extend(found)
+
+        # Fallback to broad link search if specific selectors matched nothing
+        if not link_candidates and not chapters:
+            link_candidates = soup.find_all("a", href=True)
+
+        for a in link_candidates:
+            href = a.get("href", "").strip()
+            if not href or href.startswith("#") or href.startswith("javascript:"):
+                continue
+            # Must look like a chapter URL or contain chapter text
+            txt = a.get_text(strip=True)
+            if not (re.search(r'/(?:chapter|ch|c)[-_/\d]', href, re.I) or re.search(r'chapter\s*\d+', txt, re.I)):
+                continue
+
+            full_url = urljoin(url, href)
+            if full_url in seen_urls or not full_url.startswith("http"):
+                continue
+
+            ch_num = self.extract_chapter_number(full_url, txt)
+            seen_urls.add(full_url)
+            chapters.append({
+                "chapter_num": ch_num,
+                "title": txt or f"Chapter {ch_num:g}",
+                "url": full_url
+            })
+
+        # Sort chapters logically in ascending order
+        chapters.sort(key=lambda x: x["chapter_num"])
+        return chapters
+
+

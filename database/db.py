@@ -231,6 +231,24 @@ def get_chapters_for_series(series_id: int, db_path: str = DEFAULT_DB_PATH) -> L
     conn.close()
     return [dict(r) for r in rows]
 
+def get_downloaded_chapters_map(series_title: str, db_path: str = DEFAULT_DB_PATH) -> Dict[float, Dict[str, Any]]:
+    """Return dictionary mapping chapter_num to local chapter record for quick O(1) status lookup."""
+    conn = get_connection(db_path)
+    series = conn.execute(
+        "SELECT id FROM series WHERE title = ? OR slug = ?",
+        (series_title, series_title.lower().replace(' ', '-'))
+    ).fetchone()
+    if not series:
+        conn.close()
+        return {}
+    rows = conn.execute(
+        "SELECT * FROM chapters WHERE series_id = ? AND status = 'completed'",
+        (series["id"],)
+    ).fetchall()
+    conn.close()
+    return {row["chapter_num"]: dict(row) for row in rows}
+
+
 def get_chapter_by_id(chapter_id: int, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
     conn = get_connection(db_path)
     row = conn.execute("SELECT * FROM chapters WHERE id = ?", (chapter_id,)).fetchone()

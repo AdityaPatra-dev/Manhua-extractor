@@ -17,7 +17,9 @@ from .db import (
     get_all_promo_signatures,
     delete_promo_signature,
     update_series_trackers,
-    update_series_rich_metadata
+    update_series_rich_metadata,
+    get_downloaded_chapters_map
 )
+
 
 

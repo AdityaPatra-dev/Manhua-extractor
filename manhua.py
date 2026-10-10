@@ -303,7 +303,9 @@ def main():
     parser.add_argument("--port", "-p", type=int, default=8000, help="Port for the Web GUI (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host address for Web GUI (default: 0.0.0.0)")
     parser.add_argument("--test", "-t", type=str, help="Test URL compatibility and print diagnostic report")
+    parser.add_argument("--inspect", "-i", type=str, help="Inspect series URL and list all available chapters")
     parser.add_argument("--update-library", "-u", action="store_true", help="Check all library series for new chapters and download them")
+
 
     # Batch / headless download arguments
     parser.add_argument("--url", "-U", type=str, help="Direct chapter URL to download in batch mode")
@@ -351,8 +353,26 @@ def main():
         else:
             print("\n[❌] TEST FAILED!")
             print(f" - Error: {res.get('error')}")
+    elif args.inspect:
+        print(f"\n[*] Inspecting series catalog for: {args.inspect}")
+        res = dispatcher.inspect_series(args.inspect)
+        if res.get("success"):
+            print("\n" + "=" * 65)
+            print(f"[✅] Series Title   : {res.get('series_title')}")
+            print(f"[✅] Engine         : {res.get('engine_name')}")
+            print(f"[✅] Total Chapters : {res.get('total_chapters')}")
+            print(f"[✅] Local Cached   : {res.get('downloaded_count')}")
+            print("=" * 65)
+            for c in res.get("chapters", [])[:20]:
+                status_icon = "🟢 [Local]" if c.get("is_downloaded") else "⚪ [Online]"
+                print(f" {status_icon} {c.get('title')} -> {c.get('url')}")
+            if len(res.get("chapters", [])) > 20:
+                print(f" ... and {len(res.get('chapters')) - 20} more chapters available")
+        else:
+            print(f"\n[❌] Failed: {res.get('error')}")
     elif args.url:
         download_series(
+
             pasted_url=args.url,
             total_chapters=args.count,
             out_format=args.format,

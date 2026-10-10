@@ -94,6 +94,9 @@ download_progress = {
 class AnalyzeRequest(BaseModel):
     url: str
 
+class InspectSeriesRequest(BaseModel):
+    url: str
+
 class DownloadRequest(BaseModel):
     url: str
     mode: str = "single"  # single, range, crawl_all
@@ -109,6 +112,8 @@ class DownloadRequest(BaseModel):
     aspect_ratio: float = 1.414
     filter_promos: bool = True
     save_dir: Optional[str] = None
+    chapter_urls: Optional[List[str]] = None
+
 
 class TestSiteRequest(BaseModel):
     url: str
@@ -154,27 +159,49 @@ async def analyze_url(req: AnalyzeRequest):
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
+@app.post("/api/inspect-series")
+async def inspect_series_catalog(req: InspectSeriesRequest):
+    url = req.url.strip()
+    if not url:
+        return JSONResponse({"success": False, "error": "Empty URL"}, status_code=400)
+
+    try:
+        loop = asyncio.get_event_loop()
+        res = await loop.run_in_executor(None, dispatcher.inspect_series, url)
+        if not res.get("success"):
+            return JSONResponse(res, status_code=400)
+        return res
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
 async def run_download_job(req: DownloadRequest):
     global download_progress
     download_progress["is_running"] = True
     download_progress["status"] = "starting"
     download_progress["message"] = "Starting extraction..."
 
-    current_url = req.url.strip()
-    target_count = req.count if req.mode in ("range", "single") else 999
-    if req.mode == "single":
+    specific_urls = [u.strip() for u in req.chapter_urls if u.strip()] if req.chapter_urls else []
+    target_count = len(specific_urls) if specific_urls else (req.count if req.mode in ("range", "single") else 999)
+    if not specific_urls and req.mode == "single":
         target_count = 1
 
+    current_url = specific_urls[0] if specific_urls else req.url.strip()
     chapters_processed = 0
     base_save_dir = req.save_dir or DOWNLOADS_DIR
 
     try:
-        while current_url and chapters_processed < target_count:
+        while chapters_processed < target_count:
+            if specific_urls:
+                current_url = specific_urls[chapters_processed]
+            elif not current_url:
+                break
             download_progress["current_url"] = current_url
             download_progress["chapter_index"] = chapters_processed + 1
             download_progress["total_chapters"] = target_count
             download_progress["status"] = "analyzing"
-            download_progress["message"] = f"Analyzing chapter {chapters_processed + 1}..."
+            download_progress["message"] = f"Analyzing chapter {chapters_processed + 1} of {target_count}..."
+
 
             # Analyze page
             data = dispatcher.analyze_url(current_url)
@@ -331,7 +358,8 @@ async def run_download_job(req: DownloadRequest):
 
 
             chapters_processed += 1
-            current_url = data.get("next_chapter_url")
+            if not specific_urls:
+                current_url = data.get("next_chapter_url")
 
             # Small breather between chapters
             await asyncio.sleep(1)
