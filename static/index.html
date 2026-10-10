@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Universal Manhua Extractor & Library</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <h1>Universal Manhua Extractor</h1>
+          <p class="subtitle">95%+ Multi-Engine Webtoon Downloader & Library</p>
+        </div>
+      </div>
+      <nav class="nav-tabs">
+        <button class="nav-tab active" data-tab="tab-download">📥 Downloader</button>
+        <button class="nav-tab" data-tab="tab-library">📚 Library (<span id="library-count">0</span>)</button>
+        <button class="nav-tab" data-tab="tab-lab">🧪 Compatibility Lab</button>
+      </nav>
+    </header>
+
+    <!-- TAB 1: DOWNLOADER -->
+    <main id="tab-download" class="tab-content active">
+      <div class="card main-form-card">
+        <h2>Download Chapters</h2>
+        <p class="card-desc">Paste the URL of any manga/manhua chapter. The engine will auto-detect the layout.</p>
+
+        <div class="input-group">
+          <label for="chapter-url">Chapter URL</label>
+          <div class="input-with-button">
+            <input type="text" id="chapter-url" placeholder="https://example.com/manga/title/chapter-1/" autofocus>
+            <button id="btn-analyze" class="btn btn-secondary">Analyze</button>
+          </div>
+        </div>
+
+        <!-- Analysis Preview Card (hidden until analyzed) -->
+        <div id="analyze-preview" class="analyze-preview hidden">
+          <div class="preview-badge" id="preview-engine-badge">Engine: Detecting...</div>
+          <div class="preview-info">
+            <h3 id="preview-title">Series Title</h3>
+            <p>Detected <strong>Chapter <span id="preview-ch">1</span></strong> with <strong id="preview-panels">0</strong> panels.</p>
+            <p class="preview-next" id="preview-next-text"></p>
+          </div>
+        </div>
+
+        <div class="options-grid">
+          <div class="option-field">
+            <label for="download-mode">Download Mode</label>
+            <select id="download-mode">
+              <option value="single">Single Chapter Only</option>
+              <option value="range">Range / Next N Chapters</option>
+              <option value="crawl_all">Continuous Crawl (All available)</option>
+            </select>
+          </div>
+
+          <div class="option-field" id="count-field" style="display: none;">
+            <label for="chapter-count">Number of Chapters</label>
+            <input type="number" id="chapter-count" min="1" max="1000" value="5">
+          </div>
+
+          <div class="option-field">
+            <label for="output-format">Output Format</label>
+            <select id="output-format">
+              <option value="pdf">Compressed PDF (Termux & Mobile Friendly)</option>
+              <option value="cbz">CBZ Comic Archive (With ComicInfo.xml)</option>
+              <option value="folder">Raw JPEG Images Folder</option>
+            </select>
+          </div>
+
+          <div class="option-field">
+            <label for="max-width">Max Width (Downsampling)</label>
+            <select id="max-width">
+              <option value="1080">1080px (Fast, Lightweight)</option>
+              <option value="1440">1440px (High Quality)</option>
+              <option value="0">Original Resolution (No resize)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button id="btn-start-download" class="btn btn-primary btn-large">🚀 Start Download</button>
+        </div>
+      </div>
+
+      <!-- Live Download Progress Monitor -->
+      <div id="progress-card" class="card progress-card hidden">
+        <div class="progress-header">
+          <div>
+            <h3 id="prog-series-title">Downloading Series</h3>
+            <span id="prog-status-text" class="status-badge">Starting...</span>
+          </div>
+          <span id="prog-panel-count" class="panel-counter">0 / 0</span>
+        </div>
+
+        <div class="progress-bar-container">
+          <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+
+        <div class="progress-details">
+          <span id="prog-message">Waiting for stream...</span>
+          <span id="prog-chapter-tracker">Chapter 1 of 1</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB 2: LIBRARY -->
+    <main id="tab-library" class="tab-content">
+      <div class="library-header">
+        <h2>Your Saved Library</h2>
+        <input type="text" id="library-search" placeholder="Search series..." class="search-input">
+      </div>
+      <div id="library-grid" class="library-grid">
+        <p class="empty-state">No downloaded series in the database yet. Download a chapter to start building your library!</p>
+      </div>
+    </main>
+
+    <!-- TAB 3: DIAGNOSTIC LAB -->
+    <main id="tab-lab" class="tab-content">
+      <div class="card">
+        <h2>Compatibility & Diagnostic Lab</h2>
+        <p class="card-desc">Test any website to check Cloudflare bypass status, layout detection, panel counts, and navigation health.</p>
+
+        <div class="input-with-button">
+          <input type="text" id="lab-url" placeholder="Paste test chapter URL...">
+          <button id="btn-lab-test" class="btn btn-primary">Run Test</button>
+        </div>
+
+        <!-- Quick Presets -->
+        <div class="preset-links">
+          <span>Quick Test Presets:</span>
+          <button class="preset-btn" data-url="https://manhuaplus.org/manga/apotheosis/chapter-1/">ManhuaPlus (Madara)</button>
+          <button class="preset-btn" data-url="https://asurascans.com/comics/pick-up-a-grimoire-become-a-mage-bd5bdaf8/chapter/1">Asura Scans (Astro)</button>
+        </div>
+
+        <div id="lab-result" class="lab-result hidden"></div>
+      </div>
+
+      <div class="card" style="margin-top: 1.5rem;">
+        <h3>Benchmarked Sites Database</h3>
+        <div class="table-container">
+          <table class="diagnostic-table">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Engine</th>
+                <th>Status</th>
+                <th>Panels Found</th>
+                <th>Next Link</th>
+                <th>Last Checked</th>
+              </tr>
+            </thead>
+            <tbody id="diagnostic-tbody">
+              <tr><td colspan="6" style="text-align:center;">No diagnostics recorded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Series Detail Modal -->
+  <div id="series-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-series-title">Series Details</h3>
+        <button id="modal-close" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-series-info">
+          <img id="modal-series-cover" src="" alt="Cover" class="modal-cover">
+          <div>
+            <span id="modal-engine-badge" class="preview-badge">Engine</span>
+            <p id="modal-synopsis" class="modal-synopsis"></p>
+          </div>
+        </div>
+        <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Chapters</h4>
+        <div class="modal-chapters-list" id="modal-chapters-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen Web Reader Overlay -->
+  <div id="reader-view" class="reader-overlay hidden">
+    <div class="reader-topbar">
+      <button id="reader-close" class="btn btn-secondary">← Back</button>
+      <div class="reader-title-info">
+        <strong id="reader-series-title">Series Title</strong> - <span id="reader-chapter-title">Chapter</span>
+      </div>
+      <div class="reader-nav-btns">
+        <button id="reader-prev-btn" class="btn btn-secondary" disabled>‹ Prev</button>
+        <button id="reader-next-btn" class="btn btn-secondary" disabled>Next ›</button>
+      </div>
+    </div>
+    <div id="reader-pages-container" class="reader-container"></div>
+    <div class="reader-bottom-hud">
+      <span id="reader-progress-counter">Loading panels...</span>
+      <button id="reader-scroll-top" class="btn btn-secondary">↑ Top</button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+
