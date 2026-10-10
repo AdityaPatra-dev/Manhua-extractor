@@ -88,6 +88,11 @@
             <input type="checkbox" id="slice-eink" style="width: auto; cursor: pointer;">
             <label for="slice-eink" style="margin: 0; cursor: pointer;">📱 <strong>Kindle / E-Ink Slicer</strong> (Auto-split tall webtoon strips into readable book pages)</label>
           </div>
+
+          <div class="option-field" style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+            <input type="checkbox" id="filter-promos" checked style="width: auto; cursor: pointer;">
+            <label for="filter-promos" style="margin: 0; cursor: pointer;">🛡️ <strong>Filter Ads & Promos</strong> (Auto-trim recurring credit and aggregator promo pages)</label>
+          </div>
         </div>
 
         <div class="action-bar">
@@ -235,6 +240,57 @@
           <button id="btn-save-settings" class="btn btn-primary btn-large">💾 Save Settings</button>
         </div>
         <p id="settings-status-msg" style="margin-top: 0.75rem; text-align: center; color: var(--success); font-weight: 600;" class="hidden"></p>
+      </div>
+
+      <div class="card">
+        <h2>Reading Trackers Synchronization</h2>
+        <p class="card-desc">Automatically synchronize chapter progress to your official AniList or MyAnimeList profiles.</p>
+
+        <h3 style="margin-top: 1.25rem; font-size: 1.05rem;">AniList Synchronization</h3>
+        <div class="options-grid">
+          <div class="option-field">
+            <label for="setting-anilist-enabled">Enable AniList</label>
+            <select id="setting-anilist-enabled">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </div>
+          <div class="option-field" style="grid-column: span 2;">
+            <label for="setting-anilist-token">AniList Personal Token (<a href="https://anilist.co/settings/developer" target="_blank" style="color: var(--accent);">Generate Token</a>)</label>
+            <div class="input-with-button">
+              <input type="password" id="setting-anilist-token" placeholder="Paste AniList Bearer token...">
+              <button id="btn-verify-anilist" class="btn btn-secondary">Verify</button>
+            </div>
+            <div id="anilist-status" style="margin-top: 6px; font-size: 0.85rem; font-weight: 600;"></div>
+          </div>
+        </div>
+
+        <h3 style="margin-top: 1.5rem; font-size: 1.05rem;">MyAnimeList Synchronization</h3>
+        <div class="options-grid">
+          <div class="option-field">
+            <label for="setting-mal-enabled">Enable MyAnimeList</label>
+            <select id="setting-mal-enabled">
+              <option value="false">Disabled</option>
+              <option value="true">Enabled</option>
+            </select>
+          </div>
+          <div class="option-field" style="grid-column: span 2;">
+            <label for="setting-mal-token">MyAnimeList OAuth Access Token</label>
+            <div class="input-with-button">
+              <input type="password" id="setting-mal-token" placeholder="Paste MAL OAuth Bearer token...">
+              <button id="btn-verify-mal" class="btn btn-secondary">Verify</button>
+            </div>
+            <div id="mal-status" style="margin-top: 6px; font-size: 0.85rem; font-weight: 600;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Promotional & Ad Page Filter</h2>
+        <p class="card-desc">Registered perceptual hash signatures that will be automatically detected and trimmed from downloads.</p>
+        <div id="promo-signatures-list" style="margin-top: 1rem;">
+          <p style="color: var(--text-muted); font-size: 0.9rem;">No promotional page signatures registered yet. Mark pages in the Web Reader to auto-filter them!</p>
+        </div>
       </div>
     </main>
   </div>

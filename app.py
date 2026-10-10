@@ -23,11 +23,17 @@ from database.db import (
     get_all_site_diagnostics,
     get_setting,
     set_setting,
-    get_all_settings
+    get_all_settings,
+    add_promo_signature,
+    get_all_promo_signatures,
+    delete_promo_signature,
+    update_series_trackers
 )
 from extractors.dispatcher import dispatcher
 from core.downloader import download_panels_stream, get_staging_dir, cleanup_staging_dir
 from core.slicer import slice_chapter_panels
+from core.ad_filter import compute_perceptual_hash, filter_chapter_panels
+from core.scrobbler import verify_anilist_token, verify_mal_token, sync_trackers
 from core.compiler import (
     compile_pdf,
     compile_cbz,
@@ -97,6 +103,7 @@ class DownloadRequest(BaseModel):
     quality: int = 75
     slice_eink: bool = False
     aspect_ratio: float = 1.414
+    filter_promos: bool = True
     save_dir: Optional[str] = None
 
 class TestSiteRequest(BaseModel):
@@ -105,6 +112,21 @@ class TestSiteRequest(BaseModel):
 class ProgressUpdateRequest(BaseModel):
     last_read_page: int = 0
     read_status: int = 1
+
+class PromoSignatureRequest(BaseModel):
+    phash: str
+    label: str = "Promo"
+    threshold: int = 10
+
+class MarkPromoRequest(BaseModel):
+    chapter_id: int
+    page_index: int
+    label: str = "Promo"
+    threshold: int = 10
+
+class VerifyTrackerRequest(BaseModel):
+    token: str
+
 
 # --- Endpoints ---
 
@@ -207,6 +229,16 @@ async def run_download_job(req: DownloadRequest):
                 download_progress["message"] = f"Could not download panels for Chapter {chapter_num}"
                 break
 
+            # Filter recurring promotional / ad pages
+            if req.filter_promos:
+                known_sigs = get_all_promo_signatures()
+                if known_sigs:
+                    clean_panels, removed = filter_chapter_panels(panel_bytes, known_signatures=known_sigs)
+                    if removed > 0:
+                        download_progress["message"] = f"Removed {removed} promotional credit pages..."
+                        panel_bytes = clean_panels
+                        download_progress["total_panels"] = len(panel_bytes)
+
             # Smart E-Ink / Kindle slicing
             if req.slice_eink:
                 download_progress["status"] = "slicing"
@@ -239,7 +271,6 @@ async def run_download_job(req: DownloadRequest):
             # Compilation successful: clean up staging files
             cleanup_staging_dir(staging_dir)
 
-
             file_size = os.path.getsize(output_file) if os.path.exists(output_file) and os.path.isfile(output_file) else 0
 
             # Record chapter in database
@@ -255,6 +286,13 @@ async def run_download_job(req: DownloadRequest):
                 file_size=file_size,
                 status="completed"
             )
+
+            # Scrobble reading progress to configured trackers
+            try:
+                sync_trackers(title=series_title, chapter_num=chapter_num)
+            except Exception:
+                pass
+
 
             chapters_processed += 1
             current_url = data.get("next_chapter_url")
@@ -409,6 +447,21 @@ async def serve_chapter_page(chapter_id: int, page_index: int):
 @app.post("/api/chapter/{chapter_id}/progress")
 async def update_reading_state(chapter_id: int, req: ProgressUpdateRequest):
     update_reading_progress(chapter_id, req.read_status, req.last_read_page)
+    # If reading or completed, sync progress to configured trackers
+    if req.read_status >= 1:
+        chap = get_chapter_by_id(chapter_id)
+        if chap:
+            series = get_series_by_id(chap["series_id"])
+            if series:
+                try:
+                    sync_trackers(
+                        title=series["title"],
+                        chapter_num=chap["chapter_num"],
+                        anilist_id=series.get("anilist_id"),
+                        mal_id=series.get("mal_id")
+                    )
+                except Exception:
+                    pass
     return {"success": True}
 
 @app.get("/api/download/file/{chapter_id}")
@@ -533,4 +586,70 @@ async def test_site_compatibility(req: TestSiteRequest):
 async def list_diagnostic_sites():
     records = get_all_site_diagnostics()
     return {"success": True, "diagnostics": records}
+
+
+# --- Reading Tracker Endpoints (AniList & MyAnimeList) ---
+
+@app.post("/api/tracker/verify/anilist")
+async def verify_anilist(req: VerifyTrackerRequest):
+    res = verify_anilist_token(req.token)
+    return res
+
+@app.post("/api/tracker/verify/mal")
+async def verify_mal(req: VerifyTrackerRequest):
+    res = verify_mal_token(req.token)
+    return res
+
+@app.post("/api/tracker/sync/{chapter_id}")
+async def manual_sync_chapter(chapter_id: int):
+    chap = get_chapter_by_id(chapter_id)
+    if not chap:
+        return JSONResponse({"success": False, "error": "Chapter not found"}, status_code=404)
+    series = get_series_by_id(chap["series_id"])
+    if not series:
+        return JSONResponse({"success": False, "error": "Series not found"}, status_code=404)
+
+    results = sync_trackers(
+        title=series["title"],
+        chapter_num=chap["chapter_num"],
+        anilist_id=series.get("anilist_id"),
+        mal_id=series.get("mal_id")
+    )
+    return {"success": True, "results": results}
+
+
+# --- Promotional & Ad Page Filter Endpoints ---
+
+@app.get("/api/promos")
+async def list_promo_signatures():
+    sigs = get_all_promo_signatures()
+    return {"success": True, "signatures": sigs}
+
+@app.post("/api/promos")
+async def create_promo_signature(req: PromoSignatureRequest):
+    sig_id = add_promo_signature(phash=req.phash, label=req.label, match_threshold=req.threshold)
+    return {"success": True, "id": sig_id}
+
+@app.delete("/api/promos/{signature_id}")
+async def remove_promo_signature(signature_id: int):
+    ok = delete_promo_signature(signature_id)
+    return {"success": ok}
+
+@app.post("/api/promos/mark")
+async def mark_page_as_promo(req: MarkPromoRequest):
+    chap = get_chapter_by_id(req.chapter_id)
+    if not chap or not chap.get("file_path"):
+        return JSONResponse({"success": False, "error": "Chapter not found"}, status_code=404)
+
+    page_bytes = get_chapter_page_bytes(chap["file_path"], chap["file_format"], req.page_index)
+    if not page_bytes:
+        return JSONResponse({"success": False, "error": "Could not extract page bytes"}, status_code=400)
+
+    phash = compute_perceptual_hash(page_bytes)
+    if not phash:
+        return JSONResponse({"success": False, "error": "Could not compute perceptual hash"}, status_code=400)
+
+    sig_id = add_promo_signature(phash=phash, label=req.label, match_threshold=req.threshold)
+    return {"success": True, "id": sig_id, "phash": phash}
+
 

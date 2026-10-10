@@ -120,6 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const format = document.getElementById("output-format").value;
     const maxWidth = parseInt(document.getElementById("max-width").value) || 1080;
     const sliceEink = document.getElementById("slice-eink").checked;
+    const filterPromos = document.getElementById("filter-promos") ? document.getElementById("filter-promos").checked : true;
 
     btnStartDownload.disabled = true;
 
@@ -133,7 +134,8 @@ document.addEventListener("DOMContentLoaded", () => {
           count,
           format,
           max_width: maxWidth,
-          slice_eink: sliceEink
+          slice_eink: sliceEink,
+          filter_promos: filterPromos
         })
       });
 
@@ -319,7 +321,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Render panels in vertical continuous scroll
         readerPagesContainer.innerHTML = data.pages.map((pUrl, idx) => `
-          <img class="reader-page" src="${pUrl}" alt="Page ${idx + 1}" loading="lazy" id="page-panel-${idx}">
+          <div class="reader-page-wrapper" style="position: relative; display: inline-block; width: 100%; text-align: center;">
+            <img class="reader-page" src="${pUrl}" alt="Page ${idx + 1}" loading="lazy" id="page-panel-${idx}">
+            <button class="btn-mark-promo" onclick="markPageAsPromo(${chapterId}, ${idx}, this)" style="position: absolute; right: 15px; top: 15px; background: rgba(15,23,42,0.85); color: #f87171; border: 1px solid #ef4444; border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; opacity: 0.4; transition: opacity 0.2s;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.4'">🚫 Mark as Promo</button>
+          </div>
         `).join("");
 
         // Scroll listener for progress tracking
@@ -346,6 +351,37 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (e) {
       readerPagesContainer.innerHTML = `<p style="color: var(--danger); padding: 3rem;">Network error: ${e.message}</p>`;
+    }
+  };
+
+  window.markPageAsPromo = async function(chapterId, pageIndex, btnElem) {
+    if (!confirm(`Mark Page ${pageIndex + 1} as a recurring promotional/ad page? It will be automatically trimmed from future downloads.`)) {
+      return;
+    }
+    btnElem.textContent = "Fingerprinting...";
+    btnElem.disabled = true;
+    try {
+      const res = await fetch("/api/promos/mark", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chapter_id: chapterId, page_index: pageIndex, label: `Page ${pageIndex + 1} Promo` })
+      });
+      const data = await res.json();
+      if (data.success) {
+        btnElem.textContent = "✅ Blocked";
+        btnElem.style.color = "#10b981";
+        btnElem.style.borderColor = "#10b981";
+        btnElem.style.opacity = "1";
+        alert("✅ Promotional page fingerprinted! Future chapter downloads will automatically trim this ad.");
+      } else {
+        alert("Error marking promo: " + (data.error || "Unknown error"));
+        btnElem.textContent = "🚫 Mark as Promo";
+        btnElem.disabled = false;
+      }
+    } catch (e) {
+      alert("Network error: " + e.message);
+      btnElem.textContent = "🚫 Mark as Promo";
+      btnElem.disabled = false;
     }
   };
 
@@ -445,10 +481,116 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.ntfy_topic_url) document.getElementById("setting-ntfy-topic").value = s.ntfy_topic_url;
         if (s.telegram_bot_token) document.getElementById("setting-telegram-token").value = s.telegram_bot_token;
         if (s.telegram_chat_id) document.getElementById("setting-telegram-chat").value = s.telegram_chat_id;
+        if (s.anilist_enabled) document.getElementById("setting-anilist-enabled").value = s.anilist_enabled;
+        if (s.anilist_token) document.getElementById("setting-anilist-token").value = s.anilist_token;
+        if (s.mal_enabled) document.getElementById("setting-mal-enabled").value = s.mal_enabled;
+        if (s.mal_token) document.getElementById("setting-mal-token").value = s.mal_token;
       }
+      loadPromoSignatures();
     } catch (e) {
       console.error("Error loading settings", e);
     }
+  }
+
+  async function loadPromoSignatures() {
+    const listElem = document.getElementById("promo-signatures-list");
+    if (!listElem) return;
+    try {
+      const res = await fetch("/api/promos");
+      const data = await res.json();
+      if (data.success && data.signatures && data.signatures.length > 0) {
+        listElem.innerHTML = data.signatures.map(s => `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(30, 41, 59, 0.5); padding: 8px 14px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--border);">
+            <div>
+              <strong>${s.label || 'Promo'}</strong>
+              <span style="font-family: monospace; font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;">${s.phash.slice(0, 16)}...</span>
+            </div>
+            <button onclick="deletePromo(${s.id})" class="btn btn-secondary" style="color: #f87171; border-color: #ef4444; padding: 2px 8px; font-size: 0.75rem;">Delete</button>
+          </div>
+        `).join("");
+      } else {
+        listElem.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">No promotional page signatures registered yet. Mark pages in the Web Reader to auto-filter them!</p>';
+      }
+    } catch (e) {
+      listElem.innerHTML = '<p style="color: var(--danger);">Failed to load signatures.</p>';
+    }
+  }
+
+  window.deletePromo = async function(id) {
+    if (!confirm("Delete this promotional filter signature?")) return;
+    try {
+      const res = await fetch(`/api/promos/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        loadPromoSignatures();
+      }
+    } catch (e) {
+      alert("Error deleting signature: " + e.message);
+    }
+  };
+
+  const btnVerifyAnilist = document.getElementById("btn-verify-anilist");
+  if (btnVerifyAnilist) {
+    btnVerifyAnilist.addEventListener("click", async () => {
+      const token = document.getElementById("setting-anilist-token").value.trim();
+      if (!token) return alert("Please paste an AniList token first.");
+      btnVerifyAnilist.textContent = "Checking...";
+      btnVerifyAnilist.disabled = true;
+      const statusElem = document.getElementById("anilist-status");
+      try {
+        const res = await fetch("/api/tracker/verify/anilist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token })
+        });
+        const data = await res.json();
+        if (data.success) {
+          statusElem.style.color = "var(--success)";
+          statusElem.textContent = `✅ Connected as: ${data.username} (ID: ${data.user_id})`;
+        } else {
+          statusElem.style.color = "var(--danger)";
+          statusElem.textContent = `❌ Verification failed: ${data.error}`;
+        }
+      } catch (e) {
+        statusElem.style.color = "var(--danger)";
+        statusElem.textContent = `❌ Network error: ${e.message}`;
+      } finally {
+        btnVerifyAnilist.textContent = "Verify";
+        btnVerifyAnilist.disabled = false;
+      }
+    });
+  }
+
+  const btnVerifyMal = document.getElementById("btn-verify-mal");
+  if (btnVerifyMal) {
+    btnVerifyMal.addEventListener("click", async () => {
+      const token = document.getElementById("setting-mal-token").value.trim();
+      if (!token) return alert("Please paste a MyAnimeList access token first.");
+      btnVerifyMal.textContent = "Checking...";
+      btnVerifyMal.disabled = true;
+      const statusElem = document.getElementById("mal-status");
+      try {
+        const res = await fetch("/api/tracker/verify/mal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token })
+        });
+        const data = await res.json();
+        if (data.success) {
+          statusElem.style.color = "var(--success)";
+          statusElem.textContent = `✅ Connected as: ${data.username} (ID: ${data.user_id})`;
+        } else {
+          statusElem.style.color = "var(--danger)";
+          statusElem.textContent = `❌ Verification failed: ${data.error}`;
+        }
+      } catch (e) {
+        statusElem.style.color = "var(--danger)";
+        statusElem.textContent = `❌ Network error: ${e.message}`;
+      } finally {
+        btnVerifyMal.textContent = "Verify";
+        btnVerifyMal.disabled = false;
+      }
+    });
   }
 
   const btnSaveSettings = document.getElementById("btn-save-settings");
@@ -461,7 +603,11 @@ document.addEventListener("DOMContentLoaded", () => {
         discord_webhook_url: document.getElementById("setting-discord-webhook").value.trim(),
         ntfy_topic_url: document.getElementById("setting-ntfy-topic").value.trim(),
         telegram_bot_token: document.getElementById("setting-telegram-token").value.trim(),
-        telegram_chat_id: document.getElementById("setting-telegram-chat").value.trim()
+        telegram_chat_id: document.getElementById("setting-telegram-chat").value.trim(),
+        anilist_enabled: document.getElementById("setting-anilist-enabled").value,
+        anilist_token: document.getElementById("setting-anilist-token").value.trim(),
+        mal_enabled: document.getElementById("setting-mal-enabled").value,
+        mal_token: document.getElementById("setting-mal-token").value.trim()
       };
 
       btnSaveSettings.textContent = "Saving...";
@@ -537,8 +683,17 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // Switch tabs also triggers promo list load if settings tab
+  const settingsTabBtn = document.querySelector('[data-tab="settings"]');
+  if (settingsTabBtn) {
+    settingsTabBtn.addEventListener("click", () => {
+      loadSettings();
+    });
+  }
+
   // Initial load
   loadLibrary();
   listenToProgress();
 });
+
 
