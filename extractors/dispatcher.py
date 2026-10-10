@@ -62,6 +62,21 @@ class ExtractorDispatcher:
         resp = self.scraper.get(url, headers=headers, timeout=25)
         html = resp.text
         soup = BeautifulSoup(html, "html.parser")
+
+        # 3. Fallback to Browser Sidecar (FlareSolverr / Playwright) if blocked
+        if resp.status_code in (403, 503):
+            try:
+                from .browser_sidecar import fetch_protected_page
+                from database.db import get_setting
+                flaresolverr_url = get_setting("flaresolverr_url", "http://localhost:8191/v1")
+                sidecar_res = fetch_protected_page(url, flaresolverr_url=flaresolverr_url)
+                if sidecar_res and sidecar_res.get("success") and sidecar_res.get("text"):
+                    html = sidecar_res["text"]
+                    soup = BeautifulSoup(html, "html.parser")
+                    return 200, html, soup
+            except Exception:
+                pass
+
         return resp.status_code, html, soup
 
     def analyze_url(self, url: str) -> Dict[str, Any]:
