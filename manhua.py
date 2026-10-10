@@ -193,6 +193,7 @@ def main():
     parser.add_argument("--port", "-p", type=int, default=8000, help="Port for the Web GUI (default: 8000)")
     parser.add_argument("--host", type=str, default="0.0.0.0", help="Host address for Web GUI (default: 0.0.0.0)")
     parser.add_argument("--test", "-t", type=str, help="Test URL compatibility and print diagnostic report")
+    parser.add_argument("--update-library", "-u", action="store_true", help="Check all library series for new chapters and download them")
 
     args = parser.parse_args()
 
@@ -200,6 +201,21 @@ def main():
         import uvicorn
         print(f"\n🚀 Launching Universal Manhua Extractor Web GUI on http://localhost:{args.port}")
         uvicorn.run("app:app", host=args.host, port=args.port, reload=False)
+    elif args.update_library:
+        from core.updater import run_library_update
+        print("\n[*] Checking all library series for new releases...")
+        init_db()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        def cb(msg):
+            print(f" -> {msg}")
+        res = loop.run_until_complete(run_library_update(progress_cb=cb))
+        print("\n" + "=" * 65)
+        print("[🎉] Library Update Complete!")
+        print(f" - Series Checked   : {res['total_series']}")
+        print(f" - Series Updated   : {res['updated_series_count']}")
+        print(f" - Chapters Acquired: {res['total_new_chapters']}")
+        print("=" * 65)
     elif args.test:
         print(f"\n[*] Running compatibility test on: {args.test}")
         res = dispatcher.analyze_url(args.test)

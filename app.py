@@ -20,7 +20,10 @@ from database.db import (
     get_chapter_by_id,
     update_reading_progress,
     record_site_diagnostic,
-    get_all_site_diagnostics
+    get_all_site_diagnostics,
+    get_setting,
+    set_setting,
+    get_all_settings
 )
 from extractors.dispatcher import dispatcher
 from core.downloader import download_panels_stream
@@ -31,6 +34,8 @@ from core.compiler import (
     get_chapter_page_count,
     get_chapter_page_bytes
 )
+from core.updater import run_library_update
+from core.notifier import send_test_alert
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOADS_DIR = os.path.join(BASE_DIR, "downloads")
@@ -45,6 +50,23 @@ app = FastAPI(title="Universal Manhua Extractor & Library")
 static_path = os.path.join(BASE_DIR, "static")
 os.makedirs(static_path, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+@app.on_event("startup")
+async def start_periodic_scheduler():
+    async def scheduler_worker():
+        await asyncio.sleep(20)  # Wait 20 seconds after startup
+        while True:
+            try:
+                enabled = get_setting("auto_update_enabled", "false") == "true"
+                interval_hours = int(get_setting("auto_update_interval_hours", "6") or "6")
+                if enabled and not download_progress["is_running"]:
+                    await run_library_update()
+            except Exception:
+                pass
+            interval_hours = max(1, int(get_setting("auto_update_interval_hours", "6") or "6"))
+            await asyncio.sleep(interval_hours * 3600)
+
+    asyncio.create_task(scheduler_worker())
 
 # Global Download State & Progress Queues
 download_progress = {
@@ -266,6 +288,51 @@ async def get_series_detail(series_id: int):
 @app.delete("/api/library/{series_id}")
 async def remove_series(series_id: int):
     ok = delete_series(series_id)
+    return {"success": ok}
+
+@app.post("/api/library/update")
+async def trigger_library_update(background_tasks: BackgroundTasks):
+    global download_progress
+    if download_progress["is_running"]:
+        return JSONResponse({"success": False, "error": "A download or update job is already active."}, status_code=400)
+
+    async def update_task():
+        global download_progress
+        download_progress["is_running"] = True
+        download_progress["status"] = "checking_updates"
+        download_progress["message"] = "Checking library series for new chapters..."
+        try:
+            def cb(msg):
+                download_progress["message"] = msg
+            res = await run_library_update(progress_cb=cb)
+            download_progress["status"] = "completed"
+            download_progress["message"] = f"Library update finished: {res['total_new_chapters']} new chapter(s) downloaded."
+        except Exception as e:
+            download_progress["status"] = "error"
+            download_progress["message"] = f"Update failed: {str(e)}"
+        finally:
+            download_progress["is_running"] = False
+
+    background_tasks.add_task(update_task)
+    return {"success": True, "message": "Library update launched in background."}
+
+# --- Settings & Webhook Endpoints ---
+
+@app.get("/api/settings")
+async def get_app_settings():
+    return {"success": True, "settings": get_all_settings()}
+
+@app.post("/api/settings")
+async def save_app_settings(settings: Dict[str, Any]):
+    for k, v in settings.items():
+        set_setting(k, str(v))
+    return {"success": True}
+
+@app.post("/api/settings/test-notification")
+async def test_notification_channel(data: Dict[str, str]):
+    channel = data.get("channel", "discord")
+    target = data.get("target", "")
+    ok = send_test_alert(channel, target)
     return {"success": ok}
 
 # --- In-App Web Reader Endpoints ---

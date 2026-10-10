@@ -69,6 +69,13 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                 notes TEXT
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
     conn.close()
 
 # --- Series Operations ---
@@ -237,4 +244,27 @@ def get_all_site_diagnostics(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, A
     rows = conn.execute("SELECT * FROM site_diagnostics ORDER BY last_checked DESC").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+# --- App Settings Operations ---
+
+def get_setting(key: str, default: Optional[str] = None, db_path: str = DEFAULT_DB_PATH) -> Optional[str]:
+    conn = get_connection(db_path)
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    conn.close()
+    return row["value"] if row else default
+
+def set_setting(key: str, value: str, db_path: str = DEFAULT_DB_PATH) -> None:
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            INSERT INTO settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """, (key, str(value)))
+    conn.close()
+
+def get_all_settings(db_path: str = DEFAULT_DB_PATH) -> Dict[str, str]:
+    conn = get_connection(db_path)
+    rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    conn.close()
+    return {r["key"]: r["value"] for r in rows}
 
