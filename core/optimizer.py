@@ -39,13 +39,21 @@ def optimize_panel_image(
             out_buf = BytesIO()
             fmt = (image_format or "JPEG").upper()
             if fmt == "WEBP":
-                im.save(out_buf, format="WEBP", quality=webp_quality, method=4)
+                try:
+                    im.save(out_buf, format="WEBP", quality=webp_quality, method=4)
+                except Exception:
+                    # Fallback to JPEG if WEBP encoding is unsupported (e.g. Android Chaquopy)
+                    out_buf = BytesIO()
+                    im.save(out_buf, format="JPEG", quality=jpeg_quality, optimize=True)
             elif fmt == "PNG":
                 im.save(out_buf, format="PNG", optimize=True)
             else:
                 im.save(out_buf, format="JPEG", quality=jpeg_quality, optimize=True)
             return out_buf.getvalue()
     except Exception:
+        # If Pillow cannot process/decode the image, return original bytes so panel is not lost
+        if raw_bytes and len(raw_bytes) > 50:
+            return raw_bytes
         return None
 
 

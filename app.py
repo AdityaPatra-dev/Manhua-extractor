@@ -27,7 +27,9 @@ from database.db import (
     add_promo_signature,
     get_all_promo_signatures,
     delete_promo_signature,
-    update_series_trackers
+    update_series_trackers,
+    update_series_cover,
+    update_series_rich_metadata
 )
 from extractors.dispatcher import dispatcher
 from core.downloader import download_panels_stream, get_staging_dir, cleanup_staging_dir
@@ -93,7 +95,10 @@ download_progress = {
     "chapter_index": 0,
     "total_chapters": 1,
     "status": "idle",
-    "message": "Ready"
+    "message": "Ready",
+    "last_downloaded_series_id": None,
+    "last_downloaded_chapter_id": None,
+    "last_downloaded_chapter_num": None
 }
 
 # --- Request Models ---
@@ -182,6 +187,67 @@ async def inspect_series_catalog(req: InspectSeriesRequest):
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
+def generate_svg_cover(title: str) -> bytes:
+    clean_title = (title or "Manga").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420" viewBox="0 0 300 420">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="420" fill="url(#bg)" rx="8"/>
+  <rect x="15" y="15" width="270" height="390" fill="none" stroke="#334155" stroke-width="2" stroke-dasharray="4" rx="6"/>
+  <text x="150" y="180" font-family="system-ui, sans-serif" font-size="48" fill="#6366f1" text-anchor="middle">📖</text>
+  <text x="150" y="240" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#f1f5f9" text-anchor="middle">
+    <tspan x="150" dy="0">{clean_title[:24]}</tspan>
+  </text>
+  <text x="150" y="270" font-family="system-ui, sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Cover</text>
+</svg>"""
+    return svg.encode('utf-8')
+
+def save_series_cover_locally(
+    series_id: int,
+    series_dir: str,
+    cover_url: Optional[str] = None,
+    fallback_bytes: Optional[bytes] = None,
+    referer: Optional[str] = None
+) -> Optional[str]:
+    os.makedirs(series_dir, exist_ok=True)
+    target_path = os.path.join(series_dir, "cover.jpg")
+
+    # 1. Try remote cover download with headers
+    if cover_url and cover_url.startswith("http"):
+        try:
+            import requests
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Referer": referer or cover_url,
+                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+            }
+            resp = requests.get(cover_url, headers=headers, timeout=12)
+            if resp.status_code == 200 and len(resp.content) > 1000 and b"<html" not in resp.content[:200].lower():
+                with open(target_path, "wb") as f:
+                    f.write(resp.content)
+                update_series_cover(series_id, target_path, cover_url)
+                return target_path
+        except Exception:
+            pass
+
+    # 2. Try fallback bytes (first panel of downloaded chapter)
+    if fallback_bytes and len(fallback_bytes) > 500:
+        try:
+            with open(target_path, "wb") as f:
+                f.write(fallback_bytes)
+            update_series_cover(series_id, target_path, cover_url)
+            return target_path
+        except Exception:
+            pass
+
+    if os.path.exists(target_path):
+        return target_path
+    return None
+
 async def run_download_job(req: DownloadRequest):
     global download_progress
     download_progress["is_running"] = True
@@ -266,6 +332,7 @@ async def run_download_job(req: DownloadRequest):
             )
 
             if not panel_bytes:
+                download_progress["status"] = "error"
                 download_progress["message"] = f"Could not download panels for Chapter {chapter_num}"
                 break
 
@@ -338,13 +405,24 @@ async def run_download_job(req: DownloadRequest):
                 output_file = os.path.join(series_dir, f"Ch_{ch_str}")
                 save_raw_images(panel_bytes, output_file)
 
+            # Ensure local series cover is cached
+            series_rec = get_series_by_id(series_id)
+            if not series_rec or not series_rec.get("cover_path") or not os.path.exists(series_rec.get("cover_path") or ""):
+                save_series_cover_locally(
+                    series_id=series_id,
+                    series_dir=series_dir,
+                    cover_url=data.get("series_cover") or (series_rec.get("cover_url") if series_rec else None),
+                    fallback_bytes=panel_bytes[0] if panel_bytes else None,
+                    referer=current_url
+                )
+
             # Compilation successful: clean up staging files
             cleanup_staging_dir(staging_dir)
 
             file_size = os.path.getsize(output_file) if os.path.exists(output_file) and os.path.isfile(output_file) else 0
 
             # Record chapter in database
-            add_or_update_chapter(
+            chap_id = add_or_update_chapter(
                 series_id=series_id,
                 chapter_num=chapter_num,
                 chapter_slug=f"chapter-{ch_str}",
@@ -356,6 +434,10 @@ async def run_download_job(req: DownloadRequest):
                 file_size=file_size,
                 status="completed"
             )
+
+            download_progress["last_downloaded_series_id"] = series_id
+            download_progress["last_downloaded_chapter_id"] = chap_id
+            download_progress["last_downloaded_chapter_num"] = chapter_num
 
             # Scrobble reading progress to configured trackers
             try:
@@ -371,8 +453,13 @@ async def run_download_job(req: DownloadRequest):
             # Small breather between chapters
             await asyncio.sleep(1)
 
-        download_progress["status"] = "completed"
-        download_progress["message"] = f"Successfully downloaded {chapters_processed} chapter(s)!"
+        if chapters_processed > 0:
+            download_progress["status"] = "completed"
+            download_progress["message"] = f"Successfully downloaded {chapters_processed} chapter(s)!"
+        else:
+            if download_progress.get("status") != "error":
+                download_progress["status"] = "error"
+                download_progress["message"] = "Download failed: No chapters or panels could be downloaded."
     except Exception as e:
         download_progress["status"] = "error"
         download_progress["message"] = f"Error: {str(e)}"
@@ -415,6 +502,53 @@ async def get_series_detail(series_id: int):
         return JSONResponse({"success": False, "error": "Series not found"}, status_code=404)
     chapters = get_chapters_for_series(series_id)
     return {"success": True, "series": series, "chapters": chapters}
+
+@app.get("/api/series/{series_id}/cover")
+async def get_series_cover_endpoint(series_id: int):
+    """Serve series cover image with local caching, chapter panel fallback, and SVG placeholder."""
+    series = get_series_by_id(series_id)
+    if not series:
+        return Response(content=generate_svg_cover("Not Found"), media_type="image/svg+xml")
+
+    # 1. Existing local cover file
+    if series.get("cover_path") and os.path.exists(series["cover_path"]):
+        return FileResponse(series["cover_path"], media_type="image/jpeg")
+
+    safe_title = re.sub(r'[\\/*?:"<>|]', "", series["title"])
+    series_dir = os.path.join(DOWNLOADS_DIR, safe_title)
+    cand_path = os.path.join(series_dir, "cover.jpg")
+    if os.path.exists(cand_path):
+        update_series_cover(series_id, cand_path)
+        return FileResponse(cand_path, media_type="image/jpeg")
+
+    # 2. Try downloading remote cover_url with referer headers
+    if series.get("cover_url"):
+        saved = save_series_cover_locally(
+            series_id=series_id,
+            series_dir=series_dir,
+            cover_url=series["cover_url"],
+            referer=series.get("source_url")
+        )
+        if saved and os.path.exists(saved):
+            return FileResponse(saved, media_type="image/jpeg")
+
+    # 3. Fallback: extract page 0 of any downloaded chapter
+    chapters = get_chapters_for_series(series_id)
+    for chap in chapters:
+        if chap.get("file_path") and os.path.exists(chap["file_path"]):
+            p_bytes = get_chapter_page_bytes(chap["file_path"], chap["file_format"], 0)
+            if p_bytes:
+                saved = save_series_cover_locally(
+                    series_id=series_id,
+                    series_dir=series_dir,
+                    fallback_bytes=p_bytes
+                )
+                if saved and os.path.exists(saved):
+                    return FileResponse(saved, media_type="image/jpeg")
+                return Response(content=p_bytes, media_type="image/jpeg")
+
+    # 4. Fallback: stylized SVG badge
+    return Response(content=generate_svg_cover(series["title"]), media_type="image/svg+xml")
 
 @app.delete("/api/library/{series_id}")
 async def remove_series(series_id: int):

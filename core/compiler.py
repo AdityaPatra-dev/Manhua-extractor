@@ -25,7 +25,15 @@ def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
 
     # Fallback to Pillow PDF assembly if img2pdf is unavailable or fails
     try:
-        pil_images = [Image.open(BytesIO(b)) for b in image_bytes_list]
+        pil_images = []
+        for b in image_bytes_list:
+            try:
+                im = Image.open(BytesIO(b))
+                if im.mode != "RGB":
+                    im = im.convert("RGB")
+                pil_images.append(im)
+            except Exception:
+                pass
         if pil_images:
             pil_images[0].save(
                 output_path,
@@ -132,6 +140,19 @@ def get_chapter_page_count(file_path: str, file_format: str) -> int:
             with pikepdf.Pdf.open(file_path) as pdf:
                 return len(pdf.pages)
         except Exception:
+            pass
+
+        # Pure Python fallback for Android / Termux without pikepdf
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+            import re
+            pages = len(re.findall(rb"/Type\s*/Page\b", data))
+            if pages > 0:
+                return pages
+            dct_count = len(re.findall(rb"/Filter\s*/DCTDecode", data))
+            return dct_count if dct_count > 0 else 0
+        except Exception:
             return 0
     return 0
 
@@ -166,6 +187,31 @@ def get_chapter_page_bytes(file_path: str, file_format: str, page_index: int) ->
                         buf = BytesIO()
                         pdf_img.as_pil_image().save(buf, format="JPEG")
                         return buf.getvalue()
+        except Exception:
+            pass
+
+        # Pure Python fallback: extract embedded JPEG streams directly from PDF bytes
+        try:
+            with open(file_path, "rb") as f:
+                data = f.read()
+
+            jpegs = []
+            start = 0
+            while True:
+                idx = data.find(b"\xff\xd8\xff", start)
+                if idx == -1:
+                    break
+                end_stream = data.find(b"endstream", idx)
+                if end_stream != -1:
+                    eoi = data.rfind(b"\xff\xd9", idx, end_stream)
+                    if eoi != -1:
+                        jpegs.append(data[idx:eoi+2])
+                        start = end_stream + 9
+                        continue
+                start = idx + 3
+
+            if 0 <= page_index < len(jpegs):
+                return jpegs[page_index]
         except Exception:
             return None
     return None

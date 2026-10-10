@@ -71,8 +71,39 @@ async def fetch_single_panel(
                             raw_bytes = await response.read()
                 else:
                     def _sync_fetch() -> Optional[bytes]:
-                        resp = requests.get(url, headers=headers, timeout=30)
-                        return resp.content if resp.status_code == 200 else None
+                        # 1. Standard fetch
+                        try:
+                            resp = requests.get(url, headers=headers, timeout=25)
+                            if resp.status_code == 200 and len(resp.content) > 500:
+                                return resp.content
+                        except Exception:
+                            pass
+
+                        # 2. Domain root referer with verify=False
+                        try:
+                            alt_headers = dict(headers)
+                            if headers.get("Referer"):
+                                ref_parts = headers["Referer"].split("/")
+                                domain_ref = "/".join(ref_parts[:3]) + "/" if len(ref_parts) >= 3 else headers["Referer"]
+                                alt_headers["Referer"] = domain_ref
+                            resp = requests.get(url, headers=alt_headers, timeout=25, verify=False)
+                            if resp.status_code == 200 and len(resp.content) > 500:
+                                return resp.content
+                        except Exception:
+                            pass
+
+                        # 3. Bare headers fallback
+                        try:
+                            bare_headers = {
+                                "User-Agent": headers.get("User-Agent", "Mozilla/5.0"),
+                                "Accept": "image/*,*/*;q=0.8"
+                            }
+                            resp = requests.get(url, headers=bare_headers, timeout=25, verify=False)
+                            if resp.status_code == 200 and len(resp.content) > 500:
+                                return resp.content
+                        except Exception:
+                            pass
+                        return None
                     raw_bytes = await asyncio.to_thread(_sync_fetch)
 
                 if raw_bytes:
@@ -145,7 +176,8 @@ async def download_panels_stream(
             for fut in asyncio.as_completed(tasks):
                 res = await fut
                 results.append(res)
-                completed += 1
+                if res[1] is not None:
+                    completed += 1
                 if progress_callback:
                     progress_callback(completed, total)
     else:
@@ -169,7 +201,8 @@ async def download_panels_stream(
         for fut in asyncio.as_completed(tasks):
             res = await fut
             results.append(res)
-            completed += 1
+            if res[1] is not None:
+                completed += 1
             if progress_callback:
                 progress_callback(completed, total)
 
