@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <title>Universal Manhua Extractor & Library</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <meta name="theme-color" content="#0b0f19">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -24,6 +30,7 @@
         <button class="nav-tab" data-tab="tab-library">📚 Library (<span id="library-count">0</span>)</button>
         <button class="nav-tab" data-tab="tab-lab">🧪 Compatibility Lab</button>
         <button class="nav-tab" data-tab="tab-settings">⚙️ Settings</button>
+        <button id="btn-phone-connect" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" title="Phone & OPDS Access">📱 Phone</button>
       </nav>
     </header>
 
@@ -391,6 +398,47 @@
         </div>
         <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Chapters</h4>
         <div class="modal-chapters-list" id="modal-chapters-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Phone & OPDS Connectivity Modal -->
+  <div id="phone-modal" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 540px;">
+      <div class="modal-header">
+        <h3 style="margin: 0; font-size: 1.2rem;">📱 Phone & OPDS Wi-Fi Access</h3>
+        <button id="phone-modal-close" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body" style="padding-top: 0.75rem;">
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
+          Connect any smartphone or tablet on the same Wi-Fi to read downloaded chapters or stream into Mihon / Tachiyomi.
+        </p>
+
+        <div style="margin-bottom: 1.25rem;">
+          <label style="font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 4px;">📱 Mobile Web Reader URL (Open in mobile browser):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="phone-web-url" readonly style="flex: 1; padding: 8px 12px; font-size: 0.9rem; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;" value="Loading...">
+            <button id="btn-copy-phone-url" class="btn btn-secondary">📋 Copy</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 1.25rem;">
+          <label style="font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 4px;">📚 OPDS 1.2 Catalog (Mihon / Tachiyomi / Panels / Chunky):</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="phone-opds-url" readonly style="flex: 1; padding: 8px 12px; font-size: 0.9rem; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px;" value="Loading...">
+            <button id="btn-copy-opds-url" class="btn btn-secondary">📋 Copy</button>
+          </div>
+        </div>
+
+        <div style="background: rgba(30, 41, 59, 0.55); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border-color); font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+          <strong style="color: var(--text-main);">💡 How to connect Mihon / Tachiyomi:</strong>
+          <ol style="margin: 6px 0 0 1.2rem; padding: 0;">
+            <li>In Mihon / Tachiyomi, tap <strong>Browse</strong> → <strong>Sources</strong>.</li>
+            <li>Tap the <strong>+</strong> icon or select <strong>Add OPDS Server</strong>.</li>
+            <li>Paste the OPDS URL above and give it any name (e.g. <em>My Manhua Extractor</em>).</li>
+            <li>Browse and sync your downloaded chapters directly!</li>
+          </ol>
+        </div>
       </div>
     </div>
   </div>

@@ -763,5 +763,35 @@ async def test_upscaler_conn(data: Dict[str, str]):
     return {"success": ok}
 
 
+# --- Mobile LAN Discovery & OPDS Info ---
+
+def get_local_ip() -> str:
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+@app.get("/api/network/info")
+async def get_network_info(request: Request):
+    lan_ip = get_local_ip()
+    port = request.url.port or 8000
+    scheme = request.url.scheme or "http"
+    return {
+        "success": True,
+        "lan_ip": lan_ip,
+        "port": port,
+        "web_url": f"{scheme}://{lan_ip}:{port}",
+        "opds_url": f"{scheme}://{lan_ip}:{port}/opds/v1.2/catalog"
+    }
+
+
+
 
 

@@ -557,6 +557,59 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  // --- Phone & OPDS Connectivity Modal ---
+  const btnPhoneConnect = document.getElementById("btn-phone-connect");
+  const phoneModal = document.getElementById("phone-modal");
+  const phoneModalClose = document.getElementById("phone-modal-close");
+  const phoneWebUrl = document.getElementById("phone-web-url");
+  const phoneOpdsUrl = document.getElementById("phone-opds-url");
+  const btnCopyPhoneUrl = document.getElementById("btn-copy-phone-url");
+  const btnCopyOpdsUrl = document.getElementById("btn-copy-opds-url");
+
+  if (btnPhoneConnect && phoneModal) {
+    btnPhoneConnect.addEventListener("click", async () => {
+      phoneModal.classList.remove("hidden");
+      try {
+        const res = await fetch("/api/network/info");
+        const data = await res.json();
+        if (data.success) {
+          const currentHost = window.location.hostname;
+          const currentPort = window.location.port || "8000";
+          const resolvedIp = (currentHost !== "localhost" && currentHost !== "127.0.0.1") ? currentHost : data.lan_ip;
+          phoneWebUrl.value = `http://${resolvedIp}:${currentPort}/`;
+          phoneOpdsUrl.value = `http://${resolvedIp}:${currentPort}/opds/v1.2/catalog`;
+        }
+      } catch (err) {
+        phoneWebUrl.value = `${window.location.origin}/`;
+        phoneOpdsUrl.value = `${window.location.origin}/opds/v1.2/catalog`;
+      }
+    });
+  }
+
+  if (phoneModalClose && phoneModal) {
+    phoneModalClose.addEventListener("click", () => {
+      phoneModal.classList.add("hidden");
+    });
+  }
+
+  if (btnCopyPhoneUrl) {
+    btnCopyPhoneUrl.addEventListener("click", () => {
+      navigator.clipboard.writeText(phoneWebUrl.value).then(() => {
+        btnCopyPhoneUrl.textContent = "✅ Copied!";
+        setTimeout(() => btnCopyPhoneUrl.textContent = "📋 Copy", 2000);
+      });
+    });
+  }
+
+  if (btnCopyOpdsUrl) {
+    btnCopyOpdsUrl.addEventListener("click", () => {
+      navigator.clipboard.writeText(phoneOpdsUrl.value).then(() => {
+        btnCopyOpdsUrl.textContent = "✅ Copied!";
+        setTimeout(() => btnCopyOpdsUrl.textContent = "📋 Copy", 2000);
+      });
+    });
+  }
+
   // --- In-App Web Reader ---
   const readerView = document.getElementById("reader-view");
   const readerClose = document.getElementById("reader-close");

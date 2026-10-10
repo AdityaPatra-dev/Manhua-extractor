@@ -1,0 +1,17 @@
+{
+  "name": "Manhua Extractor & Web Reader",
+  "short_name": "Manhua",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#6366f1",
+  "description": "High-efficiency webtoon scraper, catalog inspector, and offline comic reader.",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

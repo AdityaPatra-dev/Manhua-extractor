@@ -323,7 +323,27 @@ def main():
 
     if args.web:
         import uvicorn
-        print(f"\n🚀 Launching Universal Manhua Extractor Web GUI on http://localhost:{args.port}")
+        import socket
+
+        def get_local_ip() -> str:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.settimeout(0.5)
+                s.connect(("8.8.8.8", 80))
+                ip = s.getsockname()[0]
+                s.close()
+                return ip
+            except Exception:
+                return "127.0.0.1"
+
+        lan_ip = get_local_ip()
+        print("\n" + "=" * 68)
+        print(" 🚀 Universal Manhua Extractor & Web Reader Server Online")
+        print("=" * 68)
+        print(f" 💻 Local PC Access      : http://localhost:{args.port}")
+        print(f" 📱 Smartphone Wi-Fi     : http://{lan_ip}:{args.port}")
+        print(f" 📚 Mihon / Tachiyomi OPDS: http://{lan_ip}:{args.port}/opds/v1.2/catalog")
+        print("=" * 68 + "\n")
         uvicorn.run("app:app", host=args.host, port=args.port, reload=False)
     elif args.update_library:
         from core.updater import run_library_update
