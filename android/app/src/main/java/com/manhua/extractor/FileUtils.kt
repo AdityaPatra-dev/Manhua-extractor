@@ -74,3 +74,4 @@ class AndroidWebAppInterface(private val context: Context) {
         FileUtils.scanMediaFile(context, File(filePath))
     }
 }
+

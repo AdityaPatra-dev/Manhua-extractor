@@ -79,3 +79,4 @@ def is_server_running() -> bool:
 def get_server_port() -> int:
     """Return active loopback port."""
     return _server_port
+
