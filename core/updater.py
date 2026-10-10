@@ -11,7 +11,7 @@ from database.db import (
     get_setting
 )
 from extractors.dispatcher import dispatcher
-from core.downloader import download_panels_stream
+from core.downloader import download_panels_stream, get_staging_dir, cleanup_staging_dir
 from core.compiler import compile_pdf, compile_cbz, save_raw_images
 from core.notifier import dispatch_notification
 
@@ -83,12 +83,16 @@ async def check_series_updates(
         if progress_cb:
             progress_cb(f"Downloading {series_title} Ch {ch_num} ({len(pages)} panels)...")
 
+        # Staging directory for partial resume
+        staging_dir = get_staging_dir(base_save_dir, series_slug, ch_num)
+
         # Download panels
         panel_bytes = await download_panels_stream(
             image_urls=pages,
             referer=next_url,
             max_width=max_width,
-            jpeg_quality=75
+            jpeg_quality=75,
+            staging_dir=staging_dir
         )
 
         if not panel_bytes:
@@ -107,6 +111,10 @@ async def check_series_updates(
         else:
             output_file = os.path.join(series_dir, f"Ch_{ch_str}")
             save_raw_images(panel_bytes, output_file)
+
+        # Download completed and compiled successfully, clear staging
+        cleanup_staging_dir(staging_dir)
+
 
         file_size = os.path.getsize(output_file) if os.path.exists(output_file) and os.path.isfile(output_file) else 0
 
