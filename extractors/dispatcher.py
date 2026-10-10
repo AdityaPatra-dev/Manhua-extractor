@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlparse, urljoin
 from typing import Dict, List, Optional, Any, Tuple
 from bs4 import BeautifulSoup
 try:
@@ -159,11 +160,36 @@ class ExtractorDispatcher:
         is_chapter_page = bool(re.search(r'/(?:chapter|ch|c)[-_/\d]', url, re.I))
         series_url = url
         if is_chapter_page or len(chapters) <= 1:
-            clean_parent = re.sub(r'/(?:chapter|ch|c)[-_/].*$', '/', url, flags=re.I)
-            if clean_parent == url:
-                clean_parent = re.sub(r'/chapter/\d+.*$', '', url, flags=re.I)
-            if clean_parent != url:
-                series_url = clean_parent
+            candidate_parent = None
+
+            # 1. Check DOM breadcrumbs / series links first
+            bc_links = soup.select(
+                "ol.breadcrumb li a, div.breadcrumb a, div.c-breadcrumb a, "
+                "a.back-to-series, a.all-chapters, div.allc a, "
+                "a[href*='/manga/'], a[href*='/series/'], a[href*='/comics/']"
+            )
+            for bc in bc_links:
+                h = bc.get("href", "").strip()
+                if h and not re.search(r'/(?:chapter|ch|c)[-_/\d]', h, re.I):
+                    full_bc = urljoin(url, h)
+                    parsed_bc = urlparse(full_bc)
+                    parsed_cur = urlparse(url)
+                    if (full_bc != url and parsed_bc.netloc == parsed_cur.netloc 
+                            and len(parsed_bc.path.strip('/')) > 0
+                            and parsed_bc.path.strip('/') not in ("manga", "series", "comics", "webtoon")):
+                        candidate_parent = full_bc
+                        break
+
+            # 2. Regex fallback if breadcrumbs didn't yield a valid parent
+            if not candidate_parent:
+                clean_parent = re.sub(r'/(?:chapter|ch|c)[-_/].*$', '/', url, flags=re.I)
+                if clean_parent == url:
+                    clean_parent = re.sub(r'/chapter/\d+.*$', '', url, flags=re.I)
+                if clean_parent != url:
+                    candidate_parent = clean_parent
+
+            if candidate_parent:
+                series_url = candidate_parent
                 p_code, p_html, p_soup = self.fetch_page(series_url)
                 if p_code == 200:
                     p_info = matched_engine.extract_series_info(p_soup, series_url, p_html)
@@ -175,8 +201,8 @@ class ExtractorDispatcher:
                     if len(p_chaps) > len(chapters):
                         chapters = p_chaps
 
-        # Fallback: if single chapter, ensure at least that chapter is in list
-        if not chapters and is_chapter_page:
+        # Fallback: guarantee at least the current chapter is returned so the user can download or browse it
+        if not chapters:
             current_num = matched_engine.extract_chapter_number(url, series_info.get("title"))
             chapters.append({
                 "chapter_num": current_num,

@@ -130,26 +130,43 @@ def get_or_create_series(
     db_path: str = DEFAULT_DB_PATH
 ) -> int:
     conn = get_connection(db_path)
-    with conn:
-        row = conn.execute("SELECT id FROM series WHERE slug = ?", (slug,)).fetchone()
-        if row:
-            series_id = row["id"]
-            conn.execute("""
-                UPDATE series 
-                SET title = coalesce(?, title),
-                    cover_url = coalesce(?, cover_url),
-                    source_url = coalesce(?, source_url),
-                    engine = coalesce(?, engine),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-            """, (title, cover_url, source_url, engine, series_id))
-            return series_id
+    try:
+        with conn:
+            row = conn.execute("SELECT id FROM series WHERE slug = ?", (slug,)).fetchone()
+            if row:
+                series_id = row["id"]
+                conn.execute("""
+                    UPDATE series 
+                    SET title = coalesce(?, title),
+                        cover_url = coalesce(?, cover_url),
+                        source_url = coalesce(?, source_url),
+                        engine = coalesce(?, engine),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (title, cover_url, source_url, engine, series_id))
+                return series_id
 
-        cursor = conn.execute("""
-            INSERT INTO series (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine))
-        return cursor.lastrowid
+            cursor = conn.execute("""
+                INSERT INTO series (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine))
+            return cursor.lastrowid
+    finally:
+        conn.close()
+
+def update_series_cover(series_id: int, cover_path: str, cover_url: Optional[str] = None, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """Update series record with locally downloaded cover image path."""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("""
+            UPDATE series
+            SET cover_path = ?,
+                cover_url = coalesce(?, cover_url),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        """, (cover_path, cover_url, series_id))
+    conn.close()
+    return True
 
 def get_all_series(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
     conn = get_connection(db_path)
@@ -194,34 +211,37 @@ def add_or_update_chapter(
     db_path: str = DEFAULT_DB_PATH
 ) -> int:
     conn = get_connection(db_path)
-    with conn:
-        row = conn.execute(
-            "SELECT id FROM chapters WHERE series_id = ? AND chapter_num = ?",
-            (series_id, chapter_num)
-        ).fetchone()
+    try:
+        with conn:
+            row = conn.execute(
+                "SELECT id FROM chapters WHERE series_id = ? AND chapter_num = ?",
+                (series_id, chapter_num)
+            ).fetchone()
 
-        if row:
-            chap_id = row["id"]
-            conn.execute("""
-                UPDATE chapters 
-                SET chapter_slug = coalesce(?, chapter_slug),
-                    title = coalesce(?, title),
-                    source_url = coalesce(?, source_url),
-                    panel_count = CASE WHEN ? > 0 THEN ? ELSE panel_count END,
-                    file_path = coalesce(?, file_path),
-                    file_format = coalesce(?, file_format),
-                    file_size = CASE WHEN ? > 0 THEN ? ELSE file_size END,
-                    status = coalesce(?, status),
-                    downloaded_at = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE downloaded_at END
-                WHERE id = ?
-            """, (chapter_slug, title, source_url, panel_count, panel_count, file_path, file_format, file_size, file_size, status, status, chap_id))
-            return chap_id
+            if row:
+                chap_id = row["id"]
+                conn.execute("""
+                    UPDATE chapters 
+                    SET chapter_slug = coalesce(?, chapter_slug),
+                        title = coalesce(?, title),
+                        source_url = coalesce(?, source_url),
+                        panel_count = CASE WHEN ? > 0 THEN ? ELSE panel_count END,
+                        file_path = coalesce(?, file_path),
+                        file_format = coalesce(?, file_format),
+                        file_size = CASE WHEN ? > 0 THEN ? ELSE file_size END,
+                        status = coalesce(?, status),
+                        downloaded_at = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE downloaded_at END
+                    WHERE id = ?
+                """, (chapter_slug, title, source_url, panel_count, panel_count, file_path, file_format, file_size, file_size, status, status, chap_id))
+                return chap_id
 
-        cursor = conn.execute("""
-            INSERT INTO chapters (series_id, chapter_num, chapter_slug, title, source_url, panel_count, file_path, file_format, file_size, status, downloaded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END)
-        """, (series_id, chapter_num, chapter_slug, title, source_url, panel_count, file_path, file_format, file_size, status, status))
-        return cursor.lastrowid
+            cursor = conn.execute("""
+                INSERT INTO chapters (series_id, chapter_num, chapter_slug, title, source_url, panel_count, file_path, file_format, file_size, status, downloaded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE NULL END)
+            """, (series_id, chapter_num, chapter_slug, title, source_url, panel_count, file_path, file_format, file_size, status, status))
+            return cursor.lastrowid
+    finally:
+        conn.close()
 
 def get_chapters_for_series(series_id: int, db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
     conn = get_connection(db_path)

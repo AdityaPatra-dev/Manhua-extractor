@@ -46,9 +46,48 @@ class BaseExtractor(ABC):
             title = slug.replace('-', ' ').title()
 
         cover_url = None
-        og_image = soup.find('meta', property='og:image')
-        if og_image and og_image.get('content'):
-            cover_url = og_image['content'].strip()
+        # 1. Meta image tags
+        for meta_attr, prop_val in [
+            ("property", "og:image"),
+            ("name", "twitter:image"),
+            ("itemprop", "image"),
+            ("name", "thumbnail")
+        ]:
+            meta_tag = soup.find('meta', attrs={meta_attr: prop_val})
+            if meta_tag and meta_tag.get('content') and meta_tag['content'].strip().startswith('http'):
+                cand = meta_tag['content'].strip()
+                if not any(bad in cand.lower() for bad in ["logo", "avatar", "icon", "banner", "discord"]):
+                    cover_url = cand
+                    break
+
+        # 2. Prominent DOM cover selectors if meta tag is missing or generic
+        if not cover_url:
+            dom_cover_selectors = [
+                "div.summary_image img",
+                "div.thumb img",
+                "div.series-thumb img",
+                "div.manga-poster img",
+                "div.poster img",
+                "img.wp-post-image",
+                "div.comic-info img",
+                "div.anime-cover img",
+                "div.series-cover img",
+                "div.book-info img",
+                ".seriestucon img",
+                ".imgdesc img",
+                "div.img-desc img",
+                "div.detail-info img",
+                "img[itemprop='image']"
+            ]
+            for sel in dom_cover_selectors:
+                c_elem = soup.select_one(sel)
+                if c_elem:
+                    src = c_elem.get("data-src") or c_elem.get("data-lazy-src") or c_elem.get("src")
+                    if src and isinstance(src, str) and src.strip().startswith("http"):
+                        cand = src.strip()
+                        if not any(bad in cand.lower() for bad in ["logo", "avatar", "icon", "banner", "placeholder"]):
+                            cover_url = cand
+                            break
 
         return {
             "title": title or slug.replace('-', ' ').title(),

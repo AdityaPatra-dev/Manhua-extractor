@@ -92,6 +92,31 @@ class MadaraExtractor(BaseExtractor):
 
         return self.deduplicate_urls(raw_urls)
 
+    def extract_chapter_list(self, soup: BeautifulSoup, url: str, html: str) -> List[Dict[str, Any]]:
+        chapters = super().extract_chapter_list(soup, url, html)
+        if chapters:
+            return chapters
+
+        # If no chapters found in initial HTML, Madara themes often load chapters via AJAX
+        try:
+            import requests
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Referer": url,
+                "X-Requested-With": "XMLHttpRequest"
+            }
+            clean_url = url.split("?")[0].rstrip('/') + "/ajax/chapters/"
+            resp = requests.post(clean_url, headers=headers, timeout=6)
+            if resp.status_code == 200 and resp.text:
+                ajax_soup = BeautifulSoup(resp.text, "html.parser")
+                ajax_chapters = super().extract_chapter_list(ajax_soup, url, resp.text)
+                if ajax_chapters:
+                    return ajax_chapters
+        except Exception:
+            pass
+
+        return chapters
+
     def extract_next_chapter(self, soup: BeautifulSoup, current_url: str) -> Optional[str]:
         # Madara next button
         candidates = [
