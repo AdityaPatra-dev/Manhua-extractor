@@ -27,6 +27,7 @@ android {
                 pip {
                     install("pydantic==1.10.18")
                     install("fastapi==0.99.1")
+                    install("h11==0.14.0")
                     install("uvicorn==0.22.0")
                     install("requests==2.32.3")
                     install("httpx==0.24.1")
@@ -64,7 +65,7 @@ android {
     }
 }
 
-tasks.register<Copy>("copyPythonSources") {
+val copyPythonSources = tasks.register<Copy>("copyPythonSources") {
     from("${rootProject.projectDir}/..") {
         include("app.py")
         include("android_entry.py")
@@ -77,8 +78,12 @@ tasks.register<Copy>("copyPythonSources") {
     into("${projectDir}/src/main/python")
 }
 
+tasks.matching { it.name.contains("Python") && it.name != "copyPythonSources" }.configureEach {
+    dependsOn(copyPythonSources)
+}
+
 tasks.named("preBuild") {
-    dependsOn("copyPythonSources")
+    dependsOn(copyPythonSources)
 }
 
 dependencies {

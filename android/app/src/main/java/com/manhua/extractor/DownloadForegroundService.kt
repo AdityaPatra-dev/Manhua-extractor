@@ -144,7 +144,6 @@ class DownloadForegroundService : Service() {
                         if (!line.isNullOrBlank()) {
                             val data = JSONObject(line.replace("data: ", "").trim())
                             val isRunning = data.optBoolean("is_running", false)
-                            val status = data.optString("status", "")
                             val msg = data.optString("message", "Downloading...")
                             val seriesTitle = data.optString("series_title", "Manhua")
                             val currentPanel = data.optInt("current_panel", 0)
