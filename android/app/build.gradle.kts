@@ -25,11 +25,11 @@ android {
             defaultConfig {
                 version = "3.11"
                 pip {
-                    install("fastapi==0.115.0")
-                    install("uvicorn==0.31.0")
-                    install("pydantic==2.9.2")
+                    install("pydantic==1.10.18")
+                    install("fastapi==0.99.1")
+                    install("uvicorn==0.22.0")
                     install("requests==2.32.3")
-                    install("httpx==0.27.2")
+                    install("httpx==0.24.1")
                     install("beautifulsoup4==4.12.3")
                     install("pillow")
                 }
