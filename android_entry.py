@@ -11,6 +11,13 @@ from typing import Optional
 _server_thread: Optional[threading.Thread] = None
 _server_started = False
 _server_port = 8000
+_last_error: Optional[str] = None
+
+
+def get_last_error() -> Optional[str]:
+    """Return the last traceback string if server crashed, or None."""
+    global _last_error
+    return _last_error
 
 
 def configure_android_paths(internal_dir: str, downloads_dir: str) -> None:
@@ -31,22 +38,34 @@ def configure_android_paths(internal_dir: str, downloads_dir: str) -> None:
         from database.db import init_db
         init_db(db_path)
     except Exception as e:
-        print(f"[AndroidEntry] Database init error: {e}", file=sys.stderr)
+        import traceback
+        print(f"[AndroidEntry] Database init error: {traceback.format_exc()}", file=sys.stderr)
 
 
 def run_uvicorn_server(port: int = 8000) -> None:
-    """Run uvicorn server loop on 127.0.0.1 loopback."""
-    global _server_started
-    import uvicorn
-    from app import app
-    _server_started = True
-    uvicorn.run(
-        app,
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        access_log=False
-    )
+    """Run uvicorn server loop on 127.0.0.1 loopback safely in thread."""
+    global _server_started, _last_error
+    try:
+        import asyncio
+        import uvicorn
+        from app import app
+        _server_started = True
+
+        config = uvicorn.Config(
+            app,
+            host="127.0.0.1",
+            port=port,
+            log_level="info",
+            access_log=False,
+            loop="asyncio"
+        )
+        server = uvicorn.Server(config)
+        server.install_signal_handlers = lambda: None
+        server.run()
+    except Exception as e:
+        import traceback
+        _last_error = traceback.format_exc()
+        print(f"[AndroidEntry] Server crash: {_last_error}", file=sys.stderr)
 
 
 def start_server_thread(internal_dir: str, downloads_dir: str, port: int = 8000) -> bool:

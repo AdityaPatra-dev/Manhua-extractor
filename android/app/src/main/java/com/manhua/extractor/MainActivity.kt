@@ -144,15 +144,16 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             var isReady = false
             var attempts = 0
-            val maxAttempts = 60
+            val maxAttempts = 150
+            var pyError: String? = null
 
             while (!isReady && attempts < maxAttempts) {
                 attempts++
                 try {
                     val url = URL("http://127.0.0.1:$localServerPort/api/health")
                     val conn = url.openConnection() as HttpURLConnection
-                    conn.connectTimeout = 1000
-                    conn.readTimeout = 1000
+                    conn.connectTimeout = 800
+                    conn.readTimeout = 800
                     conn.requestMethod = "GET"
                     val code = conn.responseCode
                     conn.disconnect()
@@ -160,6 +161,19 @@ class MainActivity : AppCompatActivity() {
                         isReady = true
                     }
                 } catch (_: Exception) {
+                    // Check if Python reported a fatal error
+                    try {
+                        if (Python.isStarted()) {
+                            val py = Python.getInstance()
+                            val entryModule = py.getModule("android_entry")
+                            val lastErr = entryModule.callAttr("get_last_error")?.toString()
+                            if (!lastErr.isNullOrBlank() && lastErr != "None") {
+                                pyError = lastErr
+                                break
+                            }
+                        }
+                    } catch (_: Exception) {
+                    }
                     delay(300)
                 }
             }
@@ -169,6 +183,8 @@ class MainActivity : AppCompatActivity() {
                     splashContainer.visibility = View.GONE
                     webView.visibility = View.VISIBLE
                     webView.loadUrl(localServerUrl)
+                } else if (!pyError.isNullOrBlank()) {
+                    splashStatusText.text = "Python Startup Error:\n$pyError"
                 } else {
                     splashStatusText.text = "Server boot timeout. Please restart the app."
                 }
