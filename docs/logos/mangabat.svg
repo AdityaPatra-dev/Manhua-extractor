@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="grad_mangabat" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#09090B"/>
+      <stop offset="100%" stop-color="#EAB308" stop-opacity="0.8"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#grad_mangabat)" stroke="#EAB308" stroke-width="2" stroke-opacity="0.6"/>
+  <text x="32" y="38" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="800" fill="#ffffff" text-anchor="middle" dominant-baseline="middle" letter-spacing="-0.5">BAT</text>
+  <circle cx="52" cy="12" r="5" fill="#EAB308"/>
+</svg>

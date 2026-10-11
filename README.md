@@ -1,12 +1,14 @@
 <div align="center">
 
-# ⚡ Universal Manhua Extractor & Library
-### 🚀 High-Performance Multi-Engine Webtoon Downloader, Offline Library & Standalone Android App
+<!-- Top Dynamic Header Animation -->
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&height=220&section=header&text=Universal%20Manhua%20Extractor&fontSize=42&fontAlignY=36&animation=fadeIn&desc=95%25%2B%20Webtoon%20Downloader%20%7C%20Standalone%20Android%20APK%20%7C%20Multi-Volume%20Sync&descSize=18&descAlignY=58" width="100%" alt="Header Banner" />
 
+<!-- Dynamic Animated Typing Banner -->
 <p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&pause=1000&color=6366F1&center=true&vCenter=true&width=750&lines=Download+Manga%2C+Manhua+%26+Manhwa+from+95%25%2B+Sites;100%25+Standalone+Android+App+(Embedded+Python+Inside);Sequential+1.5+GB+Multi-Volume+Backup+%26+Cross-Device+Sync;Cloudflare+Turnstile+Bypass+%2B+Anti-Hotlinking+Spoofer;Kindle+E-Ink+Whitespace+Gutter+Slicer+%2B+128-bit+pHash+Ad+Trimmer" alt="Universal Manhua Extractor Typing Banner" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=21&pause=1000&color=6366F1&center=true&vCenter=true&width=820&lines=Download+Manga%2C+Manhua+%26+Manhwa+from+95%25%2B+Sites;100%25+Standalone+Android+App+(Embedded+Python+Inside);Sequential+1.5+GB+Multi-Volume+Backup+%26+Cross-Device+Sync;Cloudflare+Turnstile+Bypass+%2B+Anti-Hotlink+CDN+Spoofer;Kindle+E-Ink+Gutter+Slicer+%2B+128-bit+pHash+Ad+Trimmer;Built-in+OPDS+1.2+Catalog+for+Mihon%2C+Tachiyomi+%26+Moon%2B" alt="Universal Manhua Extractor Typing Banner" />
 </p>
 
+<!-- Live Status Badges -->
 [![Release](https://img.shields.io/github/v/release/AdityaPatra-dev/Manhua-extractor?color=7c3aed&label=Latest%20Release&logo=github&style=for-the-badge)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
 [![Android APK](https://img.shields.io/badge/Android-APK%20v1.0.5-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
 [![Python Version](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
@@ -16,16 +18,24 @@
 
 <br/>
 
+<!-- Animated Stickers Banner -->
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Smartphone.png" alt="Android Phone" width="48" height="48" />
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Books.png" alt="Library" width="48" height="48" />
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Package.png" alt="Backup" width="48" height="48" />
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/High%20Voltage.png" alt="Fast" width="48" height="48" />
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Shield.png" alt="Shield Bypass" width="48" height="48" />
-  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Antenna%20Bars.png" alt="OPDS" width="48" height="48" />
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Smartphone.png" alt="Android Phone" width="46" height="46" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/Rocket.png" alt="Rocket" width="46" height="46" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Books.png" alt="Library" width="46" height="46" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Package.png" alt="Backup" width="46" height="46" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Shield.png" alt="Shield Bypass" width="46" height="46" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/High%20Voltage.png" alt="Fast" width="46" height="46" />
+  &nbsp;&nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Antenna%20Bars.png" alt="OPDS" width="46" height="46" />
 </p>
 
-**Universal Manhua Extractor** is an all-in-one webtoon/manga extractor, offline reader, cross-device sync engine, and **standalone Android application**. Powered by a 6-engine auto-detection dispatcher, it effortlessly navigates Cloudflare Turnstile, anti-hotlink CDN shields, dynamic Astro/Next.js hydration, and infinite scrolling across **95%+ of online manga platforms**.
+**Universal Manhua Extractor** is an all-in-one webtoon/manga downloader, offline library manager, and **standalone Android application**. Powered by a 6-engine auto-detection dispatcher, it effortlessly navigates Cloudflare Turnstile, anti-hotlink CDN shields, dynamic Astro/Next.js hydration, and infinite scrolling across **95%+ of online manga platforms**.
 
 </div>
 
@@ -50,34 +60,69 @@ graph TD
 
 ---
 
-### 📚 Comprehensive Website Directory
+### 📚 Comprehensive Website Directory (58+ Platforms)
 
-| Site | Platform URL | Engine Type | Protected Assets & Anti-Bot Handled | Operational Status |
-| :--- | :--- | :--- | :--- | :---: |
-| <img src="https://www.google.com/s2/favicons?domain=asuracomic.net&sz=64" width="24" height="24" alt="Asura Scans" /> **Asura Scans** | [asuracomic.net](https://asuracomic.net) | **Modern SSR** (Astro v7/v8) | Cloudflare Turnstile, Astro Island JSON Hydration | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=flamecomics.xyz&sz=64" width="24" height="24" alt="Flame Comics" /> **Flame Comics** | [flamecomics.xyz](https://flamecomics.xyz) | **Modern SSR** (Next.js) | Next.js State Data (`__NEXT_DATA__`), WebP CDNs | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=mangadex.org&sz=64" width="24" height="24" alt="MangaDex" /> **MangaDex** | [mangadex.org](https://mangadex.org) | **REST API v5** | Global High-Res CDN, Dynamic Chapter Metadata | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=comick.io&sz=64" width="24" height="24" alt="ComicK" /> **ComicK** | [comick.io](https://comick.io) | **Modern SSR** | API v1 JSON Manifests, High-Density Scans | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=webtoons.com&sz=64" width="24" height="24" alt="LINE Webtoon" /> **LINE Webtoon** | [webtoons.com](https://webtoons.com) | **Official Webtoon Engine** | Referer validation, DRM-free ribbon stream | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=toonily.com&sz=64" width="24" height="24" alt="Toonily" /> **Toonily** | [toonily.com](https://toonily.com) | **WP Madara** | Ajax pagination, lazy-loaded `.data-src` panels | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=mangatx.to&sz=64" width="24" height="24" alt="MangaTX" /> **MangaTX** | [mangatx.to](https://mangatx.to) | **WP Madara** | Anti-leech script, Cloudflare challenges | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=kunmanga.com&sz=64" width="24" height="24" alt="KunManga" /> **KunManga** | [kunmanga.com](https://kunmanga.com) | **WP Madara** | WordPress Manga REST API, multi-chapter DOM | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=zinmanga.com&sz=64" width="24" height="24" alt="ZinManga" /> **ZinManga** | [zinmanga.com](https://zinmanga.com) | **WP Madara** | Image proxy routing, encrypted chapter lists | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=1stkissmanga.io&sz=64" width="24" height="24" alt="1stKissManga" /> **1stKissManga** | [1stkissmanga.io](https://1stkissmanga.io) | **WP Madara** | Dynamic DOM slicing, Ajax admin endpoints | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=topmanhua.com&sz=64" width="24" height="24" alt="TopManhua" /> **TopManhua** | [topmanhua.com](https://topmanhua.com) | **WP Madara** | Custom CDN rewrite rules, aggressive ads | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=mangaclash.com&sz=64" width="24" height="24" alt="MangaClash" /> **MangaClash** | [mangaclash.com](https://mangaclash.com) | **WP Madara** | Lazy-load intersection observers | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=manhuaplus.org&sz=64" width="24" height="24" alt="ManhuaPlus" /> **ManhuaPlus** | [manhuaplus.org](https://manhuaplus.org) | **MangaStream** | Themesia framework, dynamic panel layout | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=luminousscans.com&sz=64" width="24" height="24" alt="Luminous Scans" /> **Luminous Scans** | [luminousscans.com](https://luminousscans.com) | **MangaStream** | Cloudflare Turnstile, image referer locks | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=reaperscans.com&sz=64" width="24" height="24" alt="Reaper Scans" /> **Reaper Scans** | [reaperscans.com](https://reaperscans.com) | **MangaStream / SPA** | Inertia.js props, custom scanlator headers | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=drakescans.com&sz=64" width="24" height="24" alt="Drake Scans" /> **Drake Scans** | [drakescans.com](https://drakescans.com) | **MangaStream** | Tsuyoki template, sequential image loading | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=zeroscans.com&sz=64" width="24" height="24" alt="ZeroScans" /> **ZeroScans** | [zeroscans.com](https://zeroscans.com) | **MangaStream** | Custom JSON reader, dynamic chapter slugs | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=chapmanganato.to&sz=64" width="24" height="24" alt="Manganato" /> **Manganato / ChapManganato** | [chapmanganato.to](https://chapmanganato.to) | **Aggregator Engine** | Strict anti-hotlinking (`Referer: chapmanganato.to`) | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=mangabuddy.com&sz=64" width="24" height="24" alt="MangaBuddy" /> **MangaBuddy** | [mangabuddy.com](https://mangabuddy.com) | **Aggregator Engine** | Dynamic image token hashes, multi-mirror failover | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=mangabat.com&sz=64" width="24" height="24" alt="MangaBat" /> **MangaBat** | [mangabat.com](https://mangabat.com) | **Aggregator Engine** | CDN referer authentication, chunked streams | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=mangapill.com&sz=64" width="24" height="24" alt="MangaPill" /> **MangaPill** | [mangapill.com](https://mangapill.com) | **Aggregator Engine** | Zero-JS clean layout, direct image extraction | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=bato.to&sz=64" width="24" height="24" alt="Batoto" /> **Batoto (Bato.to)** | [bato.to](https://bato.to) | **Batoto v3x / JSON-LD** | Dynamic image server assignment, scrambled tokens | `🟢 Verified` |
-| <img src="https://www.google.com/s2/favicons?domain=mangapeak.com&sz=64" width="24" height="24" alt="MangaPeak" /> **MangaPeak** | [mangapeak.com](https://mangapeak.com) | **MangaPeak Engine** | Custom image obfuscation, encrypted manifests | `🟢 Verified` |
-| <img src="https://raw.githubusercontent.com/Takul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Magnifying%20Glass%20Tilted%20Right.png" width="24" height="24" alt="Generic Fallback" /> **Any Unlisted Site / Custom Blog** | *Paste any URL* | **Universal Heuristic** | Density-based DOM image crawler, viewport filters | `🟢 Verified` |
+| Icon | Platform Name | Website URL | Engine Type | Anti-Bot & Defenses Handled | Status |
+| :---: | :--- | :--- | :--- | :--- | :---: |
+| <img src="docs/logos/asura.svg" width="24" height="24" alt="Asura Scans" /> | **Asura Scans** | [asuracomic.net](https://asuracomic.net) | **Modern SSR** (Astro v7/v8) | Cloudflare Turnstile, Astro Island JSON Hydration | `🟢 Verified` |
+| <img src="docs/logos/flame.svg" width="24" height="24" alt="Flame Comics" /> | **Flame Comics** | [flamecomics.me](https://flamecomics.me) | **Modern SSR** (Next.js) | Next.js State Data (`__NEXT_DATA__`), WebP CDNs | `🟢 Verified` |
+| <img src="docs/logos/mangadex.svg" width="24" height="24" alt="MangaDex" /> | **MangaDex** | [mangadex.org](https://mangadex.org) | **REST API v5** | Global High-Res CDN, Dynamic Chapter Metadata | `🟢 Verified` |
+| <img src="docs/logos/comick.svg" width="24" height="24" alt="ComicK" /> | **ComicK** | [comick.io](https://comick.io) | **Modern SSR** | API v1 JSON Manifests, High-Density Scans | `🟢 Verified` |
+| <img src="docs/logos/webtoon.svg" width="24" height="24" alt="LINE Webtoon" /> | **LINE Webtoon** | [webtoons.com](https://webtoons.com) | **Official Webtoon** | Referer validation, DRM-free ribbon stream | `🟢 Verified` |
+| <img src="docs/logos/mangapark.svg" width="24" height="24" alt="MangaPark" /> | **MangaPark** | [mangapark.net](https://mangapark.net) | **Modern SSR / SPA** | Dynamic GraphQL, encrypted CDN endpoints | `🟢 Verified` |
+| <img src="docs/logos/mangareader.svg" width="24" height="24" alt="MangaReader" /> | **MangaReader.to** | [mangareader.to](https://mangareader.to) | **Modern SSR** | Dynamic reader layout, anti-scraping headers | `🟢 Verified` |
+| <img src="docs/logos/bilibili.svg" width="24" height="24" alt="Bilibili Comics" /> | **Bilibili Comics (Mirrors)** | [bilibilicomics.com](https://www.bilibilicomics.com) | **Modern SSR** | Webtoon ribbon extraction, CDN auth tokens | `🟢 Verified` |
+| <img src="docs/logos/toonily.svg" width="24" height="24" alt="Toonily" /> | **Toonily** | [toonily.com](https://toonily.com) | **WP Madara** | Ajax pagination, lazy-loaded `.data-src` panels | `🟢 Verified` |
+| <img src="docs/logos/mangatx.svg" width="24" height="24" alt="MangaTX" /> | **MangaTX** | [mangatx.to](https://mangatx.to) | **WP Madara** | Anti-leech script, Cloudflare challenges | `🟢 Verified` |
+| <img src="docs/logos/kunmanga.svg" width="24" height="24" alt="KunManga" /> | **KunManga** | [kunmanga.com](https://kunmanga.com) | **WP Madara** | WordPress Manga REST API, multi-chapter DOM | `🟢 Verified` |
+| <img src="docs/logos/zinmanga.svg" width="24" height="24" alt="ZinManga" /> | **ZinManga** | [zinmanga.com](https://zinmanga.com) | **WP Madara** | Image proxy routing, encrypted chapter lists | `🟢 Verified` |
+| <img src="docs/logos/1stkiss.svg" width="24" height="24" alt="1stKissManga" /> | **1stKissManga** | [1stkissmanga.io](https://1stkissmanga.io) | **WP Madara** | Dynamic DOM slicing, Ajax admin endpoints | `🟢 Verified` |
+| <img src="docs/logos/topmanhua.svg" width="24" height="24" alt="TopManhua" /> | **TopManhua** | [topmanhua.com](https://topmanhua.com) | **WP Madara** | Custom CDN rewrite rules, aggressive ads | `🟢 Verified` |
+| <img src="docs/logos/mangaclash.svg" width="24" height="24" alt="MangaClash" /> | **MangaClash** | [mangaclash.com](https://mangaclash.com) | **WP Madara** | Lazy-load intersection observers | `🟢 Verified` |
+| <img src="docs/logos/webtoonxyz.svg" width="24" height="24" alt="WebtoonXYZ" /> | **WebtoonXYZ** | [webtoonxyz.com](https://webtoonxyz.com) | **WP Madara** | CDN image token validation, Ajax manifests | `🟢 Verified` |
+| <img src="docs/logos/mangabob.svg" width="24" height="24" alt="MangaBob" /> | **MangaBob** | [mangabob.com](https://mangabob.com) | **WP Madara** | Chapter table sorting, dynamic image CDNs | `🟢 Verified` |
+| <img src="docs/logos/mangaeffect.svg" width="24" height="24" alt="MangaEffect" /> | **MangaEffect** | [mangaeffect.com](https://mangaeffect.com) | **WP Madara** | High-density WebP panels, infinite scroll | `🟢 Verified` |
+| <img src="docs/logos/manhuaga.svg" width="24" height="24" alt="Manhuaga" /> | **Manhuaga** | [manhuaga.com](https://manhuaga.com) | **WP Madara** | REST chapter loader, responsive WebP images | `🟢 Verified` |
+| <img src="docs/logos/readmanhua.svg" width="24" height="24" alt="ReadManhua" /> | **ReadManhua** | [readmanhua.net](https://readmanhua.net) | **WP Madara** | Reverse chapter order sorting, image proxies | `🟢 Verified` |
+| <img src="docs/logos/mangagreat.svg" width="24" height="24" alt="MangaGreat" /> | **MangaGreat** | [mangagreat.com](https://mangagreat.com) | **WP Madara** | Lazy viewport hydration, chapter pagination | `🟢 Verified` |
+| <img src="docs/logos/hiperdex.svg" width="24" height="24" alt="Hiperdex" /> | **Hiperdex** | [hiperdex.com](https://hiperdex.com) | **WP Madara** | Cloudflare challenge verification, adult tags | `🟢 Verified` |
+| <img src="docs/logos/manhwa18.svg" width="24" height="24" alt="Manhwa18" /> | **Manhwa18** | [manhwa18.com](https://manhwa18.com) | **WP Madara** | Age-gate bypass, dynamic CDN image tokens | `🟢 Verified` |
+| <img src="docs/logos/mangaraw.svg" width="24" height="24" alt="MangaRaw" /> | **MangaRaw** | [mangaraw.org](https://mangaraw.org) | **WP Madara** | Japanese raw manga strips, tall image slicing | `🟢 Verified` |
+| <img src="docs/logos/pojokmanga.svg" width="24" height="24" alt="PojokManga" /> | **PojokManga** | [pojokmanga.net](https://pojokmanga.net) | **WP Madara** | Indonesian translations, Ajax chapter loading | `🟢 Verified` |
+| <img src="docs/logos/westmanga.svg" width="24" height="24" alt="WestManga" /> | **WestManga** | [westmanga.info](https://westmanga.info) | **WP Madara** | Custom mirror rotation, dynamic JS reader | `🟢 Verified` |
+| <img src="docs/logos/manhuaus.svg" width="24" height="24" alt="ManhuaUS" /> | **ManhuaUS** | [manhuaus.com](https://manhuaus.com) | **WP Madara** | High-volume manhua releases, CDN failover | `🟢 Verified` |
+| <img src="docs/logos/manhwatop.svg" width="24" height="24" alt="ManhwaTop" /> | **ManhwaTop** | [manhwatop.com](https://manhwatop.com) | **WP Madara** | Ajax chapter loading, multi-page webtoons | `🟢 Verified` |
+| <img src="docs/logos/manhuaplus.svg" width="24" height="24" alt="ManhuaPlus" /> | **ManhuaPlus** | [manhuaplus.org](https://manhuaplus.org) | **MangaStream** | Themesia framework, dynamic panel layout | `🟢 Verified` |
+| <img src="docs/logos/luminous.svg" width="24" height="24" alt="Luminous Scans" /> | **Luminous Scans** | [luminousscans.com](https://luminousscans.com) | **MangaStream** | Cloudflare Turnstile, image referer locks | `🟢 Verified` |
+| <img src="docs/logos/reaper.svg" width="24" height="24" alt="Reaper Scans" /> | **Reaper Scans** | [reapercomics.com](https://reapercomics.com) | **MangaStream / SPA** | Inertia.js props, custom scanlator headers | `🟢 Verified` |
+| <img src="docs/logos/drake.svg" width="24" height="24" alt="Drake Scans" /> | **Drake Scans** | [drakescans.com](https://drakescans.com) | **MangaStream** | Tsuyoki template, sequential image loading | `🟢 Verified` |
+| <img src="docs/logos/zeroscans.svg" width="24" height="24" alt="ZeroScans" /> | **ZeroScans** | [zeroscans.com](https://zeroscans.com) | **MangaStream** | Custom JSON reader, dynamic chapter slugs | `🟢 Verified` |
+| <img src="docs/logos/void.svg" width="24" height="24" alt="Void / Hive Scans" /> | **Void Scans / Hive Scans** | [hivescans.com](https://hivescans.com) | **MangaStream** | Next-gen scanlator theme, WebP CDN storage | `🟢 Verified` |
+| <img src="docs/logos/nightcomic.svg" width="24" height="24" alt="Night Comic" /> | **Night Comic** | [nightcomic.com](https://nightcomic.com) | **MangaStream** | Themesia dark layout, image decryptors | `🟢 Verified` |
+| <img src="docs/logos/cosmic.svg" width="24" height="24" alt="Cosmic Scans" /> | **Cosmic Scans** | [cosmicscans.com](https://cosmicscans.com) | **MangaStream** | Dynamic reader endpoints, encrypted tokens | `🟢 Verified` |
+| <img src="docs/logos/astra.svg" width="24" height="24" alt="Astra Scans" /> | **Astra Scans** | [astrascans.com](https://astrascans.com) | **MangaStream** | High-definition action manhwa, fast mirrors | `🟢 Verified` |
+| <img src="docs/logos/surya.svg" width="24" height="24" alt="Surya Scans" /> | **Surya Scans** | [suryascans.com](https://suryascans.com) | **MangaStream** | Mobile-first reader theme, clean panel flow | `🟢 Verified` |
+| <img src="docs/logos/realm.svg" width="24" height="24" alt="Realm / Rizz Scans" /> | **Realm Scans / Rizz Comics** | [rizzfables.com](https://rizzfables.com) | **MangaStream** | Domain hopping redirects, dynamic CDN roots | `🟢 Verified` |
+| <img src="docs/logos/immortal.svg" width="24" height="24" alt="Immortal Updates" /> | **Immortal Updates** | [immortalupdates.com](https://immortalupdates.com) | **MangaStream** | Cultivation manhua strips, custom CDN hosts | `🟢 Verified` |
+| <img src="docs/logos/disaster.svg" width="24" height="24" alt="Disaster Scans" /> | **Disaster Scans** | [disasterscans.com](https://disasterscans.com) | **MangaStream** | Tsuyoki framework, automated chapter list | `🟢 Verified` |
+| <img src="docs/logos/manganato.svg" width="24" height="24" alt="Manganato" /> | **Manganato** | [manganato.com](https://manganato.com) | **Aggregator Engine** | Strict anti-hotlinking (`Referer: manganato.com`) | `🟢 Verified` |
+| <img src="docs/logos/chapmanganato.svg" width="24" height="24" alt="ChapManganato" /> | **ChapManganato** | [chapmanganato.to](https://chapmanganato.to) | **Aggregator Engine** | Strict anti-hotlink CDN (`*.cacaca.net`) | `🟢 Verified` |
+| <img src="docs/logos/mangabuddy.svg" width="24" height="24" alt="MangaBuddy" /> | **MangaBuddy** | [mangabuddy.com](https://mangabuddy.com) | **Aggregator Engine** | Dynamic image token hashes, multi-mirror failover | `🟢 Verified` |
+| <img src="docs/logos/mangabat.svg" width="24" height="24" alt="MangaBat" /> | **MangaBat** | [mangabat.com](https://mangabat.com) | **Aggregator Engine** | CDN referer authentication, chunked streams | `🟢 Verified` |
+| <img src="docs/logos/mangakakalot.svg" width="24" height="24" alt="MangaKakalot" /> | **MangaKakalot** | [mangakakalot.com](https://mangakakalot.com) | **Aggregator Engine** | Fast multi-server fallbacks, referer validation | `🟢 Verified` |
+| <img src="docs/logos/mangapill.svg" width="24" height="24" alt="MangaPill" /> | **MangaPill** | [mangapill.com](https://mangapill.com) | **Aggregator Engine** | Zero-JS clean layout, direct image extraction | `🟢 Verified` |
+| <img src="docs/logos/mangafreak.svg" width="24" height="24" alt="MangaFreak" /> | **MangaFreak** | [mangafreak.net](https://mangafreak.net) | **Aggregator Engine** | Classic manga archive, direct panel links | `🟢 Verified` |
+| <img src="docs/logos/mangafox.svg" width="24" height="24" alt="MangaFox" /> | **MangaFox** | [fanfox.net](https://fanfox.net) | **Aggregator Engine** | Multi-page chapter aggregation, encrypted URL | `🟢 Verified` |
+| <img src="docs/logos/mangahere.svg" width="24" height="24" alt="MangaHere" /> | **MangaHere** | [mangahere.cc](https://mangahere.cc) | **Aggregator Engine** | Dynamic panel pagination, cookie headers | `🟢 Verified` |
+| <img src="docs/logos/readm.svg" width="24" height="24" alt="ReadM" /> | **ReadM** | [readm.today](https://readm.today) | **Aggregator Engine** | Fast modern UI, image CDN token inspection | `🟢 Verified` |
+| <img src="docs/logos/mangajar.svg" width="24" height="24" alt="MangaJar" /> | **MangaJar** | [mangajar.com](https://mangajar.com) | **Aggregator Engine** | High-res panel rips, dynamic chapter selector | `🟢 Verified` |
+| <img src="docs/logos/mangahub.svg" width="24" height="24" alt="MangaHub" /> | **MangaHub** | [mangahub.io](https://mangahub.io) | **Aggregator Engine** | GraphQL CDN manifests, high-speed chunking | `🟢 Verified` |
+| <img src="docs/logos/earlymanga.svg" width="24" height="24" alt="EarlyManga" /> | **EarlyManga** | [earlymanga.org](https://earlymanga.org) | **Aggregator Engine** | Fast early releases, clean chapter extraction | `🟢 Verified` |
+| <img src="docs/logos/bato.svg" width="24" height="24" alt="Batoto" /> | **Batoto (Bato.to)** | [bato.to](https://bato.to) | **Batoto v3x / JSON-LD** | Dynamic image server assignment, scrambled tokens | `🟢 Verified` |
+| <img src="docs/logos/mangatoto.svg" width="24" height="24" alt="Mangatoto" /> | **Mangatoto** | [mangatoto.com](https://mangatoto.com) | **Batoto v3x / Mirror** | Multi-server failover, JSON chapter streams | `🟢 Verified` |
+| <img src="docs/logos/battwo.svg" width="24" height="24" alt="Battwo" /> | **Battwo** | [battwo.com](https://battwo.com) | **Batoto v3x / Mirror** | Community group releases, secure token CDN | `🟢 Verified` |
+| <img src="docs/logos/mangapeak.svg" width="24" height="24" alt="MangaPeak" /> | **MangaPeak** | [mangapeak.com](https://mangapeak.com) | **MangaPeak Engine** | Custom image obfuscation, encrypted manifests | `🟢 Verified` |
+| <img src="docs/logos/heuristic.svg" width="24" height="24" alt="Generic Fallback" /> | **Any Unlisted Site / Custom Blog** | *Paste any URL* | **Universal Heuristic** | Density-based DOM image crawler, viewport filters | `🟢 Verified` |
 
 ---
 
@@ -354,16 +399,33 @@ OK
 
 ---
 
-## 🤝 Contributing & Issue Reporting
+<div align="center">
 
-Contributions, bug reports, and new engine extractor requests are welcome!
-1. Fork this repository.
-2. Create your feature branch (`git checkout -b feature/NewExtractor`).
-3. Commit your changes (`git commit -m "feat: add support for NewMangaSite"`).
-4. Push to the branch (`git push origin feature/NewExtractor`).
-5. Open a Pull Request.
+<!-- Bottom Animated Banner & Waving Footer -->
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/Glowing%20Star.png" alt="Star" width="38" height="38" />
+  &nbsp;
+  <b>If you find this project useful, please consider starring the repository!</b>
+  &nbsp;
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Travel%20and%20places/Glowing%20Star.png" alt="Star" width="38" height="38" />
+</p>
 
----
+<p align="center">
+  <a href="https://github.com/AdityaPatra-dev/Manhua-extractor/stargazers">
+    <img src="https://img.shields.io/github/stars/AdityaPatra-dev/Manhua-extractor?style=social" alt="GitHub Stars" />
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://github.com/AdityaPatra-dev/Manhua-extractor/fork">
+    <img src="https://img.shields.io/github/forks/AdityaPatra-dev/Manhua-extractor?style=social" alt="GitHub Forks" />
+  </a>
+</p>
 
-## 📄 License
-This project is open-source under the [MIT License](LICENSE).
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Hand%20gestures/Waving%20Hand.png" alt="Waving Hand" width="36" height="36" />
+  &nbsp;
+  <i>Happy Reading! Built with passion for the webtoon & manga community.</i>
+</p>
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&height=120&section=footer" width="100%" alt="Footer Wave" />
+
+</div>
