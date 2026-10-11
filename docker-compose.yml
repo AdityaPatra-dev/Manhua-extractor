@@ -1,0 +1,26 @@
+services:
+  manhua-extractor:
+    image: adityapatra/manhua-extractor:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: manhua-extractor
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - MANHUA_DB_PATH=/app/data/library.db
+      - MANHUA_DOWNLOADS_DIR=/app/downloads
+      - MANHUA_BACKUPS_DIR=/app/backups
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      - ./backups:/app/backups
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

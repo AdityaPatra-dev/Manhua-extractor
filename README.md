@@ -11,6 +11,7 @@
 <!-- Live Status Badges -->
 [![Release](https://img.shields.io/github/v/release/AdityaPatra-dev/Manhua-extractor?color=7c3aed&label=Latest%20Release&logo=github&style=for-the-badge)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
 [![Android APK](https://img.shields.io/badge/Android-APK%20v1.0.5-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
+[![Docker Image](https://img.shields.io/badge/Docker-adityapatra%2Fmanhua--extractor-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/adityapatra/manhua-extractor)
 [![Python Version](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.99.1-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Tests](https://img.shields.io/badge/Unit%20Tests-57%20Passed-10b981?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
@@ -304,6 +305,21 @@ The terminal will display your smartphone Wi-Fi access links:
 
 ### 🐳 Option 3: Docker & FlareSolverr Sidecar Setup
 
+The official production image is published on Docker Hub as **[`adityapatra/manhua-extractor:latest`](https://hub.docker.com/r/adityapatra/manhua-extractor)**.
+
+#### Quick Run with Docker CLI:
+```bash
+docker run -d \
+  --name manhua-extractor \
+  -p 8000:8000 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/downloads:/app/downloads \
+  -v $(pwd)/backups:/app/backups \
+  --restart unless-stopped \
+  adityapatra/manhua-extractor:latest
+```
+
+#### Run with Docker Compose (with Optional FlareSolverr Sidecar):
 Run the extractor alongside FlareSolverr to automatically solve interactive Cloudflare Turnstile challenges:
 
 ```yaml
@@ -312,19 +328,32 @@ version: '3.8'
 
 services:
   manhua-extractor:
-    build: .
+    image: adityapatra/manhua-extractor:latest
+    container_name: manhua-extractor
     ports:
       - "8000:8000"
     volumes:
+      - ./data:/app/data
       - ./downloads:/app/downloads
       - ./backups:/app/backups
-      - ./library.db:/app/library.db
     environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - MANHUA_DB_PATH=/app/data/library.db
+      - MANHUA_DOWNLOADS_DIR=/app/downloads
+      - MANHUA_BACKUPS_DIR=/app/backups
       - FLARESOLVERR_URL=http://flaresolverr:8191/v1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
     ports:
       - "8191:8191"
     environment:
