@@ -27,8 +27,17 @@ class BaseExtractor(ABC):
         """Extract series metadata (title, slug, cover_url). Default implementation uses heuristics."""
         parsed = urlparse(url)
         path = parsed.path.strip('/')
-        parts = [p for p in path.split('/') if p and not re.search(r'chapter|ch-|\.html$', p, re.I)]
-        slug = parts[-1] if parts else "unknown-series"
+        raw_parts = [p for p in path.split('/') if p]
+
+        category_prefixes = {'read', 'series', 'manga', 'manhua', 'manhwa', 'comic', 'comics', 'webtoon', 'webtoons', 'book', 'title'}
+        candidates = []
+        for p in raw_parts:
+            clean_p = re.sub(r'\.html?$', '', p, flags=re.I)
+            clean_p = re.sub(r'[-_]?(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+.*$', '', clean_p, flags=re.I)
+            if clean_p and not re.match(r'^\d+$', clean_p) and clean_p.lower() not in category_prefixes:
+                candidates.append(clean_p)
+
+        slug = candidates[-1] if candidates else "unknown-series"
 
         # Heuristic title from <title> or h1
         title = None
@@ -47,6 +56,9 @@ class BaseExtractor(ABC):
                 title = re.sub(r'\s+[-—|]\s+.*$', '', title, flags=re.I).strip()
         if not title:
             title = slug.replace('-', ' ').title()
+
+        if (slug == "unknown-series" or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', slug, re.I)) and title and title.lower() != "unknown series":
+            slug = re.sub(r'[^a-zA-Z0-9_-]', '-', title.lower()).strip('-')
 
         cover_url = None
         # 1. Meta image tags

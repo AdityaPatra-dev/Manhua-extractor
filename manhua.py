@@ -60,7 +60,12 @@ def download_series(
         return
 
     series_title = data.get("series_title") or "Unknown Series"
-    series_slug = data.get("series_slug") or "series"
+    series_slug = data.get("series_slug")
+    if not series_slug or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', str(series_slug), re.I):
+        if series_title and series_title != "Unknown Series":
+            series_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', series_title.lower()).strip('_')
+        else:
+            series_slug = series_slug or "series"
     chapter_num = data.get("chapter_num", 1)
     engine_name = data.get("engine_name", "Unknown")
     total_panels = data.get("panel_count", 0)

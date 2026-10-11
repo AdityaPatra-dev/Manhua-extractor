@@ -72,6 +72,69 @@ class TestV24DownloadControls(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_series_grouping_by_title_and_slug(self):
+        import tempfile
+        import os
+        from database.db import init_db, get_or_create_series, add_or_update_chapter, get_all_series, get_chapters_for_series
+        temp_dir = tempfile.mkdtemp()
+        db_path = os.path.join(temp_dir, "test_grouping.db")
+        init_db(db_path)
+
+        # Simulate 3 chapters with different chapter-like slugs
+        s1 = get_or_create_series(slug="ch1-328363", title="Ultra After", db_path=db_path)
+        c1 = add_or_update_chapter(s1, 1.0, title="Chapter 1", db_path=db_path)
+
+        s2 = get_or_create_series(slug="ch2-328364", title="Ultra After", db_path=db_path)
+        c2 = add_or_update_chapter(s2, 2.0, title="Chapter 2", db_path=db_path)
+
+        s3 = get_or_create_series(slug="ch3-328365", title="Ultra After", db_path=db_path)
+        c3 = add_or_update_chapter(s3, 3.0, title="Chapter 3", db_path=db_path)
+
+        # Must return the SAME series ID
+        self.assertEqual(s1, s2)
+        self.assertEqual(s2, s3)
+
+        # Only 1 series card should exist
+        all_s = get_all_series(db_path=db_path)
+        self.assertEqual(len(all_s), 1)
+        self.assertEqual(all_s[0]["id"], s1)
+        self.assertEqual(all_s[0]["total_chapters"], 3)
+
+        # All 3 chapters belong to s1
+        chaps = get_chapters_for_series(s1, db_path=db_path)
+        self.assertEqual(len(chaps), 3)
+
+    def test_database_deduplication_migration(self):
+        import tempfile
+        import os
+        import sqlite3
+        from database.db import init_db, get_all_series, get_chapters_for_series
+        temp_dir = tempfile.mkdtemp()
+        db_path = os.path.join(temp_dir, "test_migration.db")
+
+        # Manually create duplicate series as existed previously
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE series (id INTEGER PRIMARY KEY, title TEXT, slug TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        conn.execute("CREATE TABLE chapters (id INTEGER PRIMARY KEY, series_id INTEGER, chapter_num REAL, status TEXT DEFAULT 'completed', UNIQUE(series_id, chapter_num))")
+        conn.execute("INSERT INTO series VALUES (1, 'Ultra After', 'ch1-100', CURRENT_TIMESTAMP)")
+        conn.execute("INSERT INTO series VALUES (2, 'Ultra After', 'ch2-101', CURRENT_TIMESTAMP)")
+        conn.execute("INSERT INTO series VALUES (3, 'Ultra After', 'ch3-102', CURRENT_TIMESTAMP)")
+        conn.execute("INSERT INTO chapters (id, series_id, chapter_num) VALUES (10, 1, 1.0)")
+        conn.execute("INSERT INTO chapters (id, series_id, chapter_num) VALUES (11, 2, 2.0)")
+        conn.execute("INSERT INTO chapters (id, series_id, chapter_num) VALUES (12, 3, 3.0)")
+        conn.commit()
+        conn.close()
+
+        # Running init_db must merge the 3 series into 1
+        init_db(db_path)
+        all_s = get_all_series(db_path=db_path)
+        self.assertEqual(len(all_s), 1)
+        self.assertEqual(all_s[0]["id"], 1)
+
+        # All 3 chapters should now be under series 1
+        chaps = get_chapters_for_series(1, db_path=db_path)
+        self.assertEqual(len(chaps), 3)
+
 if __name__ == "__main__":
     unittest.main()
 

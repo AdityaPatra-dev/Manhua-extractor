@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 from datetime import datetime
 from typing import Dict, List, Optional, Any
@@ -113,6 +114,44 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             conn.execute("ALTER TABLE series ADD COLUMN year INTEGER")
         except sqlite3.OperationalError:
             pass
+
+        # Deduplicate any existing duplicate series records sharing the same normalized title
+        try:
+            dup_rows = conn.execute("""
+                SELECT lower(trim(title)) as norm_title, COUNT(*) as cnt
+                FROM series
+                WHERE title IS NOT NULL AND lower(trim(title)) != 'unknown series'
+                GROUP BY lower(trim(title))
+                HAVING cnt > 1
+            """).fetchall()
+
+            for dup in dup_rows:
+                norm_title = dup["norm_title"]
+                series_records = conn.execute("""
+                    SELECT id FROM series
+                    WHERE lower(trim(title)) = ?
+                    ORDER BY id ASC
+                """, (norm_title,)).fetchall()
+                if len(series_records) > 1:
+                    primary_id = series_records[0]["id"]
+                    other_ids = [r["id"] for r in series_records[1:]]
+                    placeholders = ",".join("?" for _ in other_ids)
+                    conn.execute(f"""
+                        UPDATE OR IGNORE chapters
+                        SET series_id = ?
+                        WHERE series_id IN ({placeholders})
+                    """, [primary_id] + other_ids)
+                    conn.execute(f"""
+                        DELETE FROM chapters
+                        WHERE series_id IN ({placeholders})
+                    """, other_ids)
+                    conn.execute(f"""
+                        DELETE FROM series
+                        WHERE id IN ({placeholders})
+                    """, other_ids)
+        except Exception:
+            pass
+
     conn.close()
 
 # --- Series Operations ---
@@ -130,14 +169,36 @@ def get_or_create_series(
     db_path: str = DEFAULT_DB_PATH
 ) -> int:
     conn = get_connection(db_path)
+    clean_title = (title or "").strip()
+    clean_slug = (slug or "").strip().lower()
+
+    # If slug looks like a chapter number or unknown, derive from clean_title if available
+    is_chapter_slug = bool(clean_slug and (clean_slug.startswith("ch") or clean_slug.isdigit() or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', clean_slug, re.I)))
+    if (is_chapter_slug or not clean_slug or clean_slug == "unknown-series") and clean_title and clean_title.lower() != "unknown series":
+        clean_slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
+
     try:
         with conn:
-            row = conn.execute("SELECT id FROM series WHERE slug = ?", (slug,)).fetchone()
+            row = None
+            # 1. Match by slug
+            if clean_slug and clean_slug != "unknown-series":
+                row = conn.execute("SELECT id FROM series WHERE slug = ?", (clean_slug,)).fetchone()
+
+            # 2. Match by exact/case-insensitive title
+            if not row and clean_title and clean_title.lower() != "unknown series":
+                row = conn.execute("SELECT id FROM series WHERE lower(trim(title)) = lower(trim(?))", (clean_title,)).fetchone()
+
+            # 3. Match by normalized title slug
+            if not row and clean_title and clean_title.lower() != "unknown series":
+                title_slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
+                if title_slug:
+                    row = conn.execute("SELECT id FROM series WHERE slug = ?", (title_slug,)).fetchone()
+
             if row:
                 series_id = row["id"]
                 conn.execute("""
                     UPDATE series 
-                    SET title = coalesce(?, title),
+                    SET title = coalesce(nullif(?, ''), title),
                         cover_url = coalesce(?, cover_url),
                         source_url = coalesce(?, source_url),
                         engine = coalesce(?, engine),
@@ -149,7 +210,7 @@ def get_or_create_series(
             cursor = conn.execute("""
                 INSERT INTO series (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine))
+            """, (clean_slug or slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine))
             return cursor.lastrowid
     finally:
         conn.close()

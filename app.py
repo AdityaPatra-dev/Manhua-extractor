@@ -310,7 +310,12 @@ async def run_download_job(req: DownloadRequest):
                 break
 
             series_title = data.get("series_title") or "Unknown Series"
-            series_slug = data.get("series_slug") or re.sub(r'[^a-zA-Z0-9_-]', '_', series_title.lower())
+            series_slug = data.get("series_slug")
+            if not series_slug or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', str(series_slug), re.I):
+                if series_title and series_title != "Unknown Series":
+                    series_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', series_title.lower()).strip('_')
+                else:
+                    series_slug = series_slug or "unknown_series"
             chapter_num = data.get("chapter_num") or (chapters_processed + 1)
             pages = data.get("pages", [])
 
