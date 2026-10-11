@@ -142,10 +142,12 @@ def estimate_backup_batches(
             "items": current_batch_items
         })
 
-    # Update total_batches in each batch
+    # Update total_batches and labels in each batch
     total_b = len(batches)
     for b in batches:
         b["total_batches"] = total_b
+        b["batch_label"] = f"Part {b['batch_index']} of {total_b}" if total_b > 1 else "Complete Library"
+        b["formatted_size"] = b.get("uncompressed_formatted", format_bytes(b.get("uncompressed_bytes", 0)))
 
     # Unique series count in backup
     unique_series = {it["series_id"] for it in all_downloaded_items}

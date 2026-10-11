@@ -27,6 +27,7 @@ android {
                 pip {
                     install("pydantic==1.10.18")
                     install("fastapi==0.99.1")
+                    install("python-multipart")
                     install("h11==0.14.0")
                     install("uvicorn==0.22.0")
                     install("requests==2.32.3")

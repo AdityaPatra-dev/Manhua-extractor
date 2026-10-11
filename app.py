@@ -4,8 +4,10 @@ import shutil
 import re
 import json
 import asyncio
+import threading
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Tuple, Union, Callable
-from fastapi import FastAPI, BackgroundTasks, Request, Response
+from fastapi import FastAPI, BackgroundTasks, Request, Response, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -48,10 +50,20 @@ from core.compiler import (
 )
 from core.updater import run_library_update
 from core.notifier import send_test_alert
+from core.backup_engine import (
+    estimate_backup_batches,
+    create_backup_batch_file,
+    inspect_backup_archive,
+    restore_backup_archive,
+    format_bytes,
+    DEFAULT_BATCH_SIZE_BYTES
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOADS_DIR = os.environ.get("MANHUA_DOWNLOADS_DIR") or os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+BACKUPS_DIR = os.environ.get("MANHUA_BACKUPS_DIR") or os.path.join(BASE_DIR, "backups")
+os.makedirs(BACKUPS_DIR, exist_ok=True)
 
 # Initialize Database
 init_db()
@@ -1095,6 +1107,359 @@ async def get_network_info(request: Request):
         "web_url": f"{scheme}://{lan_ip}:{port}",
         "opds_url": f"{scheme}://{lan_ip}:{port}/opds/v1.2/catalog"
     }
+
+
+# =====================================================================
+# --- Cross-Device Backup & Multi-Volume Sync Endpoints ---
+# =====================================================================
+
+backup_state: Dict[str, Any] = {
+    "is_running": False,
+    "action": "idle",       # "idle", "export", "import"
+    "job_id": None,
+    "current_batch": 0,
+    "total_batches": 0,
+    "current_step": 0,
+    "total_steps": 0,
+    "percent": 0.0,
+    "message": "Ready",
+    "status": "idle",       # "idle", "running", "completed", "error"
+    "batch_files": [],
+    "error": None,
+    "last_result": None
+}
+
+
+class BackupExportRequest(BaseModel):
+    mode: str = "batched"  # "single" or "batched"
+    batch_size_mb: int = 1450
+    include_files: bool = True
+
+
+def run_backup_export_worker(job_id: str, plan: Dict[str, Any], include_files: bool):
+    global backup_state
+    try:
+        batches = plan.get("batches", [])
+        total_batches = len(batches)
+        total_chapters = plan.get("total_chapters", 0)
+        generated_files = []
+        overall_chapter_index = 0
+
+        for b in batches:
+            b_idx = b["batch_index"]
+            b_items = b["items"]
+            filename = f"{job_id}_part{b_idx}.zip" if total_batches > 1 else f"{job_id}.zip"
+            zip_dest = os.path.join(BACKUPS_DIR, filename)
+
+            backup_state["current_batch"] = b_idx
+            backup_state["total_batches"] = total_batches
+            backup_state["message"] = f"Exporting Part {b_idx} of {total_batches} ({b.get('formatted_size', '0 B')})..."
+
+            def on_progress(cur: int, tot: int, msg: str):
+                backup_state["current_step"] = overall_chapter_index + cur
+                backup_state["total_steps"] = max(1, total_chapters)
+                backup_state["message"] = msg
+                if total_chapters > 0:
+                    backup_state["percent"] = round((backup_state["current_step"] / total_chapters) * 100, 1)
+
+            create_backup_batch_file(
+                batch_index=b_idx,
+                total_batches=total_batches,
+                batch_items=b_items,
+                output_zip_path=zip_dest,
+                include_files=include_files,
+                progress_callback=on_progress
+            )
+            overall_chapter_index += len(b_items)
+            generated_files.append(f"/api/backup/download/{filename}")
+
+        backup_state["status"] = "completed"
+        backup_state["is_running"] = False
+        backup_state["percent"] = 100.0
+        backup_state["message"] = f"Export completed: {len(generated_files)} archive(s) ready."
+        backup_state["batch_files"] = generated_files
+        backup_state["last_result"] = {
+            "success": True,
+            "job_id": job_id,
+            "total_batches": total_batches,
+            "batch_files": generated_files
+        }
+    except Exception as e:
+        backup_state["status"] = "error"
+        backup_state["is_running"] = False
+        backup_state["error"] = str(e)
+        backup_state["message"] = f"Export failed: {str(e)}"
+
+
+@app.get("/api/backup/estimate")
+async def estimate_backup(batch_size_mb: Optional[int] = 1450):
+    target_bytes = (batch_size_mb or 1450) * 1024 * 1024
+    plan = estimate_backup_batches(target_batch_bytes=target_bytes)
+    return {
+        "success": True,
+        "total_series": plan["total_series"],
+        "total_chapters": plan["total_chapters"],
+        "total_size_bytes": plan["total_size_bytes"],
+        "total_size_formatted": plan["total_size_formatted"],
+        "batch_count": plan["batch_count"],
+        "batches_1_5gb": plan["batch_count"],
+        "batches": [
+            {
+                "batch_index": b["batch_index"],
+                "total_batches": b["total_batches"],
+                "batch_label": b["batch_label"],
+                "chapter_count": b["chapter_count"],
+                "uncompressed_bytes": b["uncompressed_bytes"],
+                "formatted_size": b["formatted_size"]
+            }
+            for b in plan.get("batches", [])
+        ]
+    }
+
+
+@app.post("/api/backup/export")
+async def export_backup(req: BackupExportRequest):
+    global backup_state
+    if backup_state["is_running"]:
+        return JSONResponse(
+            {"success": False, "error": "A backup task is already active."},
+            status_code=409
+        )
+
+    # Calculate target batch size in bytes
+    if req.mode == "single":
+        target_bytes = 100 * 1024 * 1024 * 1024  # 100 GB ceiling so everything fits into 1 batch
+    else:
+        target_bytes = max(10, req.batch_size_mb) * 1024 * 1024
+
+    plan = estimate_backup_batches(target_batch_bytes=target_bytes)
+    total_batches = plan["batch_count"]
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    job_id = f"bkp_{timestamp}"
+
+    # Precalculate batch filenames & download URLs
+    filenames = []
+    for b in plan.get("batches", []):
+        b_idx = b["batch_index"]
+        fn = f"{job_id}_part{b_idx}.zip" if total_batches > 1 else f"{job_id}.zip"
+        filenames.append(fn)
+
+    batch_urls = [f"/api/backup/download/{fn}" for fn in filenames]
+
+    # Initialize progress tracker
+    backup_state["is_running"] = True
+    backup_state["action"] = "export"
+    backup_state["job_id"] = job_id
+    backup_state["current_batch"] = 1 if total_batches > 0 else 0
+    backup_state["total_batches"] = total_batches
+    backup_state["current_step"] = 0
+    backup_state["total_steps"] = plan["total_chapters"]
+    backup_state["percent"] = 0.0
+    backup_state["message"] = f"Export scheduled for {total_batches} batch(es)"
+    backup_state["status"] = "running"
+    backup_state["batch_files"] = batch_urls
+    backup_state["error"] = None
+    backup_state["last_result"] = None
+
+    # Spawn daemon worker thread
+    t = threading.Thread(
+        target=run_backup_export_worker,
+        args=(job_id, plan, req.include_files),
+        daemon=True
+    )
+    t.start()
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "total_batches": total_batches,
+        "batch_files": batch_urls
+    }
+
+
+@app.get("/api/backup/status")
+@app.get("/api/backup/progress")
+async def get_backup_status():
+    return {
+        "success": True,
+        "is_running": backup_state["is_running"],
+        "action": backup_state["action"],
+        "job_id": backup_state["job_id"],
+        "current_batch": backup_state["current_batch"],
+        "total_batches": backup_state["total_batches"],
+        "current_step": backup_state["current_step"],
+        "total_steps": backup_state["total_steps"],
+        "percent": backup_state["percent"],
+        "message": backup_state["message"],
+        "status": backup_state["status"],
+        "batch_files": backup_state["batch_files"],
+        "error": backup_state["error"],
+        "last_result": backup_state["last_result"]
+    }
+
+
+@app.get("/api/backup/download/{filename}")
+async def download_backup_file(filename: str):
+    safe_name = os.path.basename(filename)
+    if not safe_name.endswith(".zip"):
+        return JSONResponse({"success": False, "error": "Invalid archive name"}, status_code=400)
+    file_path = os.path.join(BACKUPS_DIR, safe_name)
+    if not os.path.exists(file_path):
+        return JSONResponse({"success": False, "error": "Archive file not found"}, status_code=404)
+    return FileResponse(
+        file_path,
+        media_type="application/zip",
+        filename=safe_name
+    )
+
+
+@app.post("/api/backup/import")
+async def import_backup(file: UploadFile = File(...)):
+    global backup_state
+    if backup_state["is_running"]:
+        return JSONResponse(
+            {"success": False, "error": "Another backup operation is currently active."},
+            status_code=409
+        )
+
+    if not file.filename or not file.filename.lower().endswith(".zip"):
+        return JSONResponse(
+            {"success": False, "error": "Uploaded file must be a valid .zip backup archive."},
+            status_code=400
+        )
+
+    staging_upload = os.path.join(
+        BACKUPS_DIR,
+        f".staging_upload_{os.getpid()}_{int(datetime.now(timezone.utc).timestamp())}.zip"
+    )
+
+    backup_state["is_running"] = True
+    backup_state["action"] = "import"
+    backup_state["status"] = "running"
+    backup_state["message"] = f"Streaming upload: {file.filename}..."
+    backup_state["current_step"] = 0
+    backup_state["total_steps"] = 100
+    backup_state["percent"] = 0.0
+
+    try:
+        # Stream chunks (64 KB) directly to disk to prevent RAM blowup on mobile
+        with open(staging_upload, "wb") as f_out:
+            while True:
+                chunk = await file.read(64 * 1024)
+                if not chunk:
+                    break
+                f_out.write(chunk)
+
+        # Inspect and validate ZIP structure & Zip-Slip defense
+        backup_state["message"] = "Verifying backup archive & manifest..."
+        inspection = inspect_backup_archive(staging_upload)
+        if not inspection.get("success"):
+            return JSONResponse(
+                {"success": False, "error": f"Invalid backup archive: {inspection.get('error')}"},
+                status_code=400
+            )
+
+        manifest = inspection["manifest"]
+        total_ch = manifest.get("stats", {}).get("chapter_count", 1)
+        backup_state["total_steps"] = max(1, total_ch)
+
+        def on_import_progress(cur: int, tot: int, msg: str):
+            backup_state["current_step"] = cur
+            backup_state["total_steps"] = max(1, tot)
+            backup_state["message"] = msg
+            if tot > 0:
+                backup_state["percent"] = round((cur / tot) * 100, 1)
+
+        # Perform restoration in a worker thread to keep event loop responsive
+        result = await asyncio.to_thread(
+            restore_backup_archive,
+            staging_upload,
+            downloads_dir=DOWNLOADS_DIR,
+            progress_callback=on_import_progress
+        )
+
+        if not result["success"]:
+            backup_state["status"] = "error"
+            backup_state["error"] = result.get("error")
+            return JSONResponse({"success": False, "error": result.get("error")}, status_code=400)
+
+        backup_state["status"] = "completed"
+        backup_state["percent"] = 100.0
+        backup_state["message"] = (
+            f"Successfully restored {result['batch_label']}: "
+            f"{result['chapters_imported']} chapters imported, {result['series_synced']} series synced."
+        )
+        backup_state["last_result"] = result
+
+        return {
+            "success": True,
+            "batch_info": result.get("batch_label"),
+            "batch_label": result.get("batch_label"),
+            "series_synced": result.get("series_synced"),
+            "chapters_imported": result.get("chapters_imported"),
+            "chapters_skipped_duplicate": result.get("chapters_skipped_duplicate"),
+            "storage_freed_or_used": f"+{format_bytes(result.get('uncompressed_bytes', 0))}"
+        }
+
+    except Exception as e:
+        backup_state["status"] = "error"
+        backup_state["error"] = str(e)
+        backup_state["message"] = f"Import failed: {str(e)}"
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+    finally:
+        backup_state["is_running"] = False
+        if os.path.exists(staging_upload):
+            try:
+                os.remove(staging_upload)
+            except Exception:
+                pass
+
+
+@app.get("/api/backup/list")
+async def list_backup_archives():
+    files = []
+    if os.path.exists(BACKUPS_DIR):
+        for f in sorted(os.listdir(BACKUPS_DIR)):
+            if f.endswith(".zip") and not f.startswith("."):
+                fp = os.path.join(BACKUPS_DIR, f)
+                try:
+                    sz = os.path.getsize(fp)
+                    mtime = os.path.getmtime(fp)
+                    files.append({
+                        "filename": f,
+                        "url": f"/api/backup/download/{f}",
+                        "size_bytes": sz,
+                        "size_formatted": format_bytes(sz),
+                        "created_at": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+                    })
+                except Exception:
+                    pass
+    return {"success": True, "files": files}
+
+
+@app.post("/api/backup/clear")
+async def clear_backup_cache():
+    purged_count = 0
+    freed_bytes = 0
+    if os.path.exists(BACKUPS_DIR):
+        for f in os.listdir(BACKUPS_DIR):
+            if f.endswith(".zip") and not f.startswith("."):
+                fp = os.path.join(BACKUPS_DIR, f)
+                try:
+                    freed_bytes += os.path.getsize(fp)
+                    os.remove(fp)
+                    purged_count += 1
+                except Exception:
+                    pass
+    return {
+        "success": True,
+        "purged_count": purged_count,
+        "freed_bytes": freed_bytes,
+        "freed_formatted": format_bytes(freed_bytes)
+    }
+
 
 
 

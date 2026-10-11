@@ -176,5 +176,150 @@ class TestBackupAndSyncEngine(unittest.TestCase):
             self.assertTrue(os.path.exists(c["file_path"]))
             self.assertTrue(c["file_path"].startswith(phone_b_downloads))
 
+
+class TestBackupApiEndpoints(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from fastapi.testclient import TestClient
+        from app import app
+        cls.client = TestClient(app)
+
+    def setUp(self):
+        import app
+        app.backup_state["is_running"] = False
+        app.backup_state["status"] = "idle"
+
+    def test_estimate_endpoint(self):
+        response = self.client.get("/api/backup/estimate?batch_size_mb=1450")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertIn("total_series", data)
+        self.assertIn("total_chapters", data)
+        self.assertIn("total_size_bytes", data)
+        self.assertIn("batches_1_5gb", data)
+        self.assertIn("batches", data)
+
+    def test_export_and_status_endpoints(self):
+        # Trigger export
+        payload = {
+            "mode": "single",
+            "batch_size_mb": 1450,
+            "include_files": True
+        }
+        response = self.client.post("/api/backup/export", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertIn("job_id", data)
+        self.assertIn("batch_files", data)
+
+        # Check status endpoint
+        status_res = self.client.get("/api/backup/status")
+        self.assertEqual(status_res.status_code, 200)
+        s_data = status_res.json()
+        self.assertTrue(s_data["success"])
+        self.assertIn("status", s_data)
+        self.assertIn("percent", s_data)
+
+    def test_download_security_and_missing_file(self):
+        # 1. Non-existent file -> 404
+        res_404 = self.client.get("/api/backup/download/nonexistent_backup_9999.zip")
+        self.assertEqual(res_404.status_code, 404)
+
+        # 2. Path traversal attempt -> blocked with 400 or 404
+        res_trav = self.client.get("/api/backup/download/%2E%2E%2Fetc%2Fpasswd")
+        self.assertIn(res_trav.status_code, [400, 404])
+
+        # 3. Non-zip extension -> 400
+        res_ext = self.client.get("/api/backup/download/test.exe")
+        self.assertEqual(res_ext.status_code, 400)
+
+    def test_import_validation_and_rejection(self):
+        # 1. Upload non-zip file -> 400
+        files = {"file": ("malicious.txt", b"not a zip file", "text/plain")}
+        res = self.client.post("/api/backup/import", files=files)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("must be a valid .zip", res.json()["error"])
+
+        # 2. Upload corrupted zip -> 400
+        corrupt_zip = {"file": ("corrupt.zip", b"PK\x03\x04corrupteddata", "application/zip")}
+        res2 = self.client.post("/api/backup/import", files=corrupt_zip)
+        self.assertEqual(res2.status_code, 400)
+        self.assertIn("Invalid backup archive", res2.json()["error"])
+
+    def test_import_valid_archive(self):
+        import io
+        from core.backup_engine import sanitize_filename
+
+        # Construct a genuine minimal in-memory backup zip
+        zip_buf = io.BytesIO()
+        manifest = {
+            "format_version": "1.0",
+            "app_version": "1.0.4",
+            "batch": {
+                "is_batched": False,
+                "batch_index": 1,
+                "total_batches": 1,
+                "batch_label": "Complete Library"
+            },
+            "stats": {
+                "series_count": 1,
+                "chapter_count": 1,
+                "uncompressed_bytes": 100
+            },
+            "series": [
+                {
+                    "title": "API Test Series",
+                    "slug": "api-test-series",
+                    "author": "Tester",
+                    "status": "Ongoing",
+                    "chapters": [
+                        {
+                            "chapter_num": 1.0,
+                            "chapter_slug": "chapter-1",
+                            "title": "Chapter 1",
+                            "relative_path": "files/API_Test_Series/ch1.cbz",
+                            "file_format": "cbz",
+                            "file_size": 100,
+                            "panel_count": 5,
+                            "read_status": 1,
+                            "last_read_page": 3
+                        }
+                    ]
+                }
+            ]
+        }
+        with zipfile.ZipFile(zip_buf, 'w') as zf:
+            zf.writestr("manifest.json", json.dumps(manifest))
+            zf.writestr("files/API_Test_Series/ch1.cbz", b"Z" * 100)
+
+        zip_buf.seek(0)
+        files = {"file": ("api_test_backup.zip", zip_buf.getvalue(), "application/zip")}
+        res = self.client.post("/api/backup/import", files=files)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["chapters_imported"], 1)
+        self.assertEqual(data["series_synced"], 1)
+
+    def test_list_and_clear_cache(self):
+        from app import BACKUPS_DIR
+        test_file = os.path.join(BACKUPS_DIR, "test_cache_part1.zip")
+        with open(test_file, "wb") as f:
+            f.write(b"PK\x03\x04cachetest")
+
+        list_res = self.client.get("/api/backup/list")
+        self.assertEqual(list_res.status_code, 200)
+        filenames = [f["filename"] for f in list_res.json()["files"]]
+        self.assertIn("test_cache_part1.zip", filenames)
+
+        clear_res = self.client.post("/api/backup/clear")
+        self.assertEqual(clear_res.status_code, 200)
+        self.assertGreaterEqual(clear_res.json()["purged_count"], 1)
+        self.assertFalse(os.path.exists(test_file))
+
+
 if __name__ == "__main__":
     unittest.main()
+

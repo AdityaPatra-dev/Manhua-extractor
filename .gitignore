@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 downloads/
+backups/
 .pytest_cache/
 *.sqlite3-journal
 *.db
