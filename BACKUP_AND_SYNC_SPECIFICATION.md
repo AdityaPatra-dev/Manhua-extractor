@@ -205,27 +205,46 @@ sequenceDiagram
 
 ---
 
-## 6. Edge Cases & Robustness Matrix
+## 6. Edge Cases, Flaw Analysis & Defensive Architecture
 
-| Risk / Failure Mode | Cause | Defensive Engineering Measure |
+| Potential Flaw / Risk | Root Cause | Production Defensive Measure |
 |---|---|---|
-| **Out-of-Order Imports** | User imports `Part 2` before `Part 1`. | Each batch manifest contains the series definition for all chapters it carries. Part 2 creates the series; Part 1 later appends to it cleanly. |
-| **Insufficient Storage** | Phone B has only 500 MB free for a 1.45 GB batch. | Pre-flight check before unzipping: compares `manifest.stats.uncompressed_bytes` against `shutil.disk_usage(DOWNLOADS_DIR).free`. Aborts cleanly with warning before touching disk. |
-| **Android Sleep / Background Kill** | OS kills app mid-extraction. | Extraction happens into a `.staging_import/` directory. Only when all files verify against CRC32 does the database transaction commit and files move into `downloads/`. |
-| **Corrupted Downloaded Archive** | Transfer interrupted. | `zipfile.is_zipfile()` validation and CRC32 verification on every entry before database insertion. |
-| **Special Characters in Titles** | Series title has `:`, `?`, `/`, `\`. | Sanitized using `re.sub(r'[\\/*?:"<>|]', "", title)` both in the ZIP internal structure and on Phone B's disk. |
+| **Zip-Slip Path Traversal** | Malicious or malformed ZIP containing `../../` filenames. | **Strict Boundary Enforcement**: Every extracted file path is validated with `os.path.commonpath([dest_dir, target_file]) == dest_dir`. Traversal attempts abort immediately. |
+| **ZIP64 Overflow Crash** | Single archive exceeding 4 GB or 65,535 files raises `LargeZipFile`. | **Mandatory ZIP64**: `zipfile.ZipFile(..., allowZip64=True)` is enforced on all export operations. |
+| **Folder/Raw Image Chapters** | Chapter stored as a folder (`file_format == 'folder'`) rather than a single file. | **Recursive Folder Traversal**: Bin-packing calculates total directory size via `sum(os.path.getsize(f))`; archiver recursively adds all panels inside `files/<Series>/<Ch_Folder>/`. |
+| **Missing Covers in Partial Batches** | Part 2 imported on clean phone before Part 1; series created with no cover. | **Self-Contained Series Assets**: Every batch that includes chapters for a series bundles that series' cover image (`cover.jpg`), guaranteeing full asset self-sufficiency in any import order. |
+| **RAM Spikes & Android `/tmp` Failures** | Buffering 1.5 GB multipart uploads in memory crashes Chaquopy / Android. | **Direct-to-Disk Streamer**: Imports stream chunks (64 KB) directly to `.staging_backup/` in the app's writable private directory, bypassing `/tmp` and consuming < 15 MB RAM. |
+| **Database Locked on Export** | Active background downloader or cron scheduler writes to `library.db` during export. | **Read-Only Transaction Snapshot**: Export queries read directly within `BEGIN DEFERRED` read transactions and write to `database_dump.json`, preventing lock collisions. |
+| **Unicode & CJK Character Corruption** | Manga titles with Korean, Japanese, Chinese, or accents corrupted in ZIP headers. | **UTF-8 Zip Flag Enforcement**: Filenames encoded explicitly as UTF-8 in `ZipInfo` structures with system illegal characters (`[\\/*?:"<>|]`) sanitized for disk paths. |
+| **Storage Exhaustion from Temp Exports** | Exported batches accumulate on phone storage. | **Auto-Purge Lifecycle**: Exported archives are registered with an expiry timestamp (24h) and a manual "Clear Export Cache" button in Settings. |
 
 ---
 
 ## 7. Implementation Checklist for Clean Integration
 
-- [ ] **Core Backup Module**: Implement [`core/backup_engine.py`](file:///home/adityapatra/Documents/GitHub/Manhua-extractor/core/backup_engine.py) containing:
-  - `estimate_backup_batches(batch_size_bytes)`
-  - `generate_backup_stream(batch_index, target_chapters)`
-  - `import_backup_package(zip_path, merge_strategy="smart_sync")`
-- [ ] **FastAPI Endpoints**: Wire `/api/backup/estimate`, `/api/backup/export`, `/api/backup/import`, and `/api/backup/download/{filename}` into [`app.py`](file:///home/adityapatra/Documents/GitHub/Manhua-extractor/app.py).
-- [ ] **UI Integration**: Add **📦 Backup & Multi-Device Sync** card in `Settings` tab in [`static/index.html`](file:///home/adityapatra/Documents/GitHub/Manhua-extractor/static/index.html) with:
-  - Export modal (Single ZIP vs 1.5 GB Batches).
-  - Drag-and-drop / file picker for sequential ZIP restoration.
-  - Live progress bar with imported chapter counts.
-- [ ] **Unit Test Suite**: Add comprehensive test matrix in `tests/test_backup_and_sync.py` covering single-zip export, 1.5 GB bin-packing, out-of-order restoration, and path remapping.
+- [ ] **Step 1: Core Backup Engine (`core/backup_engine.py`)**:
+  - `calculate_chapter_size(chapter_record)` (handles single file & directory chapters).
+  - `estimate_backup_batches(target_size_bytes=1450*1024*1024)` (bin-packing algorithm).
+  - `create_backup_batch(batch_index, target_chapters, output_zip_path)` (ZIP64 streaming, UTF-8 manifest, self-contained covers).
+  - `inspect_backup_archive(zip_path)` (validates format, manifests, Zip-Slip safety).
+  - `restore_backup_archive(zip_path, merge_strategy="smart_sync")` (safe staging, path remapping, non-destructive DB sync).
+- [ ] **Step 2: Unit Test Suite (`tests/test_backup_and_sync.py`)**:
+  - Test batch estimation & 1.5 GB bin-packing logic.
+  - Test single-archive vs multi-batch creation.
+  - Test out-of-order restoration (Part 2 then Part 1) and series unification.
+  - Test Zip-Slip detection & rejection.
+  - Test reading progress bookmark preservation.
+- [ ] **Step 3: FastAPI Endpoints (`app.py`)**:
+  - `GET /api/backup/estimate`
+  - `POST /api/backup/export` (streamed background generation with progress).
+  - `GET /api/backup/download/{batch_filename}`
+  - `POST /api/backup/import` (streamed direct-to-disk upload).
+  - `GET /api/backup/progress` (live progress monitor).
+- [ ] **Step 4: UI Integration (`static/index.html` & `static/app.js`)**:
+  - Dedicated **📦 Backup & Cross-Device Sync** card in Settings.
+  - Modal selector for "Single Archive" vs "1.5 GB Batches".
+  - Multi-file sequential drag-and-drop / file input with live sync status.
+- [ ] **Step 5: Android Synchronization & Verification**:
+  - Copy Python core to `android/app/src/main/python/`.
+  - Compile and test on emulator and device.
+
