@@ -1210,6 +1210,8 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.ai_upscaler_url) document.getElementById("setting-upscaler-url").value = s.ai_upscaler_url;
       }
       loadPromoSignatures();
+      loadBackupEstimate();
+      loadBackupArchiveList();
     } catch (e) {
       console.error("Error loading settings", e);
     }
@@ -1493,7 +1495,333 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // =====================================================================
+  // --- Backup & Multi-Volume Sync UI Handlers ---
+  // =====================================================================
 
+  let exportPollInterval = null;
+  let selectedImportFiles = [];
+
+  async function loadBackupEstimate() {
+    try {
+      const res = await fetch("/api/backup/estimate?batch_size_mb=1450");
+      const data = await res.json();
+      if (data && data.success) {
+        const statSeries = document.getElementById("backup-stat-series");
+        const statChapters = document.getElementById("backup-stat-chapters");
+        const statSize = document.getElementById("backup-stat-size");
+        const statBatches = document.getElementById("backup-stat-batches");
+
+        if (statSeries) statSeries.textContent = data.total_series;
+        if (statChapters) statChapters.textContent = data.total_chapters;
+        if (statSize) statSize.textContent = data.total_size_formatted;
+        if (statBatches) {
+          statBatches.textContent = data.batches_1_5gb > 1 ? `${data.batches_1_5gb} Batches` : `${data.batches_1_5gb} Batch`;
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load backup estimate", e);
+    }
+  }
+
+  async function loadBackupArchiveList() {
+    const listElem = document.getElementById("backup-cache-list");
+    if (!listElem) return;
+    try {
+      const res = await fetch("/api/backup/list");
+      const data = await res.json();
+      if (data && data.success && data.files && data.files.length > 0) {
+        listElem.innerHTML = data.files.map(f => `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(30, 41, 59, 0.4); padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 8px;">
+            <div>
+              <strong style="color: var(--text-main); font-size: 0.88rem;">${f.filename}</strong>
+              <span style="color: var(--text-muted); font-size: 0.78rem; margin-left: 8px;">(${f.size_formatted})</span>
+            </div>
+            <a href="${f.url}" download class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; text-decoration: none; border-radius: 4px;">⬇️ Download</a>
+          </div>
+        `).join("");
+      } else {
+        listElem.innerHTML = '<span style="color: var(--text-muted); font-size: 0.85rem;">No cached backup archives on disk.</span>';
+      }
+    } catch (e) {
+      console.warn("Could not load backup cache list", e);
+    }
+  }
+
+  // Refresh Stats button
+  const btnRefreshBackupStats = document.getElementById("btn-refresh-backup-stats");
+  if (btnRefreshBackupStats) {
+    btnRefreshBackupStats.addEventListener("click", () => {
+      loadBackupEstimate();
+      loadBackupArchiveList();
+      showToast("Library backup stats refreshed", "info");
+    });
+  }
+
+  // Clear Cache button
+  const btnClearBackupCache = document.getElementById("btn-clear-backup-cache");
+  if (btnClearBackupCache) {
+    btnClearBackupCache.addEventListener("click", async () => {
+      if (!confirm("Delete all exported backup archives from phone storage?")) return;
+      btnClearBackupCache.disabled = true;
+      try {
+        const res = await fetch("/api/backup/clear", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Cleared ${data.purged_count} archive(s), freed ${data.freed_formatted}.`, "success");
+          loadBackupArchiveList();
+        } else {
+          showToast("Failed to clear cache: " + data.error, "error");
+        }
+      } catch (e) {
+        showToast("Error clearing cache: " + e.message, "error");
+      } finally {
+        btnClearBackupCache.disabled = false;
+      }
+    });
+  }
+
+  // Start Export button
+  const btnStartExport = document.getElementById("btn-start-export");
+  if (btnStartExport) {
+    btnStartExport.addEventListener("click", async () => {
+      const mode = document.getElementById("backup-export-mode").value;
+      const includeFiles = document.getElementById("backup-include-files").checked;
+
+      btnStartExport.disabled = true;
+      btnStartExport.textContent = "⏳ Initializing Export...";
+
+      const progressBox = document.getElementById("backup-export-progress-box");
+      const statusLabel = document.getElementById("backup-export-status-label");
+      const percentLabel = document.getElementById("backup-export-percent");
+      const progressBar = document.getElementById("backup-export-progress-bar");
+      const detailLabel = document.getElementById("backup-export-detail");
+      const downloadsBox = document.getElementById("backup-export-downloads-box");
+      const filesList = document.getElementById("backup-export-files-list");
+
+      progressBox.classList.remove("hidden");
+      downloadsBox.classList.add("hidden");
+      progressBar.style.width = "0%";
+      percentLabel.textContent = "0%";
+      statusLabel.textContent = "Scheduling export job...";
+      detailLabel.textContent = "Packing metadata & assets...";
+
+      try {
+        const res = await fetch("/api/backup/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: mode,
+            batch_size_mb: 1450,
+            include_files: includeFiles
+          })
+        });
+
+        const data = await res.json();
+        if (!data.success) {
+          throw new Error(data.error || "Failed to start export");
+        }
+
+        // Start polling progress
+        if (exportPollInterval) clearInterval(exportPollInterval);
+        exportPollInterval = setInterval(async () => {
+          try {
+            const sRes = await fetch("/api/backup/status");
+            const status = await sRes.json();
+            if (!status || !status.success) return;
+
+            if (status.is_running) {
+              const pct = Math.min(100, Math.max(0, status.percent || 0));
+              progressBar.style.width = pct + "%";
+              percentLabel.textContent = pct + "%";
+              statusLabel.textContent = status.message || "Generating archives...";
+              detailLabel.textContent = `Batch ${status.current_batch || 1} of ${status.total_batches || 1} • Chapter ${status.current_step || 0} of ${status.total_steps || 0}`;
+            } else if (status.status === "completed") {
+              clearInterval(exportPollInterval);
+              exportPollInterval = null;
+
+              progressBar.style.width = "100%";
+              percentLabel.textContent = "100%";
+              statusLabel.textContent = "✅ Export Completed!";
+              detailLabel.textContent = status.message;
+
+              // Display download links
+              const batchFiles = status.batch_files || data.batch_files || [];
+              if (batchFiles.length > 0) {
+                filesList.innerHTML = batchFiles.map((url, idx) => {
+                  const filename = url.split("/").pop();
+                  const label = batchFiles.length > 1 ? `Part ${idx + 1} of ${batchFiles.length}` : "Complete Library Archive";
+                  return `
+                    <a href="${url}" download class="btn btn-secondary" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; text-decoration: none; border-radius: 6px;">
+                      <span>📦 <strong>${label}</strong> (${filename})</span>
+                      <span style="color: var(--accent); font-weight: 600;">⬇️ Download</span>
+                    </a>
+                  `;
+                }).join("");
+                downloadsBox.classList.remove("hidden");
+              }
+
+              btnStartExport.disabled = false;
+              btnStartExport.textContent = "📦 Create Backup Export";
+              showToast("Backup export ready for download!", "success");
+              loadBackupArchiveList();
+            } else if (status.status === "error") {
+              clearInterval(exportPollInterval);
+              exportPollInterval = null;
+
+              statusLabel.textContent = "❌ Export Failed";
+              detailLabel.textContent = status.error || "Unknown error occurred";
+              btnStartExport.disabled = false;
+              btnStartExport.textContent = "📦 Create Backup Export";
+              showToast("Backup export failed: " + (status.error || "Error"), "error");
+            }
+          } catch (err) {
+            console.warn("Polling status error", err);
+          }
+        }, 800);
+
+      } catch (err) {
+        progressBox.classList.add("hidden");
+        btnStartExport.disabled = false;
+        btnStartExport.textContent = "📦 Create Backup Export";
+        showToast("Export error: " + err.message, "error");
+      }
+    });
+  }
+
+  // --- Import / Restore Handlers ---
+  const backupDropZone = document.getElementById("backup-drop-zone");
+  const backupFileInput = document.getElementById("backup-file-input");
+  const backupSelectedLabel = document.getElementById("backup-selected-files-label");
+  const btnStartImport = document.getElementById("btn-start-import");
+
+  function handleBackupFilesSelection(files) {
+    if (!files || files.length === 0) return;
+    const zips = Array.from(files).filter(f => f.name.toLowerCase().endsWith(".zip"));
+    if (zips.length === 0) {
+      showToast("Please select valid .zip backup files.", "error");
+      return;
+    }
+    // Sort logically so part1 runs before part2
+    zips.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    selectedImportFiles = zips;
+
+    backupSelectedLabel.textContent = `Selected (${zips.length}): ${zips.map(f => f.name).join(", ")}`;
+    backupSelectedLabel.classList.remove("hidden");
+    btnStartImport.style.display = "block";
+    btnStartImport.disabled = false;
+    btnStartImport.textContent = `📥 Restore ${zips.length} Selected Archive${zips.length > 1 ? 's' : ''}`;
+  }
+
+  if (backupDropZone && backupFileInput) {
+    backupDropZone.addEventListener("click", () => backupFileInput.click());
+    backupFileInput.addEventListener("change", (e) => handleBackupFilesSelection(e.target.files));
+
+    backupDropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      backupDropZone.style.borderColor = "var(--accent)";
+      backupDropZone.style.background = "rgba(99, 102, 241, 0.15)";
+    });
+
+    backupDropZone.addEventListener("dragleave", () => {
+      backupDropZone.style.borderColor = "var(--border-color)";
+      backupDropZone.style.background = "rgba(19, 27, 46, 0.5)";
+    });
+
+    backupDropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      backupDropZone.style.borderColor = "var(--border-color)";
+      backupDropZone.style.background = "rgba(19, 27, 46, 0.5)";
+      if (e.dataTransfer && e.dataTransfer.files) {
+        handleBackupFilesSelection(e.dataTransfer.files);
+      }
+    });
+  }
+
+  if (btnStartImport) {
+    btnStartImport.addEventListener("click", async () => {
+      if (!selectedImportFiles || selectedImportFiles.length === 0) return;
+
+      btnStartImport.disabled = true;
+      btnStartImport.style.display = "none";
+
+      const progressBox = document.getElementById("backup-import-progress-box");
+      const statusLabel = document.getElementById("backup-import-status-label");
+      const percentLabel = document.getElementById("backup-import-percent");
+      const progressBar = document.getElementById("backup-import-progress-bar");
+      const detailLabel = document.getElementById("backup-import-detail");
+      const resultsBox = document.getElementById("backup-import-results-box");
+
+      progressBox.classList.remove("hidden");
+      resultsBox.classList.remove("hidden");
+      resultsBox.innerHTML = "";
+
+      const totalFiles = selectedImportFiles.length;
+      let totalImportedChapters = 0;
+      let totalSyncedSeries = 0;
+
+      for (let i = 0; i < totalFiles; i++) {
+        const file = selectedImportFiles[i];
+        const overallPercent = Math.round((i / totalFiles) * 100);
+        progressBar.style.width = overallPercent + "%";
+        percentLabel.textContent = overallPercent + "%";
+        statusLabel.textContent = `[${i + 1}/${totalFiles}] Restoring ${file.name}...`;
+        detailLabel.textContent = `Streaming ${file.name} directly to storage without memory buffering...`;
+
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+
+          const res = await fetch("/api/backup/import", {
+            method: "POST",
+            body: formData
+          });
+
+          const data = await res.json();
+          if (data && data.success) {
+            totalImportedChapters += (data.chapters_imported || 0);
+            totalSyncedSeries += (data.series_synced || 0);
+
+            resultsBox.innerHTML += `
+              <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; font-size: 0.85rem;">
+                ✅ <strong>${file.name}</strong> (${data.batch_label || 'Complete Archive'}): 
+                <strong>${data.chapters_imported}</strong> chapters restored, 
+                <strong>${data.series_synced}</strong> series synced seamlessly (${data.storage_freed_or_used || ''}).
+              </div>
+            `;
+          } else {
+            resultsBox.innerHTML += `
+              <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; font-size: 0.85rem;">
+                ❌ <strong>${file.name}</strong>: ${data ? data.error : "Failed to restore"}
+              </div>
+            `;
+          }
+        } catch (e) {
+          resultsBox.innerHTML += `
+            <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; font-size: 0.85rem;">
+              ❌ <strong>${file.name}</strong>: Network or file read error: ${e.message}
+            </div>
+          `;
+        }
+      }
+
+      progressBar.style.width = "100%";
+      percentLabel.textContent = "100%";
+      statusLabel.textContent = "✅ Restoration Finished!";
+      detailLabel.textContent = `Consolidated ${totalImportedChapters} chapters across all processed volumes.`;
+
+      showToast(`Sequential restore complete! ${totalImportedChapters} chapters updated.`, "success");
+
+      // Reset selection
+      selectedImportFiles = [];
+      if (backupFileInput) backupFileInput.value = "";
+      backupSelectedLabel.classList.add("hidden");
+
+      // Refresh library & stats
+      loadLibrary();
+      loadBackupEstimate();
+    });
+  }
 
   // Switch tabs also triggers promo list load if settings tab
   const settingsTabBtn = document.querySelector('[data-tab="settings"]');

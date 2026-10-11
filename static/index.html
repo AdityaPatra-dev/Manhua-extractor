@@ -311,6 +311,119 @@
         <p id="settings-status-msg" style="margin-top: 0.75rem; text-align: center; color: var(--success); font-weight: 600;" class="hidden"></p>
       </div>
 
+      <!-- Backup & Multi-Device Sync Card -->
+      <div class="card" id="backup-sync-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <h2>📦 Backup & Multi-Device Sync</h2>
+          <button id="btn-refresh-backup-stats" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem;" title="Refresh library statistics">🔄 Refresh</button>
+        </div>
+        <p class="card-desc">Transfer your downloaded manhua, covers, and reading bookmarks to another phone or computer, or restore multi-volume backups sequentially without duplicate cards.</p>
+
+        <!-- Library Pre-Flight Stats -->
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; margin-bottom: 1.25rem;">
+          <div style="flex: 1; min-width: 90px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Series</div>
+            <div id="backup-stat-series" style="font-size: 1.2rem; font-weight: 700; color: var(--accent);">--</div>
+          </div>
+          <div style="flex: 1; min-width: 90px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Chapters</div>
+            <div id="backup-stat-chapters" style="font-size: 1.2rem; font-weight: 700; color: #10b981;">--</div>
+          </div>
+          <div style="flex: 1.2; min-width: 110px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Library Size</div>
+            <div id="backup-stat-size" style="font-size: 1.2rem; font-weight: 700; color: #f59e0b;">--</div>
+          </div>
+          <div style="flex: 1.2; min-width: 110px;">
+            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">1.5 GB Batches</div>
+            <div id="backup-stat-batches" style="font-size: 1.2rem; font-weight: 700; color: #a855f7;">--</div>
+          </div>
+        </div>
+
+        <!-- Section 1: Export Backup -->
+        <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-main);">📤 Export Library Archive</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">Generate standalone ZIP archives that can be downloaded to your phone or PC.</p>
+          
+          <div class="options-grid" style="margin-bottom: 1rem;">
+            <div class="option-field">
+              <label for="backup-export-mode">Export Format</label>
+              <select id="backup-export-mode">
+                <option value="batched">1.5 GB Batches (Recommended for Mobile)</option>
+                <option value="single">Single Complete Archive (.zip)</option>
+              </select>
+            </div>
+            <div class="option-field" style="display: flex; align-items: center; gap: 8px; padding-top: 24px;">
+              <input type="checkbox" id="backup-include-files" checked style="width: auto; margin: 0; cursor: pointer;">
+              <label for="backup-include-files" style="cursor: pointer; margin: 0; font-size: 0.9rem;">Include Offline Chapter Files</label>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 0.75rem;">
+            <button id="btn-start-export" class="btn btn-primary" style="flex: 1; min-width: 180px;">📦 Create Backup Export</button>
+          </div>
+
+          <!-- Live Export Progress Container -->
+          <div id="backup-export-progress-box" class="hidden" style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--accent); border-radius: 8px; padding: 12px; margin-top: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span id="backup-export-status-label" style="font-size: 0.85rem; font-weight: 600; color: var(--accent);">Exporting...</span>
+              <span id="backup-export-percent" style="font-size: 0.85rem; font-weight: 700; color: #fff;">0%</span>
+            </div>
+            <div class="progress-bar-container" style="margin-bottom: 6px; height: 8px;">
+              <div id="backup-export-progress-bar" class="progress-bar-fill" style="width: 0%; background: var(--accent);"></div>
+            </div>
+            <div id="backup-export-detail" style="font-size: 0.78rem; color: var(--text-muted);">Preparing archive...</div>
+          </div>
+
+          <!-- Ready Download Links List -->
+          <div id="backup-export-downloads-box" class="hidden" style="margin-top: 0.75rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px;">
+            <div style="font-size: 0.85rem; font-weight: 600; color: var(--success); margin-bottom: 8px;">✅ Export Ready for Download:</div>
+            <div id="backup-export-files-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+          </div>
+        </div>
+
+        <!-- Section 2: Import & Restore Backup -->
+        <div style="border-top: 1px solid var(--border-color); padding-top: 1rem; margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--text-main);">📥 Restore / Sync Backup Archive</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">Select one or multiple backup ZIP files (e.g. Part 1, Part 2). They will be synced sequentially into your library without creating duplicate cards.</p>
+
+          <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0.75rem;">
+            <input type="file" id="backup-file-input" accept=".zip" multiple style="display: none;">
+            <div id="backup-drop-zone" style="border: 2px dashed var(--border-color); border-radius: 8px; padding: 18px; text-align: center; background: rgba(19, 27, 46, 0.5); cursor: pointer; transition: all 0.2s ease;">
+              <div style="font-size: 1.8rem; margin-bottom: 4px;">📂</div>
+              <div style="font-weight: 600; font-size: 0.92rem; color: var(--text-main);">Tap or Drag & Drop Backup ZIPs Here</div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Supports single or multi-part batches (Part 1, Part 2...)</div>
+              <div id="backup-selected-files-label" style="margin-top: 8px; font-size: 0.85rem; color: var(--accent); font-weight: 600;" class="hidden"></div>
+            </div>
+            <button id="btn-start-import" class="btn btn-secondary" style="width: 100%; display: none;">📥 Start Restoring Selected Archive(s)</button>
+          </div>
+
+          <!-- Live Import Progress Container -->
+          <div id="backup-import-progress-box" class="hidden" style="background: rgba(15, 23, 42, 0.8); border: 1px solid var(--accent); border-radius: 8px; padding: 12px; margin-top: 0.75rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span id="backup-import-status-label" style="font-size: 0.85rem; font-weight: 600; color: var(--accent);">Restoring...</span>
+              <span id="backup-import-percent" style="font-size: 0.85rem; font-weight: 700; color: #fff;">0%</span>
+            </div>
+            <div class="progress-bar-container" style="margin-bottom: 6px; height: 8px;">
+              <div id="backup-import-progress-bar" class="progress-bar-fill" style="width: 0%; background: var(--accent);"></div>
+            </div>
+            <div id="backup-import-detail" style="font-size: 0.78rem; color: var(--text-muted);">Unpacking archive...</div>
+          </div>
+
+          <!-- Import Results Feed -->
+          <div id="backup-import-results-box" class="hidden" style="margin-top: 0.75rem;"></div>
+        </div>
+
+        <!-- Section 3: Storage & Cache Management -->
+        <div style="border-top: 1px solid var(--border-color); padding-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 0.5rem;">
+            <h3 style="font-size: 0.95rem; color: var(--text-main); margin: 0;">🧹 Phone Storage & Export Cache</h3>
+            <button id="btn-clear-backup-cache" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; color: #f87171; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);">Clear Export Cache</button>
+          </div>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.5rem;">Exported archives remain stored on this device until deleted or cleared.</p>
+          <div id="backup-cache-list" style="font-size: 0.85rem; color: var(--text-muted);">No cached backup archives on disk.</div>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Reading Trackers Synchronization</h2>
         <p class="card-desc">Automatically synchronize chapter progress to your official AniList or MyAnimeList profiles.</p>
