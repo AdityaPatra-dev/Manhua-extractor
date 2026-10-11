@@ -153,3 +153,4 @@ curl -f http://localhost:8000/api/health
 * Distributed under the **MIT License**.
 * Maintained by [Aditya Patra](https://github.com/AdityaPatra-dev).
 * Sourced icons and community extensions thanks to Keiyoushi & Tachiyomi.
+

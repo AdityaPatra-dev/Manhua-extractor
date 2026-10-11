@@ -55,3 +55,4 @@ VOLUME ["/app/data", "/app/downloads", "/app/backups"]
 
 # Default entrypoint to run Web GUI mode
 CMD ["python3", "manhua.py", "--web", "--host", "0.0.0.0", "--port", "8000"]
+
