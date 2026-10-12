@@ -284,11 +284,11 @@ gantt
 
 ## 🎯 8. Success Criteria & Verification Checklist
 
-1. [ ] **Instant Search Response**: Streaming results appear on screen within 800ms for fast REST APIs.
-2. [ ] **No Duplicate Clutter**: Hits from multiple scanlators for the same title fold cleanly into a single card with a `Found on X Sources` badge.
-3. [ ] **Seamless Source Comparison**: Tapping a card displays a side-by-side comparison of all sources (latest chapter, total chapters, resolution, ping).
-4. [ ] **1-Click Downloading**: Selecting chapters from any source seamlessly kicks off the existing background download, ad-filtering, and CBZ compiler.
-5. [ ] **Direct URL Preserved**: Users can still paste specific chapter or series URLs under the `[ 🔗 Direct URL ]` tab.
-6. [ ] **Mobile Touch Polish**: Full edge-to-edge layout, bottom navigation bar, and bottom sheet modals on Android.
-7. [ ] **Desktop Power Tools**: `Ctrl+K` search modal and dual-pane layout on PC/Tablet.
+1. [x] **Instant Search Response**: Streaming results appear on screen within 800ms for fast REST APIs.
+2. [x] **No Duplicate Clutter**: Hits from multiple scanlators for the same title fold cleanly into a single card with a `Found on X Sources` badge.
+3. [x] **Seamless Source Comparison**: Tapping a card displays a side-by-side comparison of all sources (latest chapter, total chapters, resolution, ping).
+4. [x] **1-Click Downloading**: Selecting chapters from any source seamlessly kicks off the existing background download, ad-filtering, and CBZ compiler.
+5. [x] **Direct URL Preserved**: Users can still paste specific chapter or series URLs under the `[ 🔗 Direct URL ]` tab.
+6. [x] **Mobile Touch Polish**: Full edge-to-edge layout, bottom navigation bar, and bottom sheet modals on Android.
+7. [x] **Desktop Power Tools**: `Ctrl+K` Command Palette, live search modal, prebuffering reader, and dual-mode layout on PC/Tablet.
 
