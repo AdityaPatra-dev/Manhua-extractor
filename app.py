@@ -34,8 +34,13 @@ from database.db import (
     delete_promo_signature,
     update_series_trackers,
     update_series_cover,
-    update_series_rich_metadata
+    update_series_rich_metadata,
+    get_cached_search,
+    set_cached_search,
+    add_or_update_series_source,
+    get_series_sources
 )
+from core.search import search_dispatcher, cluster_search_results
 from extractors.dispatcher import dispatcher
 from core.downloader import download_panels_stream, get_staging_dir, cleanup_staging_dir
 from core.slicer import slice_chapter_panels
@@ -202,6 +207,106 @@ async def inspect_series_catalog(req: InspectSeriesRequest):
         return res
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+@app.get("/api/search")
+async def api_search(q: str = "", tier: str = "fast", nocache: bool = False):
+    query = q.strip()
+    if not query:
+        return JSONResponse({"success": False, "error": "Query cannot be empty"}, status_code=400)
+
+    if not nocache:
+        cached = get_cached_search(query)
+        if cached is not None:
+            return {
+                "success": True,
+                "cached": True,
+                "query": query,
+                "total_clusters": len(cached),
+                "clusters": cached
+            }
+
+    clusters = await search_dispatcher.search_all(query, tier=tier)
+    if clusters:
+        set_cached_search(query, clusters)
+    return {
+        "success": True,
+        "cached": False,
+        "query": query,
+        "total_clusters": len(clusters),
+        "clusters": clusters
+    }
+
+
+@app.get("/api/search/stream")
+async def api_search_stream(q: str = "", tier: str = "fast", nocache: bool = False):
+    query = q.strip()
+    if not query:
+        return JSONResponse({"success": False, "error": "Query cannot be empty"}, status_code=400)
+
+    async def sse_event_stream():
+        if not nocache:
+            cached = get_cached_search(query)
+            if cached is not None:
+                yield f"event: init\ndata: {json.dumps({'total_sources': 1, 'query': query, 'tier': tier, 'cached': True})}\n\n"
+                yield f"event: complete\ndata: {json.dumps({'total_sources': 1, 'total_clusters': len(cached), 'clusters': cached, 'cached': True})}\n\n"
+                return
+
+        final_clusters = []
+        try:
+            async for item in search_dispatcher.search_stream(query, tier=tier):
+                event_type = item.get("event", "update")
+                event_data = item.get("data", {})
+                if event_type == "complete":
+                    final_clusters = event_data.get("clusters", [])
+                yield f"event: {event_type}\ndata: {json.dumps(event_data)}\n\n"
+
+            if final_clusters:
+                set_cached_search(query, final_clusters)
+        except Exception as exc:
+            yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        sse_event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+class RegisterSourcePayload(BaseModel):
+    source_key: str
+    source_name: str
+    source_url: str
+    total_chapters: Optional[int] = 0
+    latest_chapter_num: Optional[float] = 0.0
+    quality_tag: Optional[str] = "Standard"
+    latency_ms: Optional[int] = 0
+
+
+@app.get("/api/series/{series_id}/sources")
+async def api_get_series_sources(series_id: int):
+    sources = get_series_sources(series_id)
+    return {"success": True, "series_id": series_id, "sources": sources}
+
+
+@app.post("/api/series/{series_id}/sources")
+async def api_add_series_source(series_id: int, payload: RegisterSourcePayload):
+    add_or_update_series_source(
+        series_id=series_id,
+        source_key=payload.source_key,
+        source_name=payload.source_name,
+        source_url=payload.source_url,
+        total_chapters=payload.total_chapters or 0,
+        latest_chapter_num=payload.latest_chapter_num or 0.0,
+        quality_tag=payload.quality_tag or "Standard",
+        latency_ms=payload.latency_ms or 0
+    )
+    return {"success": True, "message": f"Source '{payload.source_name}' registered for series {series_id}"}
+
 
 
 def generate_svg_cover(title: str) -> bytes:

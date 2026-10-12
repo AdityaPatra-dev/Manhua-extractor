@@ -1831,6 +1831,472 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // ========================================================
+  // 🔍 GLOBAL SEARCH & MULTI-SOURCE COMPARISON ENGINE
+  // ========================================================
+  const modeSearchBtn = document.getElementById("mode-search-btn");
+  const modeUrlBtn = document.getElementById("mode-url-btn");
+  const searchModeContainer = document.getElementById("search-mode-container");
+  const urlModeContainer = document.getElementById("url-mode-container");
+
+  const globalSearchInput = document.getElementById("global-search-input");
+  const btnGlobalSearch = document.getElementById("btn-global-search");
+  const btnSearchClear = document.getElementById("btn-search-clear");
+  const searchTierChips = document.querySelectorAll(".tier-chip");
+  const searchStatusBar = document.getElementById("search-status-bar");
+  const searchStatusText = document.getElementById("search-status-text");
+  const searchProgressBar = document.getElementById("search-progress-bar");
+  const searchResultsGrid = document.getElementById("search-results-grid");
+  const trendingPills = document.querySelectorAll(".trending-pill");
+
+  const sourceModal = document.getElementById("source-modal");
+  const sourceModalClose = document.getElementById("source-modal-close");
+  const sourceModalTitle = document.getElementById("source-modal-title");
+  const sourceModalCover = document.getElementById("source-modal-cover");
+  const sourceModalCountBadge = document.getElementById("source-modal-count-badge");
+  const sourceModalList = document.getElementById("source-modal-list");
+
+  let activeSearchTier = "fast";
+  let activeEventSource = null;
+  let currentSearchResults = [];
+
+  function setMode(mode) {
+    if (mode === "search") {
+      modeSearchBtn?.classList.add("active");
+      modeUrlBtn?.classList.remove("active");
+      searchModeContainer?.classList.remove("hidden");
+      urlModeContainer?.classList.add("hidden");
+    } else {
+      modeUrlBtn?.classList.add("active");
+      modeSearchBtn?.classList.remove("active");
+      urlModeContainer?.classList.remove("hidden");
+      searchModeContainer?.classList.add("hidden");
+    }
+  }
+
+  modeSearchBtn?.addEventListener("click", () => setMode("search"));
+  modeUrlBtn?.addEventListener("click", () => setMode("url"));
+
+  // Tier chips
+  searchTierChips.forEach(chip => {
+    chip.addEventListener("click", () => {
+      searchTierChips.forEach(c => c.classList.remove("active"));
+      chip.classList.add("active");
+      activeSearchTier = chip.getAttribute("data-tier") || "fast";
+      if (globalSearchInput && globalSearchInput.value.trim().length >= 2) {
+        performGlobalSearch(globalSearchInput.value.trim());
+      }
+    });
+  });
+
+  // Clear button visibility & action
+  globalSearchInput?.addEventListener("input", () => {
+    if (globalSearchInput.value.trim()) {
+      btnSearchClear?.classList.remove("hidden");
+    } else {
+      btnSearchClear?.classList.add("hidden");
+    }
+  });
+
+  btnSearchClear?.addEventListener("click", () => {
+    if (globalSearchInput) {
+      globalSearchInput.value = "";
+      btnSearchClear.classList.add("hidden");
+      globalSearchInput.focus();
+    }
+  });
+
+  // Trending pills
+  trendingPills.forEach(pill => {
+    pill.addEventListener("click", () => {
+      const q = pill.getAttribute("data-query");
+      if (globalSearchInput && q) {
+        globalSearchInput.value = q;
+        btnSearchClear?.classList.remove("hidden");
+        setMode("search");
+        performGlobalSearch(q);
+      }
+    });
+  });
+
+  btnGlobalSearch?.addEventListener("click", () => {
+    const q = globalSearchInput?.value.trim();
+    if (q) performGlobalSearch(q);
+  });
+
+  globalSearchInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const q = globalSearchInput?.value.trim();
+      if (q) performGlobalSearch(q);
+    }
+  });
+
+  // Ctrl+K Desktop Shortcut
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      switchTab("tab-download");
+      setMode("search");
+      globalSearchInput?.focus();
+      globalSearchInput?.select();
+    }
+  });
+
+  // Close modals on backdrop click or ESC
+  sourceModalClose?.addEventListener("click", () => {
+    sourceModal?.classList.add("hidden");
+  });
+
+  sourceModal?.addEventListener("click", (e) => {
+    if (e.target === sourceModal) {
+      sourceModal.classList.add("hidden");
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      sourceModal?.classList.add("hidden");
+    }
+  });
+
+  // Skeleton shimmer
+  function renderSearchSkeletons(count = 6) {
+    if (!searchResultsGrid) return;
+    let html = "";
+    for (let i = 0; i < count; i++) {
+      html += `
+        <div class="skeleton-card">
+          <div class="skeleton-poster"></div>
+          <div class="skeleton-lines">
+            <div class="skeleton-line" style="width: 75%; height: 16px;"></div>
+            <div class="skeleton-line" style="width: 50%;"></div>
+            <div class="skeleton-line" style="width: 35%; height: 20px; border-radius: 12px; margin-top: 4px;"></div>
+          </div>
+        </div>
+      `;
+    }
+    searchResultsGrid.innerHTML = html;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function renderSearchResults(clusters) {
+    currentSearchResults = clusters || [];
+    if (!searchResultsGrid) return;
+
+    if (!clusters || clusters.length === 0) {
+      searchResultsGrid.innerHTML = `
+        <div style="grid-column: 1 / -1; padding: 2.5rem 1rem; text-align: center; color: var(--text-muted);">
+          <div style="font-size: 2.5rem; margin-bottom: 8px;">🔍</div>
+          <h3 style="color: var(--text-main); margin-bottom: 4px;">No series found</h3>
+          <p style="font-size: 0.85rem;">Try adjusting your query or switch to the <strong>🌐 All 25+ Sites</strong> filter tier.</p>
+        </div>
+      `;
+      return;
+    }
+
+    searchResultsGrid.innerHTML = clusters.map((cluster, idx) => {
+      const title = escapeHtml(cluster.canonical_title || "Unknown");
+      const altSnippet = (cluster.alt_titles && cluster.alt_titles.length > 0)
+        ? escapeHtml(cluster.alt_titles.slice(0, 2).join(" • "))
+        : "";
+      const sourceCount = (cluster.sources && cluster.sources.length) || 1;
+      const latestCh = cluster.max_chapter_num ? `Ch. ${cluster.max_chapter_num}` : "Available";
+      const coverUrl = cluster.cover_url || "";
+
+      return `
+        <div class="search-result-card" data-cluster-index="${idx}">
+          <img class="search-card-poster" src="${escapeHtml(coverUrl)}" alt="${title}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'75\\' height=\\'105\\'><rect fill=\\'%231c2640\\' width=\\'75\\' height=\\'105\\'/><text fill=\\'%2394a3b8\\' x=\\'50%\\' y=\\'50%\\' text-anchor=\\'middle\\' font-size=\\'10\\'>No Cover</text></svg>'">
+          <div class="search-card-content">
+            <div>
+              <h4 class="search-card-title" title="${title}">${title}</h4>
+              ${altSnippet ? `<div class="search-card-alt" title="${altSnippet}">${altSnippet}</div>` : ''}
+              <div class="search-card-badges">
+                <span class="search-badge-source">🌐 ${sourceCount} Source${sourceCount > 1 ? 's' : ''}</span>
+                <span class="search-badge-ch">Latest: ${latestCh}</span>
+              </div>
+            </div>
+            <div class="search-card-actions">
+              <button class="btn btn-secondary btn-compare-sources" data-cluster-index="${idx}">🔍 Compare Sources</button>
+              <button class="btn btn-primary btn-quick-dl" data-cluster-index="${idx}">⚡ Quick DL</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // Wire action buttons
+    searchResultsGrid.querySelectorAll(".btn-compare-sources").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute("data-cluster-index"), 10);
+        openSourceComparisonModal(currentSearchResults[idx]);
+      });
+    });
+
+    searchResultsGrid.querySelectorAll(".btn-quick-dl").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute("data-cluster-index"), 10);
+        quickDownloadCluster(currentSearchResults[idx]);
+      });
+    });
+
+    searchResultsGrid.querySelectorAll(".search-result-card").forEach(card => {
+      card.addEventListener("click", () => {
+        const idx = parseInt(card.getAttribute("data-cluster-index"), 10);
+        openSourceComparisonModal(currentSearchResults[idx]);
+      });
+    });
+  }
+
+  function openSourceComparisonModal(cluster) {
+    if (!cluster || !sourceModal) return;
+    sourceModalTitle.textContent = cluster.canonical_title || "Unknown Series";
+    sourceModalCover.src = cluster.cover_url || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="68"><rect fill="%231c2640" width="48" height="68"/></svg>';
+    sourceModalCover.onerror = function() {
+      this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="68"><rect fill="%231c2640" width="48" height="68"/></svg>';
+    };
+
+    const count = (cluster.sources && cluster.sources.length) || 0;
+    sourceModalCountBadge.textContent = `${count} Source${count === 1 ? '' : 's'} Available`;
+
+    if (!cluster.sources || cluster.sources.length === 0) {
+      sourceModalList.innerHTML = `<p style="color: var(--text-muted); padding: 1rem; text-align: center;">No specific hosting sources discovered.</p>`;
+    } else {
+      sourceModalList.innerHTML = cluster.sources.map(src => {
+        const logo = src.source_logo || `/docs/logos/${src.source_key}.png`;
+        const lat = src.latency_ms ? `⚡ ${src.latency_ms}ms` : '🟢 Fast';
+        const qTag = src.quality_tag || '1080p WebP';
+        const chTxt = src.latest_chapter || (src.latest_chapter_num ? `Chapter ${src.latest_chapter_num}` : 'Available');
+
+        return `
+          <div class="source-item-row">
+            <div class="source-info-left">
+              <img class="source-site-icon" src="${escapeHtml(logo)}" alt="${escapeHtml(src.source_name)}" onerror="this.src='/static/icon.svg'">
+              <div class="source-details">
+                <div class="source-name">${escapeHtml(src.source_name || src.source_key)}</div>
+                <div class="source-meta-row">
+                  <span style="color: var(--accent); font-weight: 600;">${escapeHtml(chTxt)}</span>
+                  <span>•</span>
+                  <span>${escapeHtml(qTag)}</span>
+                  <span>•</span>
+                  <span>${escapeHtml(lat)}</span>
+                </div>
+              </div>
+            </div>
+            <div class="source-actions">
+              <button class="btn btn-secondary btn-inspect-source" data-url="${escapeHtml(src.series_url)}">🔍 Inspect Chapters</button>
+              <button class="btn btn-primary btn-dl-source" data-url="${escapeHtml(src.series_url)}">⬇️ Download</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      // Wire modal buttons
+      sourceModalList.querySelectorAll(".btn-inspect-source").forEach(b => {
+        b.addEventListener("click", () => {
+          const url = b.getAttribute("data-url");
+          if (url) {
+            sourceModal.classList.add("hidden");
+            if (chapterUrlInput) chapterUrlInput.value = url;
+            setMode("url");
+            inspectSeries(url);
+          }
+        });
+      });
+
+      sourceModalList.querySelectorAll(".btn-dl-source").forEach(b => {
+        b.addEventListener("click", () => {
+          const url = b.getAttribute("data-url");
+          if (url) {
+            sourceModal.classList.add("hidden");
+            if (chapterUrlInput) chapterUrlInput.value = url;
+            setMode("url");
+            inspectSeries(url).then(() => {
+              const startBtn = document.getElementById("btn-start-download");
+              if (startBtn) startBtn.click();
+            });
+          }
+        });
+      });
+    }
+
+    sourceModal.classList.remove("hidden");
+  }
+
+  function quickDownloadCluster(cluster) {
+    if (!cluster || !cluster.sources || cluster.sources.length === 0) {
+      showToast("No active source found for this series.", "error");
+      return;
+    }
+    const bestSource = cluster.sources[0];
+    if (bestSource && bestSource.series_url) {
+      if (chapterUrlInput) chapterUrlInput.value = bestSource.series_url;
+      setMode("url");
+      showToast(`Selected source '${bestSource.source_name}'. Fetching chapter catalog...`, "info");
+      inspectSeries(bestSource.series_url);
+    }
+  }
+
+  function performGlobalSearch(query) {
+    if (!query) return;
+
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+
+    renderSearchSkeletons(4);
+    if (searchStatusBar) {
+      searchStatusBar.classList.remove("hidden");
+      if (searchStatusText) searchStatusText.textContent = `Connecting to multi-source search engine...`;
+      if (searchProgressBar) searchProgressBar.style.width = "5%";
+    }
+
+    if (btnGlobalSearch) {
+      btnGlobalSearch.textContent = "Searching...";
+      btnGlobalSearch.disabled = true;
+    }
+
+    const streamUrl = `/api/search/stream?q=${encodeURIComponent(query)}&tier=${encodeURIComponent(activeSearchTier)}`;
+    const evtSource = new EventSource(streamUrl);
+    activeEventSource = evtSource;
+
+    let receivedClusters = false;
+
+    evtSource.addEventListener("init", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (searchStatusText) {
+          searchStatusText.textContent = `Dispatching queries across ${d.total_sources || 12} scrapers & REST APIs...`;
+        }
+      } catch (err) {}
+    });
+
+    evtSource.addEventListener("progress", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (searchProgressBar && d.total) {
+          const pct = Math.round((d.completed / d.total) * 100);
+          searchProgressBar.style.width = `${Math.min(95, pct)}%`;
+        }
+        if (searchStatusText && d.total) {
+          searchStatusText.textContent = `Scraped ${d.completed}/${d.total} sources...`;
+        }
+      } catch (err) {}
+    });
+
+    evtSource.addEventListener("update", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        receivedClusters = true;
+        if (searchProgressBar && d.total) {
+          const pct = Math.round((d.completed / d.total) * 100);
+          searchProgressBar.style.width = `${Math.min(95, pct)}%`;
+        }
+        if (searchStatusText) {
+          searchStatusText.textContent = `Found ${d.total_clusters || 0} unique series across ${d.completed}/${d.total} sources...`;
+        }
+        if (d.clusters) {
+          renderSearchResults(d.clusters);
+        }
+      } catch (err) {}
+    });
+
+    evtSource.addEventListener("complete", (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (searchProgressBar) searchProgressBar.style.width = "100%";
+        if (searchStatusText) {
+          searchStatusText.textContent = `✅ Search complete! Found ${d.total_clusters || 0} titles across ${d.total_sources || 0} sources.`;
+        }
+        if (d.clusters) {
+          renderSearchResults(d.clusters);
+        }
+      } catch (err) {}
+      evtSource.close();
+      if (activeEventSource === evtSource) activeEventSource = null;
+      if (btnGlobalSearch) {
+        btnGlobalSearch.textContent = "🔍 Search";
+        btnGlobalSearch.disabled = false;
+      }
+    });
+
+    evtSource.addEventListener("error", (e) => {
+      evtSource.close();
+      if (activeEventSource === evtSource) activeEventSource = null;
+      if (btnGlobalSearch) {
+        btnGlobalSearch.textContent = "🔍 Search";
+        btnGlobalSearch.disabled = false;
+      }
+      if (!receivedClusters) {
+        // Fallback to direct GET /api/search
+        fetch(`/api/search?q=${encodeURIComponent(query)}&tier=${encodeURIComponent(activeSearchTier)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.clusters) {
+              renderSearchResults(data.clusters);
+              if (searchStatusText) searchStatusText.textContent = `Found ${data.total_clusters} series.`;
+              if (searchProgressBar) searchProgressBar.style.width = "100%";
+            } else {
+              renderSearchResults([]);
+            }
+          })
+          .catch(err => {
+            showToast(`Search error: ${err.message}`, "error");
+          });
+      }
+    });
+  }
+
+  // --- AMOLED True Black Theme Toggle ---
+  const btnThemeToggle = document.getElementById("btn-theme-toggle");
+  const savedAmoled = localStorage.getItem("theme_amoled") === "true";
+  if (savedAmoled) {
+    document.body.classList.add("theme-amoled");
+    if (btnThemeToggle) btnThemeToggle.textContent = "🖤";
+  }
+
+  btnThemeToggle?.addEventListener("click", () => {
+    const isAmoled = document.body.classList.toggle("theme-amoled");
+    localStorage.setItem("theme_amoled", isAmoled ? "true" : "false");
+    btnThemeToggle.textContent = isAmoled ? "🖤" : "🌙";
+    showToast(isAmoled ? "AMOLED True Black enabled" : "Standard dark theme enabled", "info");
+  });
+
+  // --- Queue Nav Tab ---
+  const navTabQueue = document.getElementById("nav-tab-queue");
+  navTabQueue?.addEventListener("click", () => {
+    switchTab("tab-download");
+    const progCard = document.getElementById("progress-card");
+    if (progCard) {
+      progCard.classList.remove("hidden");
+      progCard.scrollIntoView({ behavior: "smooth" });
+    }
+  });
+
+  // --- Reader Display Filters ---
+  const readerFilterSelect = document.getElementById("reader-filter-select");
+  readerFilterSelect?.addEventListener("change", () => {
+    if (!readerView) return;
+    readerView.classList.remove("reader-amoled", "reader-sepia");
+    const val = readerFilterSelect.value;
+    if (val === "amoled") {
+      readerView.classList.add("reader-amoled");
+    } else if (val === "sepia") {
+      readerView.classList.add("reader-sepia");
+    }
+  });
+
   // Initial load
   loadLibrary();
   listenToProgress();

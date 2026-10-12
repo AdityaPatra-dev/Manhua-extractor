@@ -291,3 +291,4 @@ gantt
 5. [ ] **Direct URL Preserved**: Users can still paste specific chapter or series URLs under the `[ 🔗 Direct URL ]` tab.
 6. [ ] **Mobile Touch Polish**: Full edge-to-edge layout, bottom navigation bar, and bottom sheet modals on Android.
 7. [ ] **Desktop Power Tools**: `Ctrl+K` search modal and dual-pane layout on PC/Tablet.
+

@@ -26,30 +26,94 @@
         </div>
       </div>
       <nav class="nav-tabs">
-        <button class="nav-tab active" data-tab="tab-download">📥 Downloader</button>
+        <button class="nav-tab active" data-tab="tab-download">🔍 Discover</button>
         <button class="nav-tab" data-tab="tab-library">📚 Library <span id="library-count" class="tab-badge">0</span></button>
+        <button class="nav-tab" data-tab="tab-queue" id="nav-tab-queue">📥 Queue</button>
         <button class="nav-tab" data-tab="tab-lab">🧪 Lab</button>
         <button class="nav-tab" data-tab="tab-settings">⚙️ Settings</button>
+        <button id="btn-theme-toggle" class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.85rem;" title="Toggle AMOLED Pure Black Theme">🌙</button>
         <button id="btn-phone-connect" class="btn btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;" title="Phone & OPDS Access">📱 Phone</button>
       </nav>
     </header>
 
-    <!-- TAB 1: DOWNLOADER -->
+    <!-- TAB 1: DISCOVER / DOWNLOADER -->
     <main id="tab-download" class="tab-content active">
-      <div class="card main-form-card">
-        <h2>Download Chapters</h2>
-        <p class="card-desc">Paste the URL of any manga/manhua chapter. The engine will auto-detect the layout.</p>
+      <!-- Mode Switcher: Search vs Direct URL -->
+      <div class="mode-segmented-control">
+        <button id="mode-search-btn" class="segmented-btn active" type="button">
+          🔍 Global Multi-Source Search
+        </button>
+        <button id="mode-url-btn" class="segmented-btn" type="button">
+          🔗 Direct URL / Inspector
+        </button>
+      </div>
+
+      <!-- SEARCH MODE CONTAINER -->
+      <div id="search-mode-container" class="card search-card">
+        <h2>Global Multi-Source Search</h2>
+        <p class="card-desc">Search 25+ manhwa sites simultaneously. Compare releases, resolutions, and missing chapters.</p>
+
+        <div class="search-input-wrapper">
+          <div class="search-input-inner">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="global-search-input" placeholder="Search across 25+ sites (e.g. Solo Leveling, Nano Machine)..." autocomplete="off">
+            <button id="btn-search-clear" class="btn-clear hidden" title="Clear input">&times;</button>
+            <span class="search-shortcut-hint">Ctrl+K</span>
+          </div>
+          <button id="btn-global-search" class="btn btn-primary btn-search-action">🔍 Search</button>
+        </div>
+
+        <!-- Tier Filter Chips -->
+        <div class="search-tier-chips">
+          <button class="tier-chip active" data-tier="fast">⚡ Fast APIs (MangaDex, ComicK)</button>
+          <button class="tier-chip" data-tier="top">🔥 Top Scanlators (Asura, Reaper, Flame)</button>
+          <button class="tier-chip" data-tier="all">🌐 All 25+ Sites</button>
+        </div>
+
+        <!-- Real-Time SSE Search Status Bar -->
+        <div id="search-status-bar" class="search-status-bar hidden">
+          <div class="search-status-info">
+            <span class="search-pulsing-dot"></span>
+            <span id="search-status-text">Searching sources...</span>
+          </div>
+          <div class="progress-bar-container" style="height: 4px; margin-top: 6px;">
+            <div id="search-progress-bar" class="progress-bar-fill" style="width: 0%; transition: width 0.2s;"></div>
+          </div>
+        </div>
+
+        <!-- Search Suggestions / Quick Tags -->
+        <div id="search-trending-tags" class="search-trending-box">
+          <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">Popular Suggestions:</span>
+          <div class="trending-pills">
+            <button class="trending-pill" data-query="Solo Leveling">Solo Leveling</button>
+            <button class="trending-pill" data-query="Nano Machine">Nano Machine</button>
+            <button class="trending-pill" data-query="Omniscient Reader">Omniscient Reader</button>
+            <button class="trending-pill" data-query="Magic Emperor">Magic Emperor</button>
+            <button class="trending-pill" data-query="Return of the Mount Hua Sect">Mount Hua Sect</button>
+            <button class="trending-pill" data-query="Apotheosis">Apotheosis</button>
+          </div>
+        </div>
+
+        <!-- Search Results Grid -->
+        <div id="search-results-grid" class="search-results-grid"></div>
+      </div>
+
+      <!-- DIRECT URL MODE CONTAINER (Hidden by default, toggled via mode switcher) -->
+      <div id="url-mode-container" class="card main-form-card hidden">
+        <h2>Direct URL Downloader</h2>
+        <p class="card-desc">Paste the URL of any manga/manhua chapter or series. The engine will auto-detect the layout.</p>
 
         <div class="input-group">
           <label for="chapter-url">Manga / Manhua URL (Series Page or Chapter Link)</label>
           <div class="input-with-button input-form-responsive">
-            <input type="text" id="chapter-url" placeholder="Paste series or chapter URL (e.g. Asura, Toonily, ManhuaPlus)..." autofocus>
+            <input type="text" id="chapter-url" placeholder="Paste series or chapter URL (e.g. Asura, Toonily, ManhuaPlus)...">
             <div class="input-button-grid">
               <button id="btn-inspect" class="btn btn-primary">🔍 Browse Chapters</button>
               <button id="btn-analyze" class="btn btn-secondary">⚡ Quick Analyze</button>
             </div>
           </div>
         </div>
+      </div>
 
         <!-- Interactive Series Chapter Catalog (Populated when inspected) -->
         <div id="series-catalog-card" class="card catalog-card hidden" style="margin-bottom: 1.5rem; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--border);">
@@ -584,6 +648,30 @@
     </div>
   </div>
 
+  <!-- Multi-Source Comparison Drawer / Modal -->
+  <div id="source-modal" class="modal-backdrop hidden">
+    <div class="modal-card source-modal-card">
+      <div class="modal-header">
+        <div style="display: flex; gap: 12px; align-items: center; min-width: 0;">
+          <img id="source-modal-cover" src="" alt="Cover" class="source-modal-cover">
+          <div style="min-width: 0;">
+            <h3 id="source-modal-title" style="margin: 0; font-size: 1.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Series Title</h3>
+            <span id="source-modal-count-badge" class="preview-badge" style="margin-top: 4px;">6 Sources Available</span>
+          </div>
+        </div>
+        <button id="source-modal-close" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body" style="padding-top: 0.75rem;">
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+          Compare releases across sites. Inspect chapters or initiate 1-click batch download directly from any source.
+        </p>
+        <div id="source-modal-list" class="source-comparison-list">
+          <!-- Dynamically populated sources -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Fullscreen Web Reader Overlay -->
   <div id="reader-view" class="reader-overlay hidden">
     <div class="reader-topbar">
@@ -592,6 +680,11 @@
         <strong id="reader-series-title">Series Title</strong> - <span id="reader-chapter-title">Chapter</span>
       </div>
       <div class="reader-nav-btns" style="display: flex; gap: 6px; align-items: center;">
+        <select id="reader-filter-select" class="reader-filter-dropdown" title="Display Filter">
+          <option value="normal">Normal</option>
+          <option value="amoled">🖤 AMOLED</option>
+          <option value="sepia">📜 Sepia</option>
+        </select>
         <button id="reader-fullscreen-btn" class="btn btn-secondary" title="Toggle Fullscreen">⛶ Fullscreen</button>
         <button id="reader-prev-btn" class="btn btn-secondary" disabled>‹ Prev</button>
         <button id="reader-next-btn" class="btn btn-secondary" disabled>Next ›</button>

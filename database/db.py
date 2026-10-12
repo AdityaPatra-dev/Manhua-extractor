@@ -1,7 +1,9 @@
 import os
 import re
 import sqlite3
-from datetime import datetime
+import hashlib
+import json
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any
 
 DEFAULT_DB_PATH = os.environ.get("MANHUA_DB_PATH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "library.db")
@@ -86,6 +88,32 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                 phash TEXT UNIQUE NOT NULL,
                 match_threshold INTEGER DEFAULT 10,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS search_cache (
+                query_hash TEXT PRIMARY KEY,
+                query_string TEXT NOT NULL,
+                results_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS series_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+                source_key TEXT NOT NULL,
+                source_name TEXT NOT NULL,
+                source_url TEXT NOT NULL,
+                total_chapters INTEGER DEFAULT 0,
+                latest_chapter_num REAL DEFAULT 0,
+                quality_tag TEXT DEFAULT 'Standard',
+                latency_ms INTEGER DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(series_id, source_key)
             )
         """)
 
@@ -502,6 +530,99 @@ def update_series_rich_metadata(
             series_id
         ))
     conn.close()
+
+
+def get_cached_search(query: str, db_path: str = DEFAULT_DB_PATH) -> Optional[List[Dict[str, Any]]]:
+    """Retrieve non-expired search results from the search_cache table."""
+    norm_query = query.strip().lower()
+    q_hash = hashlib.sha256(norm_query.encode("utf-8")).hexdigest()
+    conn = get_connection(db_path)
+    try:
+        row = conn.execute(
+            "SELECT results_json FROM search_cache WHERE query_hash = ? AND expires_at > CURRENT_TIMESTAMP",
+            (q_hash,)
+        ).fetchone()
+        if row and row["results_json"]:
+            return json.loads(row["results_json"])
+        return None
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+
+def set_cached_search(query: str, results: List[Dict[str, Any]], ttl_seconds: int = 1800, db_path: str = DEFAULT_DB_PATH) -> None:
+    """Store search results into the search_cache table with a TTL."""
+    norm_query = query.strip().lower()
+    q_hash = hashlib.sha256(norm_query.encode("utf-8")).hexdigest()
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+    expires_str = expires_at.strftime("%Y-%m-%d %H:%M:%S")
+    results_json = json.dumps(results)
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO search_cache (query_hash, query_string, results_json, expires_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(query_hash) DO UPDATE SET
+                    results_json = excluded.results_json,
+                    expires_at = excluded.expires_at,
+                    created_at = CURRENT_TIMESTAMP
+            """, (q_hash, norm_query, results_json, expires_str))
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+
+def add_or_update_series_source(
+    series_id: int,
+    source_key: str,
+    source_name: str,
+    source_url: str,
+    total_chapters: int = 0,
+    latest_chapter_num: float = 0.0,
+    quality_tag: str = "Standard",
+    latency_ms: int = 0,
+    db_path: str = DEFAULT_DB_PATH
+) -> None:
+    """Register or update an external hosting source for a series."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO series_sources (
+                    series_id, source_key, source_name, source_url,
+                    total_chapters, latest_chapter_num, quality_tag, latency_ms, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(series_id, source_key) DO UPDATE SET
+                    source_name = excluded.source_name,
+                    source_url = excluded.source_url,
+                    total_chapters = MAX(series_sources.total_chapters, excluded.total_chapters),
+                    latest_chapter_num = MAX(series_sources.latest_chapter_num, excluded.latest_chapter_num),
+                    quality_tag = excluded.quality_tag,
+                    latency_ms = excluded.latency_ms,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (
+                series_id, source_key, source_name, source_url,
+                total_chapters, latest_chapter_num, quality_tag, latency_ms
+            ))
+    finally:
+        conn.close()
+
+
+def get_series_sources(series_id: int, db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+    """Retrieve all recorded sources for a series."""
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM series_sources WHERE series_id = ? ORDER BY latest_chapter_num DESC, latency_ms ASC",
+            (series_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 

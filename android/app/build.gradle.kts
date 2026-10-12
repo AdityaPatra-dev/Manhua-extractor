@@ -34,6 +34,7 @@ android {
                     install("httpx==0.24.1")
                     install("beautifulsoup4==4.12.3")
                     install("pillow")
+                    install("aiohttp")
                 }
             }
         }
