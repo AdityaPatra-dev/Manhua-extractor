@@ -391,3 +391,4 @@ class SearchDispatcher:
 
 # Global search dispatcher instance
 search_dispatcher = SearchDispatcher()
+

@@ -256,6 +256,11 @@
 
     <!-- TAB 2: LIBRARY -->
     <main id="tab-library" class="tab-content">
+      <!-- Touch Pull-to-Refresh Indicator -->
+      <div id="library-pull-indicator" class="library-pull-indicator hidden">
+        <span class="pull-icon">🔄</span>
+        <span id="library-pull-text">Pull down to check updates</span>
+      </div>
       <div class="library-header">
         <h2>Your Saved Library</h2>
         <div style="display: flex; gap: 0.5rem; align-items: center;">
@@ -686,15 +691,67 @@
           <option value="sepia">📜 Sepia</option>
         </select>
         <button id="reader-fullscreen-btn" class="btn btn-secondary" title="Toggle Fullscreen">⛶ Fullscreen</button>
+        <button id="reader-settings-btn" class="btn btn-secondary" title="Reader Display & Layout Settings">⚙️</button>
         <button id="reader-prev-btn" class="btn btn-secondary" disabled>‹ Prev</button>
         <button id="reader-next-btn" class="btn btn-secondary" disabled>Next ›</button>
       </div>
-
     </div>
+
+    <!-- Reader Layout & Settings Popup -->
+    <div id="reader-settings-menu" class="reader-settings-menu hidden">
+      <div class="reader-settings-header">
+        <h4>Reading Settings</h4>
+        <button id="reader-settings-close" class="btn-close" style="font-size: 1.1rem;">&times;</button>
+      </div>
+      <div class="reader-settings-body">
+        <div class="reader-setting-item">
+          <label>Reading Layout</label>
+          <div class="segmented-control-mini" id="reader-mode-toggle">
+            <button class="seg-btn-mini active" data-val="webtoon">Continuous Webtoon</button>
+            <button class="seg-btn-mini" data-val="paged">Paged Manga</button>
+          </div>
+        </div>
+        <div class="reader-setting-item">
+          <label>Webtoon Width</label>
+          <div class="segmented-control-mini" id="reader-width-toggle">
+            <button class="seg-btn-mini" data-val="640px">Narrow</button>
+            <button class="seg-btn-mini active" data-val="840px">Normal</button>
+            <button class="seg-btn-mini" data-val="100%">Full (100%)</button>
+          </div>
+        </div>
+        <div class="reader-setting-item">
+          <label>Panel Gutter Gap</label>
+          <div class="segmented-control-mini" id="reader-gap-toggle">
+            <button class="seg-btn-mini active" data-val="0px">Flush (0px)</button>
+            <button class="seg-btn-mini" data-val="10px">Spaced (10px)</button>
+          </div>
+        </div>
+        <div class="reader-setting-item" style="border: none; padding-bottom: 0;">
+          <label style="font-size: 0.75rem; color: var(--text-muted); line-height: 1.4;">
+            ⌨️ <strong>Shortcuts:</strong> Arrows/Space to scroll/flip • F for fullscreen • Esc to exit
+          </label>
+        </div>
+      </div>
+    </div>
+
     <div id="reader-pages-container" class="reader-container"></div>
     <div class="reader-bottom-hud">
       <span id="reader-progress-counter">Loading panels...</span>
       <button id="reader-scroll-top" class="btn btn-secondary">↑ Top</button>
+    </div>
+  </div>
+
+  <!-- Desktop Command Palette (Ctrl+K) -->
+  <div id="command-palette-modal" class="modal-backdrop hidden">
+    <div class="command-palette-card">
+      <div class="command-palette-input-wrap">
+        <span class="cmd-icon">⚡</span>
+        <input type="text" id="command-palette-input" placeholder="Type a command or search library..." autocomplete="off">
+        <span class="cmd-esc-hint">Esc</span>
+      </div>
+      <div id="command-palette-results" class="command-palette-results">
+        <!-- Dynamic list of commands and library matches -->
+      </div>
     </div>
   </div>
 

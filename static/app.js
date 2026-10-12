@@ -19,11 +19,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 3500);
   }
 
+  // --- Haptic Feedback Helper ---
+  function triggerHaptic(pattern = [15]) {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try { navigator.vibrate(pattern); } catch (e) {}
+    }
+  }
+
   // --- Tab Navigation ---
   const navTabs = document.querySelectorAll(".nav-tab");
   const tabContents = document.querySelectorAll(".tab-content");
 
   function switchTab(targetId) {
+    triggerHaptic([12]);
     navTabs.forEach((t) => {
       if (t.getAttribute("data-tab") === targetId) {
         t.classList.add("active");
@@ -640,6 +648,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // --- Library Tab ---
+  let libraryDataCache = [];
   async function loadLibrary() {
     const grid = document.getElementById("library-grid");
     try {
@@ -647,6 +656,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await res.json();
 
       if (data.success && data.series && data.series.length > 0) {
+        libraryDataCache = data.series || [];
         document.getElementById("library-count").textContent = data.series.length;
         grid.innerHTML = data.series.map((s) => `
           <div class="series-card" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
@@ -892,12 +902,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const readerProgressCounter = document.getElementById("reader-progress-counter");
   const readerScrollTop = document.getElementById("reader-scroll-top");
   const readerFullscreenBtn = document.getElementById("reader-fullscreen-btn");
+  const readerSettingsBtn = document.getElementById("reader-settings-btn");
+  const readerSettingsMenu = document.getElementById("reader-settings-menu");
+  const readerSettingsClose = document.getElementById("reader-settings-close");
   const readerTopbar = document.querySelector(".reader-topbar");
   const readerBottomHud = document.querySelector(".reader-bottom-hud");
 
   let currentReadingChapterId = null;
   let lastReaderScrollTop = 0;
   let hudHidden = false;
+
+  let currentReaderMode = localStorage.getItem("reader_mode") || "webtoon"; // 'webtoon' or 'paged'
+  let currentReaderWidth = localStorage.getItem("reader_width") || "840px";
+  let currentReaderGap = localStorage.getItem("reader_gap") || "0px";
+  let pagedCurrentIndex = 0;
+  let pagedTotalPages = 0;
+  let currentChapterData = null;
 
   function setHudVisibility(visible) {
     hudHidden = !visible;
@@ -911,13 +931,102 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // Tap in reading area toggles HUD (except on buttons or links)
+  // Reader Settings Menu Controls
+  readerSettingsBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    readerSettingsMenu?.classList.toggle("hidden");
+  });
+
+  readerSettingsClose?.addEventListener("click", () => {
+    readerSettingsMenu?.classList.add("hidden");
+  });
+
+  document.querySelectorAll("#reader-mode-toggle .seg-btn-mini").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#reader-mode-toggle .seg-btn-mini").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentReaderMode = btn.getAttribute("data-val") || "webtoon";
+      localStorage.setItem("reader_mode", currentReaderMode);
+      applyReaderLayout();
+      triggerHaptic([10]);
+    });
+  });
+
+  document.querySelectorAll("#reader-width-toggle .seg-btn-mini").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#reader-width-toggle .seg-btn-mini").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentReaderWidth = btn.getAttribute("data-val") || "840px";
+      localStorage.setItem("reader_width", currentReaderWidth);
+      applyReaderLayout();
+      triggerHaptic([10]);
+    });
+  });
+
+  document.querySelectorAll("#reader-gap-toggle .seg-btn-mini").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#reader-gap-toggle .seg-btn-mini").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentReaderGap = btn.getAttribute("data-val") || "0px";
+      localStorage.setItem("reader_gap", currentReaderGap);
+      applyReaderLayout();
+      triggerHaptic([10]);
+    });
+  });
+
+  function applyReaderLayout() {
+    if (!readerPagesContainer) return;
+    readerPagesContainer.style.maxWidth = currentReaderWidth;
+    readerPagesContainer.style.gap = currentReaderGap;
+
+    if (currentReaderMode === "paged") {
+      readerPagesContainer.classList.add("reader-mode-paged");
+      showPagedIndex(pagedCurrentIndex);
+    } else {
+      readerPagesContainer.classList.remove("reader-mode-paged");
+      const wrappers = readerPagesContainer.querySelectorAll(".reader-page-wrapper");
+      wrappers.forEach(w => w.classList.remove("page-active"));
+    }
+  }
+
+  function showPagedIndex(idx) {
+    if (!currentChapterData || !currentChapterData.pages) return;
+    pagedCurrentIndex = Math.max(0, Math.min(pagedTotalPages - 1, idx));
+    const wrappers = readerPagesContainer.querySelectorAll(".reader-page-wrapper");
+    wrappers.forEach((w, i) => {
+      if (i === pagedCurrentIndex) w.classList.add("page-active");
+      else w.classList.remove("page-active");
+    });
+    readerProgressCounter.textContent = `Page ${pagedCurrentIndex + 1} of ${pagedTotalPages}`;
+    readerView.scrollTop = 0;
+    saveReadingProgressThrottled(pagedCurrentIndex + 1);
+  }
+
+  // Tap in reading area toggles HUD or turns page in paged mode
   if (readerPagesContainer) {
     readerPagesContainer.addEventListener("click", (e) => {
       if (e.target.tagName === "BUTTON" || e.target.closest("button") || e.target.tagName === "A") {
         return;
       }
-      setHudVisibility(hudHidden);
+      if (currentReaderMode === "paged" && pagedTotalPages > 0) {
+        const rect = readerPagesContainer.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        if (clickX < rect.width / 3) {
+          if (pagedCurrentIndex > 0) {
+            showPagedIndex(pagedCurrentIndex - 1);
+            triggerHaptic([10]);
+          }
+        } else if (clickX > (rect.width * 2) / 3) {
+          if (pagedCurrentIndex < pagedTotalPages - 1) {
+            showPagedIndex(pagedCurrentIndex + 1);
+            triggerHaptic([10]);
+          }
+        } else {
+          setHudVisibility(hudHidden);
+        }
+      } else {
+        setHudVisibility(hudHidden);
+      }
     });
   }
 
@@ -951,15 +1060,16 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   window.closeReader = function() {
-    // If in fullscreen, exit fullscreen first
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
       else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     }
     if (seriesModal) seriesModal.classList.add("hidden");
+    readerSettingsMenu?.classList.add("hidden");
     readerView.classList.add("hidden");
     readerPagesContainer.innerHTML = "";
     currentReadingChapterId = null;
+    currentChapterData = null;
     switchTab("tab-library");
     loadLibrary();
   };
@@ -970,10 +1080,72 @@ document.addEventListener("DOMContentLoaded", () => {
     readerView.scrollTo({ top: 0, behavior: "smooth" });
   });
 
+  window.handlePanelError = function(img, url) {
+    if (!img) return;
+    img.style.display = "none";
+    const wrapper = img.parentElement;
+    if (wrapper && !wrapper.querySelector(".reader-panel-error")) {
+      const errDiv = document.createElement("div");
+      errDiv.className = "reader-panel-error";
+      errDiv.style = "padding: 1.5rem; background: rgba(30, 41, 59, 0.6); border: 1px dashed var(--border-color); border-radius: 8px; margin: 12px auto; max-width: 320px; text-align: center;";
+      errDiv.innerHTML = `
+        <div style="font-size: 1.5rem; margin-bottom: 4px;">⚠️</div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 8px;">Panel image failed to load</p>
+        <button class="btn btn-secondary" style="padding: 6px 14px; font-size: 0.8rem;" onclick="retryPanelImage(this, '${escapeAttr(url)}')">🔄 Tap to Reload Panel</button>
+      `;
+      wrapper.appendChild(errDiv);
+    }
+  };
+
+  window.retryPanelImage = function(btn, url) {
+    const wrapper = btn.closest(".reader-page-wrapper");
+    if (!wrapper) return;
+    const errDiv = wrapper.querySelector(".reader-panel-error");
+    if (errDiv) errDiv.remove();
+    const img = wrapper.querySelector(".reader-page");
+    if (img) {
+      img.style.display = "block";
+      const sep = url.includes("?") ? "&" : "?";
+      img.src = `${url}${sep}_t=${Date.now()}`;
+    }
+  };
+
+  let progressSaveTimeout = null;
+  function saveReadingProgressThrottled(pageNum) {
+    if (!currentReadingChapterId) return;
+    if (!progressSaveTimeout) {
+      progressSaveTimeout = setTimeout(() => {
+        progressSaveTimeout = null;
+        fetch(`/api/chapter/${currentReadingChapterId}/progress`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ last_read_page: pageNum, read_status: 1 })
+        }).catch(() => {});
+      }, 1000);
+    }
+  }
+
+  // Pre-buffer memory cache
+  const prebufferedSet = new Set();
+  function prebufferAhead(pagesList, startIdx, count = 10) {
+    if (!pagesList) return;
+    const end = Math.min(pagesList.length, startIdx + count);
+    for (let i = startIdx; i < end; i++) {
+      const u = pagesList[i];
+      if (u && !prebufferedSet.has(u)) {
+        prebufferedSet.add(u);
+        const im = new Image();
+        im.src = u;
+        if (im.decode) im.decode().catch(() => {});
+      }
+    }
+  }
+
   window.openReader = async function(chapterId) {
     currentReadingChapterId = chapterId;
     setHudVisibility(true);
     seriesModal.classList.add("hidden");
+    readerSettingsMenu?.classList.add("hidden");
     readerView.classList.remove("hidden");
     readerView.scrollTop = 0;
     readerPagesContainer.innerHTML = "<p style='color: #94a3b8; padding: 3rem; text-align: center;'>Loading chapter panels...</p>";
@@ -981,8 +1153,12 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const res = await fetch(`/api/chapter/${chapterId}/pages`);
       const data = await res.json();
+      currentChapterData = data;
 
       if (data.success && data.pages) {
+        pagedTotalPages = data.total_pages || data.pages.length;
+        pagedCurrentIndex = 0;
+
         readerSeriesTitle.textContent = data.series_title;
         readerChapterTitle.textContent = data.chapter_title;
         readerProgressCounter.textContent = `Total ${data.total_pages} panels`;
@@ -1002,15 +1178,15 @@ document.addEventListener("DOMContentLoaded", () => {
           readerNextBtn.disabled = true;
         }
 
-        // Render panels in vertical continuous scroll
+        // Render panels with error boundary and prebuffering
         const panelsHtml = data.pages.map((pUrl, idx) => `
-          <div class="reader-page-wrapper" style="position: relative; display: inline-block; width: 100%; text-align: center;">
-            <img class="reader-page" src="${pUrl}" alt="Page ${idx + 1}" loading="lazy" decoding="async" id="page-panel-${idx}">
+          <div class="reader-page-wrapper" data-page-index="${idx}" style="position: relative; display: inline-block; width: 100%; text-align: center;">
+            <img class="reader-page" src="${pUrl}" alt="Page ${idx + 1}" loading="lazy" decoding="async" id="page-panel-${idx}" onerror="handlePanelError(this, '${escapeAttr(pUrl)}')">
             <button class="btn-mark-promo" onclick="markPageAsPromo(${chapterId}, ${idx}, this)" style="position: absolute; right: 15px; top: 15px; background: rgba(15,23,42,0.85); color: #f87171; border: 1px solid #ef4444; border-radius: 6px; padding: 4px 10px; font-size: 0.75rem; cursor: pointer; opacity: 0.4; transition: opacity 0.2s;" onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.4'">🚫 Mark as Promo</button>
           </div>
         `).join("");
 
-        // End-of-chapter card for seamless mobile navigation
+        // End-of-chapter card
         const endCardHtml = `
           <div class="reader-chapter-end-card" style="width: 90%; max-width: 500px; margin: 3rem auto 2rem auto; padding: 2rem 1.5rem; text-align: center; background: rgba(30, 41, 59, 0.85); border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
             <h3 style="margin-bottom: 0.5rem; font-size: 1.2rem; color: var(--text-main);">Finished ${data.chapter_title} 🎉</h3>
@@ -1030,14 +1206,17 @@ document.addEventListener("DOMContentLoaded", () => {
         `;
 
         readerPagesContainer.innerHTML = panelsHtml + endCardHtml;
+        applyReaderLayout();
 
-        // Scroll listener for progress tracking and auto-hiding HUD
-        let progressSaveTimeout = null;
+        // Prebuffer initial panels
+        prebufferAhead(data.pages, 0, 10);
+
+        // Scroll listener for progress tracking & pre-buffering
         readerView.onscroll = () => {
+          if (currentReaderMode === "paged") return;
           const currentScroll = readerView.scrollTop;
           const diff = currentScroll - lastReaderScrollTop;
 
-          // Auto-hide HUD on downward scroll, reveal on upward scroll
           if (diff > 35 && currentScroll > 80 && !hudHidden) {
             setHudVisibility(false);
           } else if (diff < -25 && hudHidden) {
@@ -1054,18 +1233,8 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           });
           readerProgressCounter.textContent = `Page ${currentPage} of ${data.total_pages}`;
-
-          // Throttle progress save
-          if (!progressSaveTimeout) {
-            progressSaveTimeout = setTimeout(() => {
-              progressSaveTimeout = null;
-              fetch(`/api/chapter/${chapterId}/progress`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ last_read_page: currentPage, read_status: 1 })
-              }).catch(() => {});
-            }, 1000);
-          }
+          saveReadingProgressThrottled(currentPage);
+          prebufferAhead(data.pages, currentPage - 1, 10);
         };
       } else {
         readerPagesContainer.innerHTML = `<p style="color: var(--danger); padding: 3rem; text-align: center;">Error: ${data.error || 'Could not load chapter pages.'}</p>`;
@@ -1931,14 +2100,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Ctrl+K Desktop Shortcut
+  // Ctrl+K Desktop Command Palette Shortcut
   window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
       e.preventDefault();
-      switchTab("tab-download");
-      setMode("search");
-      globalSearchInput?.focus();
-      globalSearchInput?.select();
+      openCommandPalette();
     }
   });
 
@@ -2295,6 +2461,194 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (val === "sepia") {
       readerView.classList.add("reader-sepia");
     }
+  });
+
+  // --- Pull-to-Refresh on Library Tab ---
+  const tabLibrary = document.getElementById("tab-library");
+  const pullIndicator = document.getElementById("library-pull-indicator");
+  let pullStartY = 0;
+  let isPulling = false;
+
+  tabLibrary?.addEventListener("touchstart", (e) => {
+    if (window.scrollY <= 5 && e.touches.length === 1) {
+      pullStartY = e.touches[0].clientY;
+      isPulling = true;
+    }
+  }, { passive: true });
+
+  tabLibrary?.addEventListener("touchmove", (e) => {
+    if (!isPulling) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - pullStartY;
+    if (deltaY > 50 && window.scrollY <= 5) {
+      pullIndicator?.classList.remove("hidden");
+    }
+  }, { passive: true });
+
+  tabLibrary?.addEventListener("touchend", () => {
+    if (!isPulling) return;
+    isPulling = false;
+    if (pullIndicator && !pullIndicator.classList.contains("hidden")) {
+      triggerHaptic([25]);
+      btnUpdateLibrary?.click();
+      setTimeout(() => pullIndicator.classList.add("hidden"), 1500);
+    }
+  });
+
+  // --- Reader Global Keyboard Navigation ---
+  window.addEventListener("keydown", (e) => {
+    if (!readerView || readerView.classList.contains("hidden")) return;
+    if (e.key === "Escape") {
+      if (readerSettingsMenu && !readerSettingsMenu.classList.contains("hidden")) {
+        readerSettingsMenu.classList.add("hidden");
+      } else {
+        closeReader();
+      }
+    } else if (e.key === "f" || e.key === "F") {
+      readerFullscreenBtn?.click();
+    } else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") {
+      if (currentReaderMode === "paged") {
+        if (pagedCurrentIndex > 0) showPagedIndex(pagedCurrentIndex - 1);
+        else if (readerPrevBtn && !readerPrevBtn.disabled) readerPrevBtn.click();
+      } else if (readerPrevBtn && !readerPrevBtn.disabled) {
+        readerPrevBtn.click();
+      }
+    } else if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") {
+      if (currentReaderMode === "paged") {
+        if (pagedCurrentIndex < pagedTotalPages - 1) showPagedIndex(pagedCurrentIndex + 1);
+        else if (readerNextBtn && !readerNextBtn.disabled) readerNextBtn.click();
+      } else if (readerNextBtn && !readerNextBtn.disabled) {
+        readerNextBtn.click();
+      }
+    }
+  });
+
+  // --- Command Palette (Ctrl+K) Controller ---
+  const commandPaletteModal = document.getElementById("command-palette-modal");
+  const commandPaletteInput = document.getElementById("command-palette-input");
+  const commandPaletteResults = document.getElementById("command-palette-results");
+  let activeCmdIndex = 0;
+
+  const standardCommands = [
+    { title: "🔍 Search 25+ Online Sites", category: "Search", action: () => { switchTab("tab-download"); setMode("search"); globalSearchInput?.focus(); } },
+    { title: "🔗 Direct URL Downloader", category: "Action", action: () => { switchTab("tab-download"); setMode("url"); chapterUrlInput?.focus(); } },
+    { title: "📚 Go to Library", category: "Navigation", action: () => { switchTab("tab-library"); } },
+    { title: "🔄 Check Library Updates", category: "Action", action: () => { btnUpdateLibrary?.click(); } },
+    { title: "📦 Backup & Export Batches", category: "Backup", action: () => { switchTab("tab-settings"); document.getElementById("backup-sync-card")?.scrollIntoView({ behavior: "smooth" }); } },
+    { title: "📱 Phone & OPDS Connection", category: "Connectivity", action: () => { document.getElementById("btn-phone-connect")?.click(); } },
+    { title: "🖤 Toggle AMOLED True Black", category: "Theme", action: () => { btnThemeToggle?.click(); } },
+    { title: "🧪 Open Compatibility Lab", category: "Lab", action: () => { switchTab("tab-lab"); } }
+  ];
+
+  function openCommandPalette() {
+    if (!commandPaletteModal) return;
+    commandPaletteModal.classList.remove("hidden");
+    if (commandPaletteInput) {
+      commandPaletteInput.value = "";
+      commandPaletteInput.focus();
+    }
+    activeCmdIndex = 0;
+    renderCommandPaletteResults("");
+  }
+
+  function closeCommandPalette() {
+    commandPaletteModal?.classList.add("hidden");
+  }
+
+  function renderCommandPaletteResults(filterText = "") {
+    if (!commandPaletteResults) return;
+    const filter = (filterText || "").toLowerCase().trim();
+
+    // Match commands
+    const matchedCmds = standardCommands.filter(c => !filter || c.title.toLowerCase().includes(filter) || c.category.toLowerCase().includes(filter));
+
+    // Match library series
+    const matchedSeries = (libraryDataCache || []).filter(s => !filter || (s.title && s.title.toLowerCase().includes(filter))).slice(0, 5);
+
+    let html = "";
+    let itemCounter = 0;
+
+    if (matchedCmds.length > 0) {
+      html += `<div class="cmd-group-title">Quick Actions</div>`;
+      matchedCmds.forEach((c) => {
+        const isSel = itemCounter === activeCmdIndex ? "active" : "";
+        html += `
+          <div class="cmd-item ${isSel}" data-type="cmd" data-idx="${itemCounter}">
+            <div class="cmd-item-left">
+              <span>${escapeHtml(c.title)}</span>
+            </div>
+            <span class="cmd-item-badge">${escapeHtml(c.category)}</span>
+          </div>
+        `;
+        itemCounter++;
+      });
+    }
+
+    if (matchedSeries.length > 0) {
+      html += `<div class="cmd-group-title">Library Series</div>`;
+      matchedSeries.forEach((s) => {
+        const isSel = itemCounter === activeCmdIndex ? "active" : "";
+        html += `
+          <div class="cmd-item ${isSel}" data-type="series" data-series-id="${s.id}" data-idx="${itemCounter}">
+            <div class="cmd-item-left">
+              <span>📖</span>
+              <span>${escapeHtml(s.title)}</span>
+            </div>
+            <span class="cmd-item-badge">${s.downloaded_chapters || 0} Chs</span>
+          </div>
+        `;
+        itemCounter++;
+      });
+    }
+
+    if (itemCounter === 0) {
+      html = `<div style="padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.85rem;">No matching commands or series.</div>`;
+    }
+
+    commandPaletteResults.innerHTML = html;
+
+    // Wire clicks
+    commandPaletteResults.querySelectorAll(".cmd-item").forEach(item => {
+      item.addEventListener("click", () => {
+        const type = item.getAttribute("data-type");
+        closeCommandPalette();
+        if (type === "cmd") {
+          const idx = parseInt(item.getAttribute("data-idx"), 10);
+          matchedCmds[idx]?.action();
+        } else if (type === "series") {
+          const sId = parseInt(item.getAttribute("data-series-id"), 10);
+          openSeriesModal(sId);
+        }
+      });
+    });
+  }
+
+  commandPaletteInput?.addEventListener("input", () => {
+    activeCmdIndex = 0;
+    renderCommandPaletteResults(commandPaletteInput.value);
+  });
+
+  commandPaletteInput?.addEventListener("keydown", (e) => {
+    const items = commandPaletteResults.querySelectorAll(".cmd-item");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeCmdIndex = (activeCmdIndex + 1) % Math.max(1, items.length);
+      renderCommandPaletteResults(commandPaletteInput.value);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeCmdIndex = (activeCmdIndex - 1 + items.length) % Math.max(1, items.length);
+      renderCommandPaletteResults(commandPaletteInput.value);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const activeItem = commandPaletteResults.querySelector(".cmd-item.active") || items[0];
+      if (activeItem) activeItem.click();
+    } else if (e.key === "Escape") {
+      closeCommandPalette();
+    }
+  });
+
+  commandPaletteModal?.addEventListener("click", (e) => {
+    if (e.target === commandPaletteModal) closeCommandPalette();
   });
 
   // Initial load
