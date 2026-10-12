@@ -57,7 +57,7 @@ class SearchDispatcher:
     def get_sources_for_tier(self, tier: str = "fast") -> List[Dict[str, Any]]:
         if tier == "fast":
             return TIER_1_SOURCES
-        elif tier == "popular":
+        elif tier in ("popular", "top"):
             return TIER_1_SOURCES + TIER_2_MADARA
         elif tier == "all":
             return TIER_1_SOURCES + TIER_2_MADARA + TIER_3_MANGASTREAM + TIER_4_AGGREGATOR

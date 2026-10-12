@@ -66,9 +66,16 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 val copyPythonSources = tasks.register<Copy>("copyPythonSources") {
+    outputs.upToDateWhen { false }
     from("${rootProject.projectDir}/..") {
         include("app.py")
         include("android_entry.py")

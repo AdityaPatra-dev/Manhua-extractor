@@ -7,8 +7,10 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.JsResult
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -102,7 +104,7 @@ class MainActivity : AppCompatActivity() {
                 databaseEnabled = true
                 allowFileAccess = true
                 allowContentAccess = true
-                cacheMode = WebSettings.LOAD_DEFAULT
+                cacheMode = WebSettings.LOAD_NO_CACHE
                 useWideViewPort = false
                 loadWithOverviewMode = false
                 textZoom = 100
@@ -110,6 +112,7 @@ class MainActivity : AppCompatActivity() {
                 displayZoomControls = false
                 mediaPlaybackRequiresUserGesture = false
             }
+            clearCache(true)
 
             addJavascriptInterface(AndroidWebAppInterface(this@MainActivity), "AndroidApp")
 
@@ -120,6 +123,11 @@ class MainActivity : AppCompatActivity() {
             }
 
             webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                    Log.d("WebConsole", "[${consoleMessage?.messageLevel()}] ${consoleMessage?.message()} -- line ${consoleMessage?.lineNumber()}")
+                    return true
+                }
+
                 override fun onJsAlert(view: WebView?, url: String?, message: String?, result: JsResult?): Boolean {
                     AlertDialog.Builder(this@MainActivity)
                         .setTitle("Manhua Extractor")
@@ -211,9 +219,14 @@ class MainActivity : AppCompatActivity() {
                 if (customView != null) {
                     webView.webChromeClient?.onHideCustomView()
                 } else {
-                    // Check if reader view or modal is open in WebView
+                    // Check if reader view, drawer, or modal is open in WebView
                     webView.evaluateJavascript(
                         "(function() { " +
+                        "  var dr = document.getElementById('sidebar-drawer'); " +
+                        "  if (dr && dr.classList.contains('open')) { " +
+                        "    var dc = document.getElementById('drawer-close'); " +
+                        "    if (dc) { dc.click(); return true; } " +
+                        "  } " +
                         "  var rv = document.getElementById('reader-view'); " +
                         "  if (rv && !rv.classList.contains('hidden')) { " +
                         "    var rc = document.getElementById('reader-close'); " +

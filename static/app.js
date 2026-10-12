@@ -657,7 +657,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (data.success && data.series && data.series.length > 0) {
         libraryDataCache = data.series || [];
-        document.getElementById("library-count").textContent = data.series.length;
+        const countTxt = String(data.series.length);
+        const lCount = document.getElementById("library-count");
+        if (lCount) lCount.textContent = countTxt;
+        const dCount = document.getElementById("drawer-library-count");
+        if (dCount) dCount.textContent = countTxt;
         grid.innerHTML = data.series.map((s) => `
           <div class="series-card" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
             <img class="series-cover" src="/api/series/${s.id}/cover" alt="${s.title}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
@@ -675,7 +679,10 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         `).join("");
       } else {
-        document.getElementById("library-count").textContent = "0";
+        const lCount = document.getElementById("library-count");
+        if (lCount) lCount.textContent = "0";
+        const dCount = document.getElementById("drawer-library-count");
+        if (dCount) dCount.textContent = "0";
         grid.innerHTML = '<p class="empty-state">No downloaded series in the database yet. Download a chapter to start building your library!</p>';
       }
     } catch (err) {
@@ -2008,6 +2015,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const searchModeContainer = document.getElementById("search-mode-container");
   const urlModeContainer = document.getElementById("url-mode-container");
 
+  const globalSearchForm = document.getElementById("global-search-form");
   const globalSearchInput = document.getElementById("global-search-input");
   const btnGlobalSearch = document.getElementById("btn-global-search");
   const btnSearchClear = document.getElementById("btn-search-clear");
@@ -2016,7 +2024,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const searchStatusText = document.getElementById("search-status-text");
   const searchProgressBar = document.getElementById("search-progress-bar");
   const searchResultsGrid = document.getElementById("search-results-grid");
-  const trendingPills = document.querySelectorAll(".trending-pill");
 
   const sourceModal = document.getElementById("source-modal");
   const sourceModalClose = document.getElementById("source-modal-close");
@@ -2025,8 +2032,70 @@ document.addEventListener("DOMContentLoaded", () => {
   const sourceModalCountBadge = document.getElementById("source-modal-count-badge");
   const sourceModalList = document.getElementById("source-modal-list");
 
+  // Sidebar Drawer & 3-Dot Menu Popup
+  const btnAppMenu = document.getElementById("btn-app-menu");
+  const sidebarDrawer = document.getElementById("sidebar-drawer");
+  const drawerBackdrop = document.getElementById("drawer-backdrop");
+  const drawerClose = document.getElementById("drawer-close");
+  const drawerItems = document.querySelectorAll(".drawer-item");
+  const drawerThemeToggle = document.getElementById("drawer-theme-toggle");
+  const drawerPhoneConnect = document.getElementById("drawer-phone-connect");
+  const drawerUpdateLibrary = document.getElementById("drawer-update-library");
+
+  function openDrawer() {
+    sidebarDrawer?.classList.add("open");
+    drawerBackdrop?.classList.remove("hidden");
+    void drawerBackdrop?.offsetWidth;
+    drawerBackdrop?.classList.add("active");
+  }
+
+  function closeDrawer() {
+    sidebarDrawer?.classList.remove("open");
+    drawerBackdrop?.classList.remove("active");
+    setTimeout(() => {
+      drawerBackdrop?.classList.add("hidden");
+    }, 280);
+  }
+
+  btnAppMenu?.addEventListener("click", openDrawer);
+  drawerClose?.addEventListener("click", closeDrawer);
+  drawerBackdrop?.addEventListener("click", closeDrawer);
+
+  drawerItems.forEach(item => {
+    item.addEventListener("click", () => {
+      const tab = item.getAttribute("data-tab");
+      const mode = item.getAttribute("data-mode");
+      if (tab) {
+        switchTab(tab);
+        drawerItems.forEach(i => i.classList.remove("active"));
+        item.classList.add("active");
+      }
+      if (mode) {
+        setMode(mode);
+      }
+      closeDrawer();
+    });
+  });
+
+  drawerThemeToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.getElementById("btn-theme-toggle")?.click();
+    closeDrawer();
+  });
+
+  drawerPhoneConnect?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.getElementById("btn-phone-connect")?.click();
+    closeDrawer();
+  });
+
+  drawerUpdateLibrary?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.getElementById("btn-update-library")?.click();
+    closeDrawer();
+  });
+
   let activeSearchTier = "fast";
-  let activeEventSource = null;
   let currentSearchResults = [];
 
   function setMode(mode) {
@@ -2075,29 +2144,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Trending pills
-  trendingPills.forEach(pill => {
-    pill.addEventListener("click", () => {
-      const q = pill.getAttribute("data-query");
-      if (globalSearchInput && q) {
-        globalSearchInput.value = q;
-        btnSearchClear?.classList.remove("hidden");
-        setMode("search");
-        performGlobalSearch(q);
-      }
-    });
-  });
-
-  btnGlobalSearch?.addEventListener("click", () => {
+  // Form submit & button click handlers
+  globalSearchForm?.addEventListener("submit", (e) => {
+    e.preventDefault();
     const q = globalSearchInput?.value.trim();
     if (q) performGlobalSearch(q);
   });
 
-  globalSearchInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      const q = globalSearchInput?.value.trim();
-      if (q) performGlobalSearch(q);
-    }
+  btnGlobalSearch?.addEventListener("click", (e) => {
+    e.preventDefault();
+    const q = globalSearchInput?.value.trim();
+    if (q) performGlobalSearch(q);
   });
 
   // Ctrl+K Desktop Command Palette Shortcut
@@ -2313,19 +2370,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function performGlobalSearch(query) {
-    if (!query) return;
-
-    if (activeEventSource) {
-      activeEventSource.close();
-      activeEventSource = null;
-    }
+  async function performGlobalSearch(query) {
+    if (!query || !query.trim()) return;
+    const q = query.trim();
 
     renderSearchSkeletons(4);
     if (searchStatusBar) {
       searchStatusBar.classList.remove("hidden");
-      if (searchStatusText) searchStatusText.textContent = `Connecting to multi-source search engine...`;
-      if (searchProgressBar) searchProgressBar.style.width = "5%";
+      if (searchStatusText) searchStatusText.textContent = `Searching sources for "${q}"...`;
+      if (searchProgressBar) searchProgressBar.style.width = "40%";
     }
 
     if (btnGlobalSearch) {
@@ -2333,95 +2386,36 @@ document.addEventListener("DOMContentLoaded", () => {
       btnGlobalSearch.disabled = true;
     }
 
-    const streamUrl = `/api/search/stream?q=${encodeURIComponent(query)}&tier=${encodeURIComponent(activeSearchTier)}`;
-    const evtSource = new EventSource(streamUrl);
-    activeEventSource = evtSource;
+    try {
+      if (searchProgressBar) searchProgressBar.style.width = "75%";
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&tier=${encodeURIComponent(activeSearchTier)}`);
+      const data = await res.json();
 
-    let receivedClusters = false;
-
-    evtSource.addEventListener("init", (e) => {
-      try {
-        const d = JSON.parse(e.data);
+      if (searchProgressBar) searchProgressBar.style.width = "100%";
+      if (data.success && data.clusters && data.clusters.length > 0) {
         if (searchStatusText) {
-          searchStatusText.textContent = `Dispatching queries across ${d.total_sources || 12} scrapers & REST APIs...`;
+          searchStatusText.textContent = `Found ${data.total_clusters} series across sources.`;
         }
-      } catch (err) {}
-    });
-
-    evtSource.addEventListener("progress", (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (searchProgressBar && d.total) {
-          const pct = Math.round((d.completed / d.total) * 100);
-          searchProgressBar.style.width = `${Math.min(95, pct)}%`;
-        }
-        if (searchStatusText && d.total) {
-          searchStatusText.textContent = `Scraped ${d.completed}/${d.total} sources...`;
-        }
-      } catch (err) {}
-    });
-
-    evtSource.addEventListener("update", (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        receivedClusters = true;
-        if (searchProgressBar && d.total) {
-          const pct = Math.round((d.completed / d.total) * 100);
-          searchProgressBar.style.width = `${Math.min(95, pct)}%`;
-        }
+        renderSearchResults(data.clusters);
+      } else {
         if (searchStatusText) {
-          searchStatusText.textContent = `Found ${d.total_clusters || 0} unique series across ${d.completed}/${d.total} sources...`;
+          searchStatusText.textContent = `No series found for "${q}". Try another title or "All Sites".`;
         }
-        if (d.clusters) {
-          renderSearchResults(d.clusters);
-        }
-      } catch (err) {}
-    });
-
-    evtSource.addEventListener("complete", (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (searchProgressBar) searchProgressBar.style.width = "100%";
-        if (searchStatusText) {
-          searchStatusText.textContent = `✅ Search complete! Found ${d.total_clusters || 0} titles across ${d.total_sources || 0} sources.`;
-        }
-        if (d.clusters) {
-          renderSearchResults(d.clusters);
-        }
-      } catch (err) {}
-      evtSource.close();
-      if (activeEventSource === evtSource) activeEventSource = null;
+        renderSearchResults([]);
+      }
+    } catch (err) {
+      if (searchStatusText) searchStatusText.textContent = `Search error: ${err.message}`;
+      showToast(`Search error: ${err.message}`, "error");
+      renderSearchResults([]);
+    } finally {
       if (btnGlobalSearch) {
         btnGlobalSearch.textContent = "🔍 Search";
         btnGlobalSearch.disabled = false;
       }
-    });
-
-    evtSource.addEventListener("error", (e) => {
-      evtSource.close();
-      if (activeEventSource === evtSource) activeEventSource = null;
-      if (btnGlobalSearch) {
-        btnGlobalSearch.textContent = "🔍 Search";
-        btnGlobalSearch.disabled = false;
-      }
-      if (!receivedClusters) {
-        // Fallback to direct GET /api/search
-        fetch(`/api/search?q=${encodeURIComponent(query)}&tier=${encodeURIComponent(activeSearchTier)}`)
-          .then(res => res.json())
-          .then(data => {
-            if (data.success && data.clusters) {
-              renderSearchResults(data.clusters);
-              if (searchStatusText) searchStatusText.textContent = `Found ${data.total_clusters} series.`;
-              if (searchProgressBar) searchProgressBar.style.width = "100%";
-            } else {
-              renderSearchResults([]);
-            }
-          })
-          .catch(err => {
-            showToast(`Search error: ${err.message}`, "error");
-          });
-      }
-    });
+      setTimeout(() => {
+        if (searchStatusBar) searchStatusBar.classList.add("hidden");
+      }, 3500);
+    }
   }
 
   // --- AMOLED True Black Theme Toggle ---
