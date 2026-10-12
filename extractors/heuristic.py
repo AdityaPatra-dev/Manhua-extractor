@@ -16,6 +16,34 @@ class HeuristicExtractor(BaseExtractor):
         parsed = urlparse(url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
 
+        # 0a. Check for MangaKatana JS array variables (thzq has all panels, ytaw has preview)
+        m_arr = re.search(r'var\s+thzq\s*=\s*(\[.*?\]);', html, re.DOTALL) or re.search(r'var\s+ytaw\s*=\s*(\[.*?\]);', html, re.DOTALL)
+        if m_arr:
+            urls = re.findall(r"['\"](https?://[^'\"]+)['\"]", m_arr.group(1))
+            clean = [self.clean_image_url(u, base_url) for u in urls if u]
+            clean = [u for u in clean if u]
+            if clean:
+                return self.deduplicate_urls(clean)
+
+        # 0b. Check for WeebCentral dynamic /images container
+        if "weebcentral.com/chapters/" in url and not url.endswith("/images"):
+            images_url = url.rstrip('/') + '/images'
+            try:
+                import requests
+                r_img = requests.get(images_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}, timeout=10)
+                if r_img.status_code == 200:
+                    sub_soup = BeautifulSoup(r_img.text, 'html.parser')
+                    raw_urls = []
+                    for img in sub_soup.find_all('img'):
+                        val = img.get("src") or img.get("data-src")
+                        clean = self.clean_image_url(val, base_url)
+                        if clean:
+                            raw_urls.append(clean)
+                    if raw_urls:
+                        return self.deduplicate_urls(raw_urls)
+            except Exception:
+                pass
+
         # 1. Find the container with the largest density of chapter panel images
         containers = soup.find_all(["div", "article", "main", "section"])
         best_container = None

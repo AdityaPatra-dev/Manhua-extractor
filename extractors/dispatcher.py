@@ -200,6 +200,18 @@ class ExtractorDispatcher:
         series_info = matched_engine.extract_series_info(soup, url, html)
         chapters = matched_engine.extract_chapter_list(soup, url, html)
 
+        # Check for HTMX or dynamic chapter list endpoints (e.g. WeebCentral full-chapter-list)
+        hx_endpoint = soup.select_one("[hx-get*='full-chapter-list'], [hx-get*='chapter'], [data-hx-get*='full-chapter-list']")
+        if hx_endpoint:
+            hx_url = hx_endpoint.get("hx-get") or hx_endpoint.get("data-hx-get")
+            if hx_url:
+                full_hx_url = urljoin(url, hx_url)
+                hx_code, hx_html, hx_soup = self.fetch_page(full_hx_url)
+                if hx_code == 200:
+                    hx_chaps = matched_engine.extract_chapter_list(hx_soup, full_hx_url, hx_html)
+                    if len(hx_chaps) > len(chapters):
+                        chapters = hx_chaps
+
         # If we got very few chapters or 0 chapters, check if url is a chapter reader page
         # and attempt to fetch the parent series page to get the full catalog
         is_chapter_page = bool(re.search(r'/(?:chapter|ch|c)[-_/\d]', url, re.I))

@@ -216,6 +216,7 @@ class BaseExtractor(ABC):
             "ul.row-content-chapter a",
             "div.chapter-list a",
             "ul.version-chap a",
+            "a[href*='/chapters/']",
             "a[href*='/chapter-']",
             "a[href*='/chapter/']",
             "a[href*='/c-']"
@@ -227,7 +228,7 @@ class BaseExtractor(ABC):
                 link_candidates.extend(found)
 
         # Fallback to broad link search if specific selectors matched nothing
-        clean_series_path = re.sub(r'/(?:chapter|ch|c|ajax)[-_/\d].*$', '', parsed.path, flags=re.I).strip('/')
+        clean_series_path = re.sub(r'/(?:chapters?|ch|c|ajax)[-_/\d].*$', '', parsed.path, flags=re.I).strip('/')
 
         for a in link_candidates:
             # Skip links inside unrelated widget / recommendation containers
@@ -243,7 +244,8 @@ class BaseExtractor(ABC):
                 continue
             # Must look like a chapter URL or contain chapter text
             txt = a.get_text(strip=True)
-            if not (re.search(r'/(?:chapter|ch|c)[-_/\d]', href, re.I) or re.search(r'chapter\s*\d+', txt, re.I)):
+            txt = re.sub(r'Last Read.*$', '', txt, flags=re.I).strip()
+            if not (re.search(r'/(?:chapters?|ch|c)[-_/\d]', href, re.I) or re.search(r'chapter\s*\d+', txt, re.I)):
                 continue
 
             full_url = urljoin(url, href)
@@ -251,7 +253,9 @@ class BaseExtractor(ABC):
                 continue
 
             parsed_href = urlparse(full_url)
-            if clean_series_path and len(clean_series_path.split('/')) > 1 and parsed_href.netloc == parsed.netloc:
+            # Only apply path prefix filter if href does not use a dedicated chapter route (/chapters/, /chapter-, etc.)
+            is_dedicated_ch_route = bool(re.search(r'/(?:chapters?|ch|c)[-_/\d]', parsed_href.path, re.I))
+            if not is_dedicated_ch_route and clean_series_path and len(clean_series_path.split('/')) > 1 and parsed_href.netloc == parsed.netloc:
                 href_path = parsed_href.path.strip('/')
                 # If the link belongs to a different series path on the same site, skip it
                 if not href_path.startswith(clean_series_path):
