@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import re
 import time
 import asyncio
 import urllib.parse
-from typing import List, Dict, Any, Optional, AsyncIterator
+from typing import List, Dict, Any, Optional, AsyncIterator, Tuple
 from bs4 import BeautifulSoup
 import aiohttp
 
