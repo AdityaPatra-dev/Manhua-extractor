@@ -2232,7 +2232,13 @@ document.addEventListener("DOMContentLoaded", () => {
         ? escapeHtml(cluster.alt_titles.slice(0, 2).join(" • "))
         : "";
       const sourceCount = (cluster.sources && cluster.sources.length) || 1;
-      const latestCh = cluster.max_chapter_num ? `Ch. ${cluster.max_chapter_num}` : "Available";
+      const chNum = cluster.max_chapter_num || cluster.latest_chapter_num;
+      let latestCh = "Available";
+      if (chNum && chNum > 1) {
+        latestCh = `Ch. ${Number.isInteger(chNum) ? chNum : chNum.toFixed(1)}`;
+      } else if (cluster.latest_chapter && cluster.latest_chapter !== "Chapter 1") {
+        latestCh = cluster.latest_chapter;
+      }
       const coverUrl = cluster.cover_url || "";
 
       return `
@@ -2244,7 +2250,7 @@ document.addEventListener("DOMContentLoaded", () => {
               ${altSnippet ? `<div class="search-card-alt" title="${altSnippet}">${altSnippet}</div>` : ''}
               <div class="search-card-badges">
                 <span class="search-badge-source">🌐 ${sourceCount} Source${sourceCount > 1 ? 's' : ''}</span>
-                <span class="search-badge-ch">Latest: ${latestCh}</span>
+                <span class="search-badge-ch">📖 ${latestCh}</span>
               </div>
             </div>
             <div class="search-card-actions">
