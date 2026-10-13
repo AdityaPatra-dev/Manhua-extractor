@@ -94,7 +94,17 @@ class MadaraExtractor(BaseExtractor):
 
     def extract_chapter_list(self, soup: BeautifulSoup, url: str, html: str) -> List[Dict[str, Any]]:
         has_ajax_holder = bool(soup.select_one("#manga-chapters-holder, .manga-chapters-data, div[data-id]"))
-        base_series_url = re.sub(r'/(?:chapter|ch|c|ajax)[-_/\d].*$', '/', url, flags=re.I)
+        
+        # Check script for manga.base_url or canonical link
+        m_base = re.search(r'["\']base_url["\']:\s*["\']([^"\']+)["\']', html)
+        if m_base:
+            base_series_url = m_base.group(1)
+        else:
+            canonical = soup.select_one("link[rel='canonical']")
+            if canonical and canonical.get("href"):
+                base_series_url = canonical["href"].rstrip('/') + '/'
+            else:
+                base_series_url = re.sub(r'/(?:chapter|ch|c|ajax)[-_/\d].*$', '/', url, flags=re.I)
         if not base_series_url.endswith('/'):
             base_series_url += '/'
         
@@ -104,11 +114,22 @@ class MadaraExtractor(BaseExtractor):
                 import requests
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    "Referer": url,
+                    "Referer": base_series_url,
                     "X-Requested-With": "XMLHttpRequest"
                 }
+                try:
+                    from database.db import get_clearance_cookie
+                    domain = urlparse(base_series_url).netloc
+                    cached = get_clearance_cookie(domain)
+                    if cached:
+                        headers["Cookie"] = cached["cookie_string"]
+                        if cached.get("user_agent"):
+                            headers["User-Agent"] = cached["user_agent"]
+                except Exception:
+                    pass
+
                 ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
-                resp = requests.post(ajax_endpoint, headers=headers, timeout=10)
+                resp = requests.post(ajax_endpoint, headers=headers, timeout=12)
                 if resp.status_code == 200 and resp.text:
                     ajax_soup = BeautifulSoup(resp.text, "html.parser")
                     ajax_chapters = super().extract_chapter_list(ajax_soup, base_series_url, resp.text)
@@ -126,11 +147,11 @@ class MadaraExtractor(BaseExtractor):
             import requests
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Referer": url,
+                "Referer": base_series_url,
                 "X-Requested-With": "XMLHttpRequest"
             }
             ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
-            resp = requests.post(ajax_endpoint, headers=headers, timeout=10)
+            resp = requests.post(ajax_endpoint, headers=headers, timeout=12)
             if resp.status_code == 200 and resp.text:
                 ajax_soup = BeautifulSoup(resp.text, "html.parser")
                 ajax_chapters = super().extract_chapter_list(ajax_soup, base_series_url, resp.text)

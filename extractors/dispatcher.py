@@ -9,8 +9,9 @@ except ImportError:
 import requests
 
 from .base import BaseExtractor
-from .madara import MadaraExtractor
+from .mangadex import MangaDexExtractor
 from .modern_ssr import ModernSSRExtractor
+from .madara import MadaraExtractor
 from .mangastream import MangaStreamExtractor
 from .aggregator import AggregatorExtractor
 from .mangapeak import MangaPeakExtractor
@@ -35,6 +36,7 @@ class ExtractorDispatcher:
     def __init__(self):
         # Register engines in priority order
         self.engines: List[BaseExtractor] = [
+            MangaDexExtractor(),
             ModernSSRExtractor(),
             MadaraExtractor(),
             MangaStreamExtractor(),
@@ -71,6 +73,18 @@ class ExtractorDispatcher:
         headers["Referer"] = url
         if self.cffi_session and "User-Agent" in self.cffi_session.headers:
             headers["User-Agent"] = self.cffi_session.headers["User-Agent"]
+
+        # 0. Check database clearance cache for valid cf_clearance
+        try:
+            from database.db import get_clearance_cookie
+            domain = urlparse(url).netloc
+            cached_cf = get_clearance_cookie(domain)
+            if cached_cf:
+                headers["Cookie"] = cached_cf["cookie_string"]
+                if cached_cf.get("user_agent"):
+                    headers["User-Agent"] = cached_cf["user_agent"]
+        except Exception:
+            pass
 
         # 1. Try curl_cffi with full Chrome 124 TLS signature (includes cached clearance cookies)
         if self.cffi_session:

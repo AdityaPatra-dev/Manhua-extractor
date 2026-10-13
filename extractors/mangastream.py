@@ -14,6 +14,8 @@ class MangaStreamExtractor(BaseExtractor):
             return True
         if soup.find(class_="container-chapter-reader"):
             return True
+        if soup.find(id="chapterlist") or soup.find(class_="eplister") or soup.find(class_="clstyle") or soup.find(class_="bxcl"):
+            return True
         if "ts_reader" in html or "mangastream" in html.lower() or "themeia" in html.lower():
             return True
         if "themes/liliana" in html or "/ajax/image/list/chap/" in html:

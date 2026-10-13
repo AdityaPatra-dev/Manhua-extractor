@@ -213,6 +213,9 @@ class BaseExtractor(ABC):
             "li.wp-manga-chapter a",
             "div.eplister a",
             "#chapterlist a",
+            "ul.clstyle a",
+            "div.bxcl a",
+            "li[data-num] a",
             "ul.row-content-chapter a",
             "div.chapter-list a",
             "ul.version-chap a",
@@ -234,9 +237,9 @@ class BaseExtractor(ABC):
             # Skip links inside unrelated widget / recommendation containers
             parent_classes = " ".join(a.find_parent().get("class", [])) if a.find_parent() else ""
             p_lower = parent_classes.lower()
-            if any(bad in p_lower for bad in ("widget", "popular", "related", "footer", "comment")) and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "volume")):
+            if any(bad in p_lower for bad in ("widget", "popular", "related", "footer", "comment")) and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "volume", "eplister", "clstyle")):
                 continue
-            if "sidebar" in p_lower and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "drawer")):
+            if "sidebar" in p_lower and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "drawer", "eplister", "clstyle")):
                 continue
 
             href = a.get("href", "").strip()
@@ -245,7 +248,13 @@ class BaseExtractor(ABC):
             # Must look like a chapter URL or contain chapter text
             txt = a.get_text(strip=True)
             txt = re.sub(r'Last Read.*$', '', txt, flags=re.I).strip()
-            if not (re.search(r'/(?:chapters?|ch|c)[-_/\d]', href, re.I) or re.search(r'chapter\s*\d+', txt, re.I)):
+            # Clean trailing dates like "June 9, 2026" or "August 27, 2025" from chapter title
+            txt_clean = re.sub(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}', '', txt, flags=re.I).strip()
+            if not txt_clean:
+                txt_clean = txt
+
+            has_ch_kw = bool(re.search(r'[-_](?:chapter|ch|c)[-_/\d]|/(?:chapters?|ch|c)[-_/\d]|[-_/]\d+/?$', href, re.I) or re.search(r'chapter\s*\d+', txt, re.I))
+            if not has_ch_kw and not a.find_parent(class_=re.compile(r'eplister|chapterlist|wp-manga-chapter|clstyle|bxcl', re.I)):
                 continue
 
             full_url = urljoin(url, href)
@@ -254,18 +263,25 @@ class BaseExtractor(ABC):
 
             parsed_href = urlparse(full_url)
             # Only apply path prefix filter if href does not use a dedicated chapter route (/chapters/, /chapter-, etc.)
-            is_dedicated_ch_route = bool(re.search(r'/(?:chapters?|ch|c)[-_/\d]', parsed_href.path, re.I))
+            is_in_ch_container = bool(a.find_parent(class_=re.compile(r'eplister|chapterlist|wp-manga-chapter|clstyle|bxcl|row-content-chapter', re.I)) or a.find_parent(id=re.compile(r'chapterlist|eplister', re.I)))
+            is_dedicated_ch_route = is_in_ch_container or bool(re.search(r'[-_](?:chapter|ch|c)[-_/\d]|/(?:chapters?|ch|c)[-_/\d]|[-_/]\d+/?$', parsed_href.path, re.I))
             if not is_dedicated_ch_route and clean_series_path and len(clean_series_path.split('/')) > 1 and parsed_href.netloc == parsed.netloc:
                 href_path = parsed_href.path.strip('/')
                 # If the link belongs to a different series path on the same site, skip it
                 if not href_path.startswith(clean_series_path):
                     continue
 
-            ch_num = self.extract_chapter_number(full_url, txt)
+            # If not in an explicit chapter list container, ensure link belongs to the series
+            series_slug = clean_series_path.split('/')[-1] if clean_series_path else ""
+            if series_slug and series_slug not in ("manga", "series", "comic", "comics") and not is_in_ch_container:
+                if series_slug.lower() not in parsed_href.path.lower():
+                    continue
+
+            ch_num = self.extract_chapter_number(full_url, txt_clean)
             seen_urls.add(full_url)
             chapters.append({
                 "chapter_num": ch_num,
-                "title": txt or f"Chapter {ch_num:g}",
+                "title": txt_clean or f"Chapter {ch_num:g}",
                 "url": full_url
             })
 
