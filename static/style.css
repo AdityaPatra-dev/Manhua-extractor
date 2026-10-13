@@ -57,6 +57,13 @@ body {
 
 .brand-icon {
   font-size: 2rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: contain;
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 2px 8px rgba(34, 211, 238, 0.35));
 }
 
 .brand h1 {
@@ -983,6 +990,9 @@ input:focus, select:focus {
 
   .brand-icon {
     font-size: 1.5rem;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
   }
 
   .brand h1 {

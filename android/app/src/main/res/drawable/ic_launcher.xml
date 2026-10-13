@@ -3,20 +3,79 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    
+    <!-- Dark Cosmic Background -->
     <path
-        android:fillColor="#4f46e5"
-        android:pathData="M0,0h108v108h-108z"/>
-    <!-- Book symbol -->
+        android:fillColor="#0c071a"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- Subtle Rounded Edge Frame -->
+    <path
+        android:strokeColor="#2d1f47"
+        android:strokeWidth="1.5"
+        android:pathData="M24,4 L84,4 A20,20 0 0,1 104,24 L104,84 A20,20 0 0,1 84,104 L24,104 A20,20 0 0,1 4,84 L4,24 A20,20 0 0,1 24,4 Z" />
+
+    <!-- Dimensional Hexagonal Ring -->
+    <path
+        android:strokeColor="#4338ca"
+        android:strokeWidth="1.5"
+        android:pathData="M54,14 L89,34 L89,74 L54,94 L19,74 L19,34 Z" />
+
+    <!-- Orbital Energy Rings -->
+    <path
+        android:strokeColor="#22d3ee"
+        android:strokeWidth="1.2"
+        android:pathData="M54,18 A36,36 0 1,0 54,90 A36,36 0 1,0 54,18" />
+
+    <path
+        android:strokeColor="#818cf8"
+        android:strokeWidth="1.5"
+        android:pathData="M54,28 A26,26 0 1,1 54,80 A26,26 0 1,1 54,28" />
+
+    <path
+        android:strokeColor="#ec4899"
+        android:strokeWidth="1.8"
+        android:pathData="M54,38 A16,16 0 1,0 54,70 A16,16 0 1,0 54,38" />
+
+    <!-- Vortex Swirl Blade 1 (Primary Cyan Inward Flow) -->
+    <path
+        android:strokeColor="#22d3ee"
+        android:strokeWidth="3.2"
+        android:strokeLineCap="round"
+        android:pathData="M54,54 C61,40 80,36 86,45 C93,54 86,75 74,81 C61,87 40,81 32,68 C24,55 30,34 45,26 C60,17 83,21 90,36" />
+
+    <!-- Vortex Swirl Blade 2 (Counter Neon Magenta Flow) -->
+    <path
+        android:strokeColor="#ec4899"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:pathData="M54,54 C47,68 28,72 22,63 C15,54 22,33 34,27 C47,21 68,27 76,40 C84,53 78,74 63,82" />
+
+    <!-- Inward Energy Shards -->
+    <path
+        android:fillColor="#22d3ee"
+        android:pathData="M54,26 L56,33 L54,35 L52,33 Z" />
+    <path
+        android:fillColor="#ec4899"
+        android:pathData="M81,47 L75,50 L73,48 L79,45 Z" />
+    <path
+        android:fillColor="#a855f7"
+        android:pathData="M72,74 L68,70 L69,67 L74,71 Z" />
+    <path
+        android:fillColor="#22d3ee"
+        android:pathData="M36,76 L40,72 L42,74 L38,78 Z" />
+    <path
+        android:fillColor="#818cf8"
+        android:pathData="M27,47 L34,49 L34,51 L28,50 Z" />
+
+    <!-- Singularity 4-Point Star Core -->
     <path
         android:fillColor="#ffffff"
-        android:pathData="M25,30 C38,26 48,30 54,34 C60,30 70,26 83,30 L83,76 C70,72 60,76 54,80 C48,76 38,72 25,76 Z"/>
-    <path
-        android:strokeColor="#6366f1"
-        android:strokeWidth="2"
-        android:pathData="M54,34 L54,80"/>
-    <!-- Lightning bolt -->
-    <path
-        android:fillColor="#f59e0b"
-        android:pathData="M58,40 L49,56 L55,56 L50,70 L60,52 L54,52 Z"/>
-</vector>
+        android:pathData="M54,40 L56,51 L68,54 L56,57 L54,68 L52,57 L40,54 L52,51 Z" />
 
+    <!-- Hyper Cyan Singularity Center -->
+    <path
+        android:fillColor="#06b6d4"
+        android:pathData="M54,51.5 A2.5,2.5 0 1,1 54,56.5 A2.5,2.5 0 1,1 54,51.5" />
+
+</vector>
