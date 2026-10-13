@@ -85,3 +85,15 @@ For massive downloads (e.g., 50+ chapters at once):
 1. Go to your phone's **Settings** → **Apps** → **Manhua Extractor** → **Battery**.
 2. Select **"Unrestricted"** so Android's aggressive battery savers never pause your downloads.
 
+---
+
+## 🛡️ Native Android Cloudflare Turnstile Clearance Bridge (v1.0.6+)
+
+Starting in **v1.0.6**, the Android app includes native in-app Cloudflare resolution (`CloudflareResolver.kt`):
+- **100% Genuine Chrome WebView Engine**: Passes Cloudflare Turnstile challenges silently in the background on the phone's CPU.
+- **SQLite Cookie Vault**: Automatically caches `cf_clearance` and `__cf_bm` tokens in the local SQLite database for up to 48 hours.
+- **Zero Configuration**: No Docker, no proxies, no FlareSolverr containers needed on your phone.
+- **Pre-Built Releases**:
+  - `releases/ManhuaExtractor-v1.0.6-release.apk` (Signed release build, ~32MB)
+  - `releases/ManhuaExtractor-v1.0.6-debug.apk` (Debug build, ~34MB)
+

@@ -150,6 +150,136 @@ class TestSearchEngine(unittest.TestCase):
         all_sources = search_dispatcher.get_sources_for_tier("all")
         self.assertGreater(len(all_sources), len(fast_sources))
 
+    def test_sources_include_asura_rolia_topmanhua(self):
+        fast_keys = [s["key"] for s in search_dispatcher.get_sources_for_tier("fast")]
+        self.assertIn("asura", fast_keys)
+        self.assertIn("arenascan", fast_keys)
+        self.assertIn("flamecomics", fast_keys)
+        self.assertIn("vortexscans", fast_keys)
+        self.assertIn("roliascan", fast_keys)
+        self.assertIn("topmanhua", fast_keys)
+        self.assertIn("manhuaplus", fast_keys)
+        self.assertIn("manhuatop", fast_keys)
+        self.assertIn("ravenscans", fast_keys)
+
+        # Check TopManhua domain is topmanhua.net
+        topmanhua_src = next(s for s in search_dispatcher.get_sources_for_tier("fast") if s["key"] == "topmanhua")
+        self.assertEqual(topmanhua_src.get("domain"), "topmanhua.net")
+
+        # Check Arena Scans domain is arenascan.com
+        arenascan_src = next(s for s in search_dispatcher.get_sources_for_tier("fast") if s["key"] == "arenascan")
+        self.assertEqual(arenascan_src.get("domain"), "arenascan.com")
+
+    def test_single_source_noise_suppression_when_multi_source_exists(self):
+        # When multi-source matches exist, 1-source noise from aggregators or doujinshis should be suppressed
+        raw_hits = [
+            {
+                "title": "Solo Leveling",
+                "alt_titles": [],
+                "source_key": "asura",
+                "source_name": "Asura Scans",
+                "series_url": "https://asurascans.com/comics/solo-leveling",
+                "latest_chapter_num": 200.0,
+            },
+            {
+                "title": "Solo Leveling",
+                "alt_titles": [],
+                "source_key": "arenascan",
+                "source_name": "Arena Scans",
+                "series_url": "https://arenascan.com/manga/solo-leveling",
+                "latest_chapter_num": 200.0,
+            },
+            {
+                "title": "Solo Leveling Doujinshi Fan Comic",
+                "alt_titles": [],
+                "source_key": "mangadex",
+                "source_name": "MangaDex",
+                "series_url": "https://mangadex.org/title/123",
+                "latest_chapter_num": 1.0,
+            },
+            {
+                "title": "Solo Leveling Novel",
+                "alt_titles": [],
+                "source_key": "mangapill",
+                "source_name": "MangaPill",
+                "series_url": "https://mangapill.com/manga/456",
+                "latest_chapter_num": 1.0,
+            }
+        ]
+        clusters = cluster_search_results(raw_hits, query="solo leveling")
+        titles = [c["canonical_title"] for c in clusters]
+        self.assertIn("Solo Leveling", titles)
+        self.assertNotIn("Solo Leveling Doujinshi Fan Comic", titles)
+        self.assertNotIn("Solo Leveling Novel", titles)
+
+    def test_relevance_scoring_and_typo_handling(self):
+        from core.search.clustering import compute_relevance_score, pick_best_canonical_title
+
+        # Exact match
+        score_exact = compute_relevance_score("solo leveling", "Solo Leveling")
+        self.assertEqual(score_exact, 1000.0)
+
+        # Typo match
+        score_typo = compute_relevance_score("solo leaveling", "Solo Leveling")
+        self.assertGreaterEqual(score_typo, 500.0)
+
+        # Completely unrelated series should have low relevance score (< 140)
+        score_unrelated = compute_relevance_score("solo leveling", "The Indomitable Martial King")
+        self.assertLess(score_unrelated, 140.0)
+
+        # Canonical title picking
+        best_title = pick_best_canonical_title(
+            title="Na Honjaman Level-Up",
+            alt_titles=["Solo Leveling", "I Alone Level Up"],
+            query="solo leveling"
+        )
+        self.assertEqual(best_title, "Solo Leveling")
+
+    def test_clustering_relevance_filtering_and_sorting(self):
+        raw_hits = [
+            {
+                "title": "The Indomitable Martial King",
+                "alt_titles": [],
+                "source_key": "mangahere",
+                "source_name": "MangaHere",
+                "series_url": "https://mangahere.cc/manga/indomitable",
+                "latest_chapter": "Chapter 50",
+                "latest_chapter_num": 50.0,
+                "latency_ms": 200
+            },
+            {
+                "title": "Na Honjaman Level-Up",
+                "alt_titles": ["Solo Leveling"],
+                "source_key": "asura",
+                "source_name": "Asura Scans",
+                "series_url": "https://asurascans.com/comics/solo-leveling",
+                "latest_chapter": "Chapter 200",
+                "latest_chapter_num": 200.0,
+                "latency_ms": 150
+            },
+            {
+                "title": "Solo Leveling: Ragnarok",
+                "alt_titles": [],
+                "source_key": "topmanhua",
+                "source_name": "TopManhua",
+                "series_url": "https://topmanhua.net/manga/solo-leveling-ragnarok",
+                "latest_chapter": "Chapter 60",
+                "latest_chapter_num": 60.0,
+                "latency_ms": 180
+            }
+        ]
+
+        # Test with typo query "solo leaveling"
+        clusters = cluster_search_results(raw_hits, query="solo leaveling")
+        # "The Indomitable Martial King" should be filtered out (< 140 relevance)
+        cluster_titles = [c["canonical_title"] for c in clusters]
+        self.assertNotIn("The Indomitable Martial King", cluster_titles)
+
+        # Solo Leveling should be #1 with canonical title "Solo Leveling" and 200 chapters
+        self.assertEqual(clusters[0]["canonical_title"], "Solo Leveling")
+        self.assertEqual(clusters[0]["max_chapter_num"], 200.0)
+        self.assertEqual(clusters[0]["latest_chapter"], "Chapter 200")
+
     def test_fastapi_search_endpoints(self):
         from fastapi.testclient import TestClient
         from app import app
@@ -199,6 +329,24 @@ class TestSearchEngine(unittest.TestCase):
         self.assertTrue(data.get("success"))
         self.assertEqual(len(data.get("sources", [])), 1)
         self.assertEqual(data["sources"][0]["source_key"], "mangadex")
+
+    def test_cloudflare_clearance_cache(self):
+        from database.db import save_clearance_cookie, get_clearance_cookie
+        # Save and retrieve cookie
+        save_clearance_cookie("kunmanga.com", "cf_clearance=test_abc; __cf_bm=123", "TestChrome/124.0", ttl_hours=24, db_path=self.db_path)
+        res = get_clearance_cookie("kunmanga.com", db_path=self.db_path)
+        self.assertIsNotNone(res)
+        self.assertIn("cf_clearance=test_abc", res["cookie_string"])
+        self.assertEqual(res["user_agent"], "TestChrome/124.0")
+
+        # Unknown domain returns None
+        self.assertIsNone(get_clearance_cookie("nonexistent.xyz", db_path=self.db_path))
+
+    def test_android_webview_resolver_fallback_safe(self):
+        from extractors.browser_sidecar import solve_with_android_webview
+        # On desktop / CI, should gracefully return None without raising exceptions
+        res = solve_with_android_webview("https://kunmanga.com/?s=solo")
+        self.assertIsNone(res)
 
 if __name__ == "__main__":
     unittest.main()
