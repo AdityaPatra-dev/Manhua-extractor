@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
         requestNotificationPermission()
         setupWebView()
+        CloudflareResolver.init(this)
 
         startPythonBackend()
         pollServerAndLoadUi()

@@ -117,6 +117,16 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cloudflare_clearance_cache (
+                domain TEXT PRIMARY KEY,
+                cookie_string TEXT NOT NULL,
+                user_agent TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                expires_at TIMESTAMP NOT NULL
+            )
+        """)
+
         # Migration columns for series table
         try:
             conn.execute("ALTER TABLE series ADD COLUMN anilist_id INTEGER")
@@ -621,6 +631,46 @@ def get_series_sources(series_id: int, db_path: str = DEFAULT_DB_PATH) -> List[D
             (series_id,)
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def save_clearance_cookie(
+    domain: str,
+    cookie_string: str,
+    user_agent: str = "",
+    ttl_hours: int = 48,
+    db_path: str = DEFAULT_DB_PATH
+) -> None:
+    """Store or update a Cloudflare clearance cookie and UA with TTL."""
+    conn = get_connection(db_path)
+    try:
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=ttl_hours)).strftime("%Y-%m-%d %H:%M:%S")
+        with conn:
+            conn.execute("""
+                INSERT INTO cloudflare_clearance_cache (domain, cookie_string, user_agent, expires_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(domain) DO UPDATE SET
+                    cookie_string = excluded.cookie_string,
+                    user_agent = excluded.user_agent,
+                    expires_at = excluded.expires_at,
+                    created_at = CURRENT_TIMESTAMP
+            """, (domain, cookie_string, user_agent, expires_at))
+    finally:
+        conn.close()
+
+
+def get_clearance_cookie(domain: str, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, str]]:
+    """Retrieve non-expired Cloudflare clearance cookie and UA for a domain."""
+    conn = get_connection(db_path)
+    try:
+        row = conn.execute("""
+            SELECT cookie_string, user_agent FROM cloudflare_clearance_cache
+            WHERE domain = ? AND expires_at > CURRENT_TIMESTAMP
+        """, (domain,)).fetchone()
+        if row:
+            return {"cookie_string": row["cookie_string"], "user_agent": row["user_agent"]}
+        return None
     finally:
         conn.close()
 

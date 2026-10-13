@@ -150,13 +150,65 @@ def solve_with_nodriver(target_url: str, timeout_seconds: int = 15) -> Optional[
         return None
 
 
+def solve_with_android_webview(target_url: str, timeout_seconds: int = 18) -> Optional[Dict[str, Any]]:
+    """
+    On-device Android System WebView Turnstile resolver.
+    Invokes Kotlin CloudflareResolver on the Android UI thread via Chaquopy.
+    """
+    try:
+        from com.manhua.extractor import CloudflareResolver  # type: ignore
+        import json
+        from urllib.parse import urlparse
+        from database.db import save_clearance_cookie
+
+        res_str = CloudflareResolver.resolveUrl(target_url, timeout_seconds)
+        if not res_str:
+            return None
+
+        data = json.loads(res_str)
+        if data.get("success"):
+            raw_cookie = data.get("cookies", "")
+            cookie_dict = {}
+            for part in raw_cookie.split(";"):
+                if "=" in part:
+                    k, v = part.strip().split("=", 1)
+                    cookie_dict[k] = v
+
+            ua = data.get("user_agent", "")
+            try:
+                domain = urlparse(target_url).netloc
+                save_clearance_cookie(domain, raw_cookie, ua)
+            except Exception:
+                pass
+
+            return {
+                "success": True,
+                "status_code": data.get("status", 200),
+                "text": data.get("html", ""),
+                "cookies": cookie_dict,
+                "user_agent": ua
+            }
+    except ImportError:
+        pass
+    except Exception as e:
+        import sys
+        print(f"[AndroidResolver] Exception during resolution: {e}", file=sys.stderr)
+    return None
+
+
 def fetch_protected_page(
     url: str,
     flaresolverr_url: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """
-    Tries FlareSolverr first, then Playwright fallback, then nodriver / Chrome CDP.
+    Tries native Android System WebView first if running on Android,
+    otherwise tries FlareSolverr, Playwright fallback, then nodriver / Chrome CDP.
     """
+    # 0. Try on-device Android System WebView if on Android
+    android_sol = solve_with_android_webview(url)
+    if android_sol and android_sol.get("success"):
+        return android_sol
+
     # 1. Try FlareSolverr if available
     sol = solve_with_flaresolverr(url, endpoint=flaresolverr_url)
     if sol and sol.get("success"):
