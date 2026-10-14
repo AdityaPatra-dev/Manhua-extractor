@@ -111,20 +111,32 @@ class BaseExtractor(ABC):
         }
 
     def extract_chapter_number(self, url: str, title: Optional[str] = None) -> float:
-        """Parse chapter number from URL or title, supporting decimals (e.g. 10.5, 10-5)."""
-        # Look in URL first
-        m = re.search(r'chapter[-/](\d+(?:[\.-]\d+)?)', url, re.I)
+        """Parse chapter number from title or URL, supporting decimals (e.g. 10.5, 10-5)."""
+        # If title contains explicit chapter/episode numbering, prefer it (avoids internal database IDs in URLs)
+        m = None
+        if title:
+            m = re.search(r'(?:chapter|episode|ep|ch)\s*(\d+(?:[\.-]\d+)?)', title, re.I)
+            if not m:
+                m = re.search(r'#\s*(\d+(?:[\.-]\d+)?)', title)
+
+        # Look in URL if title did not yield a valid chapter number
+        if not m:
+            m = re.search(r'chapter[-/](\d+(?:[\.-]\d+)?)', url, re.I)
         if not m:
             m = re.search(r'/c(?:h|hapter)?[-/]?(\d+(?:[\.-]\d+)?)', url, re.I)
-        if not m and title:
-            m = re.search(r'chapter\s*(\d+(?:[\.-]\d+)?)', title, re.I)
         if not m:
             m = re.search(r'(\d+(?:[\.-]\d+)?)', url.split('/')[-1])
 
         if m:
             raw_num = m.group(1).replace('-', '.')
             try:
-                return float(raw_num)
+                val = float(raw_num)
+                # If URL gave an unrealistically huge ID (> 10000) while title exists, fallback to title digits
+                if val > 10000 and title:
+                    tm = re.search(r'(\d+(?:[\.-]\d+)?)', title)
+                    if tm:
+                        return float(tm.group(1).replace('-', '.'))
+                return val
             except ValueError:
                 pass
         return 1.0
@@ -148,7 +160,7 @@ class BaseExtractor(ABC):
         # Filter branding icons, loaders, and placeholders from filename
         if any(bad in filename for bad in [
             "logo", "icon", "banner", "loader", "discord", "patreon",
-            "dflazy", "loading", "blank", "placeholder"
+            "dflazy", "loading", "blank", "placeholder", "thumbnail", "win-cross", "cross", "detail-btn", "downlist", "emotion-form"
         ]):
             return None
 
@@ -156,9 +168,10 @@ class BaseExtractor(ABC):
         if re.search(r'[-_.]avatar[-_.]|^avatar[-_.]', filename):
             return None
 
-        # Filter actual ad directory patterns (avoiding 'uploads' or 'downloads')
+        # Filter actual ad directory patterns and static web UI themes
         if any(bad in lower for bad in [
-            "/ads/", "/ad/", "-ads-", "_ads_", "/advertisement/", "loading.gif", "blank.gif", "dflazy.jpg"
+            "/ads/", "/ad/", "-ads-", "_ads_", "/advertisement/", "loading.gif", "blank.gif", "dflazy.jpg",
+            "/themes/", "/wp-content/themes/", "about_", "to_be_continued", "static.fanfox.net", "static.mangahere"
         ]):
             return None
 
@@ -191,15 +204,20 @@ class BaseExtractor(ABC):
         for sel in soup.find_all("select"):
             classes = " ".join(sel.get("class", []))
             sel_id = sel.get("id", "")
-            if re.search(r'chapter|navi|select|reader', f"{classes} {sel_id}", re.I):
+            sel_name = sel.get("name", "")
+            if re.search(r'report|issue|error|feedback|modal', f"{classes} {sel_id} {sel_name}", re.I):
+                continue
+            if re.search(r'chapter|navi|select|reader', f"{classes} {sel_id} {sel_name}", re.I):
                 for opt in sel.find_all("option"):
                     val = opt.get("value") or opt.get("data-redirect") or opt.get("data-url")
                     if not val or val in ("#", "0", ""):
                         continue
+                    title = opt.get_text(strip=True)
+                    if any(bad in title.lower() for bad in ("load images", "image position", "duplicate chapter", "not translated", "wrong chapter", "other error")):
+                        continue
                     full_url = urljoin(url, val)
                     if full_url in seen_urls or not full_url.startswith("http"):
                         continue
-                    title = opt.get_text(strip=True)
                     ch_num = self.extract_chapter_number(full_url, title)
                     seen_urls.add(full_url)
                     chapters.append({
@@ -210,6 +228,8 @@ class BaseExtractor(ABC):
 
         # 2. Check <a> links (common on series pages & reader sidebars)
         selectors = [
+            "li.chapter-list-item a",
+            "li.chapter-item a",
             "li.wp-manga-chapter a",
             "div.eplister a",
             "#chapterlist a",
@@ -218,9 +238,11 @@ class BaseExtractor(ABC):
             "li[data-num] a",
             "ul.row-content-chapter a",
             "div.chapter-list a",
+            "#chapter-list a",
             "ul.version-chap a",
+            ".chapters a",
             "a[href*='/chapters/']",
-            "a[href*='/chapter-']",
+            "a[href*='chapter-']",
             "a[href*='/chapter/']",
             "a[href*='/c-']"
         ]
@@ -232,12 +254,14 @@ class BaseExtractor(ABC):
 
         # Fallback to broad link search if specific selectors matched nothing
         clean_series_path = re.sub(r'/(?:chapters?|ch|c|ajax)[-_/\d].*$', '', parsed.path, flags=re.I).strip('/')
+        if not link_candidates and clean_series_path:
+            link_candidates = soup.select(f"a[href^='/{clean_series_path}/'], a[href*='/{clean_series_path}/']")
 
         for a in link_candidates:
             # Skip links inside unrelated widget / recommendation containers
             parent_classes = " ".join(a.find_parent().get("class", [])) if a.find_parent() else ""
             p_lower = parent_classes.lower()
-            if any(bad in p_lower for bad in ("widget", "popular", "related", "footer", "comment")) and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "volume", "eplister", "clstyle")):
+            if any(bad in p_lower for bad in ("widget", "popular", "related", "footer", "comment")) and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "volume", "eplister", "clstyle", "chapter-list")):
                 continue
             if "sidebar" in p_lower and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "drawer", "eplister", "clstyle")):
                 continue
@@ -245,25 +269,55 @@ class BaseExtractor(ABC):
             href = a.get("href", "").strip()
             if not href or href.startswith("#") or href.startswith("javascript:"):
                 continue
+
+            # Skip comment and reply anchor links, and pagination / reverse sort controls
+            if any(bad in href.lower() for bad in ("#respond", "replytocom", "comment-", "#comments", "/page/", "?rev=", "&rev=")):
+                continue
+
+            # Skip social share links
+            if any(s in href.lower() for s in (
+                "facebook.com", "twitter.com", "://x.com", ".x.com/", "/x.com/", "t.me/", "telegram.me/",
+                "whatsapp.com", "pinterest.com", "reddit.com", "tumblr.com",
+                "linkedin.com", "addtoany", "sharer.php"
+            )):
+                continue
+
             # Must look like a chapter URL or contain chapter text
-            txt = a.get_text(strip=True)
+            txt = a.get_text(separator=" ", strip=True)
             txt = re.sub(r'Last Read.*$', '', txt, flags=re.I).strip()
+            # Clean trailing relative time like "2 days ago" or view counts
+            txt_clean = re.sub(r'\s*\d+\s*(?:sec|second|min|minute|hour|hr|day|week|month|year)s?\s*(?:ago)?.*$', '', txt, flags=re.I).strip()
+            txt_clean = re.sub(r'\s*\d+(?:\.\d+)?\s*(?:views?|reads?|comments?|[km])\b.*$', '', txt_clean, flags=re.I).strip()
             # Clean trailing dates like "June 9, 2026" or "August 27, 2025" from chapter title
-            txt_clean = re.sub(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}', '', txt, flags=re.I).strip()
+            txt_clean = re.sub(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}', '', txt_clean, flags=re.I).strip()
             if not txt_clean:
                 txt_clean = txt
 
-            has_ch_kw = bool(re.search(r'[-_](?:chapter|ch|c)[-_/\d]|/(?:chapters?|ch|c)[-_/\d]|[-_/]\d+/?$', href, re.I) or re.search(r'chapter\s*\d+', txt, re.I))
-            if not has_ch_kw and not a.find_parent(class_=re.compile(r'eplister|chapterlist|wp-manga-chapter|clstyle|bxcl', re.I)):
+            has_ch_kw = bool(re.search(r'[-_](?:chapter|ch|c|ep|episode)[-_/\d]|/(?:chapters?|ch|c|ep|episodes?)[-_/\d]|[-_/]\d+/?$', href, re.I) or re.search(r'(?:chapter|episode|ep|ch)\s*\d+', txt, re.I))
+            if not has_ch_kw and not a.find_parent(class_=re.compile(r'eplister|chapter[-_]?list|wp-manga-chapter|clstyle|bxcl|chapter-item', re.I)) and not a.find_parent(id=re.compile(r'chapter[-_]?list|eplister|chapters', re.I)):
                 continue
 
             full_url = urljoin(url, href)
-            if full_url in seen_urls or not full_url.startswith("http"):
+            parsed_href = urlparse(full_url)
+            # If the link path is identical to the series URL path (e.g. #chapter-list or ?rev=1), skip
+            if parsed_href.path.rstrip('/') == parsed.path.rstrip('/'):
                 continue
 
-            parsed_href = urlparse(full_url)
+            if full_url in seen_urls or not full_url.startswith("http"):
+                # If already seen, check if we can upgrade a generic title like 'Read Now' or 'Start Reading'
+                if full_url in seen_urls and re.search(r'(?:chapter|episode|ep|ch)\s*\d+', txt_clean, re.I):
+                    for existing in chapters:
+                        if existing["url"] == full_url:
+                            if any(gen in existing["title"].lower() for gen in ("read now", "start reading", "read newest", "from start", "read")):
+                                existing["title"] = txt_clean
+                                existing["chapter_num"] = self.extract_chapter_number(full_url, txt_clean)
+                            break
+                continue
             # Only apply path prefix filter if href does not use a dedicated chapter route (/chapters/, /chapter-, etc.)
-            is_in_ch_container = bool(a.find_parent(class_=re.compile(r'eplister|chapterlist|wp-manga-chapter|clstyle|bxcl|row-content-chapter', re.I)) or a.find_parent(id=re.compile(r'chapterlist|eplister', re.I)))
+            is_in_ch_container = bool(
+                a.find_parent(class_=re.compile(r'eplister|chapter[-_]?list|wp-manga-chapter|clstyle|bxcl|row-content-chapter|chapter-item', re.I)) or
+                a.find_parent(id=re.compile(r'chapter[-_]?list|eplister|chapters', re.I))
+            )
             is_dedicated_ch_route = is_in_ch_container or bool(re.search(r'[-_](?:chapter|ch|c)[-_/\d]|/(?:chapters?|ch|c)[-_/\d]|[-_/]\d+/?$', parsed_href.path, re.I))
             if not is_dedicated_ch_route and clean_series_path and len(clean_series_path.split('/')) > 1 and parsed_href.netloc == parsed.netloc:
                 href_path = parsed_href.path.strip('/')
@@ -273,8 +327,11 @@ class BaseExtractor(ABC):
 
             # If not in an explicit chapter list container, ensure link belongs to the series
             series_slug = clean_series_path.split('/')[-1] if clean_series_path else ""
-            if series_slug and series_slug not in ("manga", "series", "comic", "comics") and not is_in_ch_container:
-                if series_slug.lower() not in parsed_href.path.lower():
+            if series_slug and series_slug not in ("manga", "series", "comic", "comics", "full-chapter-list") and not is_in_ch_container:
+                slug_clean = re.sub(r'^[0-9A-Z]{20,30}[-_]?', '', series_slug).lower()
+                path_parts = parsed_href.path.strip('/').split('/')
+                # If path has multiple segments (e.g. /chapter/other-manga/...) and doesn't contain current series slug, skip it
+                if len(path_parts) >= 2 and slug_clean not in parsed_href.path.lower() and not parsed_href.path.startswith(("/chapters/", "/chapter-")):
                     continue
 
             ch_num = self.extract_chapter_number(full_url, txt_clean)

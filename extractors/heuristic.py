@@ -44,18 +44,65 @@ class HeuristicExtractor(BaseExtractor):
             except Exception:
                 pass
 
-        # 1. Find the container with the largest density of chapter panel images
-        containers = soup.find_all(["div", "article", "main", "section"])
-        best_container = None
-        max_valid_images = 0
+        # 1. Target dedicated reader containers first
+        reader_selectors = [
+            "#readerarea",
+            ".reader-area",
+            "div.image-based",
+            "div.chapter-content",
+            "div.reading-content",
+            "div.page-break",
+            "div.vung-doc",
+            "div.container-chapter-reader",
+            ".chapter-images",
+            ".comic-images"
+        ]
 
-        for c in containers:
-            imgs = c.find_all("img")
-            if len(imgs) > max_valid_images:
-                valid_count = sum(1 for img in imgs if self._is_potential_panel(img))
-                if valid_count > max_valid_images:
-                    max_valid_images = valid_count
-                    best_container = c
+        # 0. Check for client-side packed script reader (MangaFox, MangaHere, DM5 engines)
+        if "eval(function(p,a,c,k" in html:
+            packed_scripts = re.findall(r'<script[^>]*>(eval\(function\(p,a,c,k.*?)</script>', html, re.DOTALL)
+            packed_imgs = []
+            for script in packed_scripts:
+                pattern = r"}\('(.*)',(\d+),(\d+),'(.*)'\.split\('\|'\)"
+                pm = re.search(pattern, script)
+                if not pm:
+                    continue
+                p, a, c, k = pm.group(1), int(pm.group(2)), int(pm.group(3)), pm.group(4).split('|')
+                def base36(n):
+                    alphabet = '0123456789abcdefghijklmnopqrstuvwxyz'
+                    if n < len(alphabet): return alphabet[n]
+                    return base36(n // len(alphabet)) + alphabet[n % len(alphabet)]
+                k_dict = {base36(i): k[i] if i < len(k) and k[i] else base36(i) for i in range(c)}
+                unpacked = re.sub(r'\b\w+\b', lambda mo: k_dict.get(mo.group(0), mo.group(0)), p).replace(r'\/', '/').replace(r"\'", "'")
+                for im in re.finditer(r'(?:https?:)?//[a-zA-Z0-9_.\-]+?\.[a-zA-Z]{2,6}/[^\s\'\"\\]+?\.(?:jpg|jpeg|png|webp)(?:\?[^\s\'\"\\]*)?', unpacked):
+                    u = im.group(0)
+                    if u.startswith('//'):
+                        u = 'https:' + u
+                    clean = self.clean_image_url(u, base_url)
+                    if clean:
+                        packed_imgs.append(clean)
+            if packed_imgs:
+                return self.deduplicate_urls(packed_imgs)
+        best_container = None
+        for sel in reader_selectors:
+            el = soup.select_one(sel)
+            if el:
+                candidate_imgs = [img for img in el.find_all("img") if self._is_potential_panel(img)]
+                if len(candidate_imgs) >= 2:
+                    best_container = el
+                    break
+
+        if not best_container:
+            # Fallback to finding container with largest density of valid panel images
+            containers = soup.find_all(["div", "article", "main", "section"])
+            max_valid_images = 0
+            for c in containers:
+                imgs = c.find_all("img")
+                if len(imgs) > max_valid_images:
+                    valid_count = sum(1 for img in imgs if self._is_potential_panel(img))
+                    if valid_count > max_valid_images:
+                        max_valid_images = valid_count
+                        best_container = c
 
         images = best_container.find_all("img") if best_container else soup.find_all("img")
 
@@ -64,10 +111,12 @@ class HeuristicExtractor(BaseExtractor):
             if not self._is_potential_panel(img):
                 continue
             val = (
+                img.get("data-original-src") or
                 img.get("data-src") or
                 img.get("data-lazy-src") or
                 img.get("data-original") or
                 img.get("data-url") or
+                img.get("data-cdn") or
                 img.get("src")
             )
             clean = self.clean_image_url(val, base_url)
@@ -77,7 +126,16 @@ class HeuristicExtractor(BaseExtractor):
         return self.deduplicate_urls(raw_urls)
 
     def _is_potential_panel(self, img) -> bool:
-        src = (img.get("data-src") or img.get("src") or "").lower()
+        src = (
+            img.get("data-original-src") or
+            img.get("data-src") or
+            img.get("data-lazy-src") or
+            img.get("data-original") or
+            img.get("data-url") or
+            img.get("data-cdn") or
+            img.get("src") or
+            ""
+        ).strip().lower()
         if not src or src.startswith("data:"):
             return False
 
@@ -87,17 +145,21 @@ class HeuristicExtractor(BaseExtractor):
             classes = " ".join(parent.get("class", [])).lower()
             pid = str(parent.get("id", "")).lower()
             if any(bad in classes or bad in pid for bad in [
-                "comment", "disqus", "author", "user-profile", "sidebar", "widget", "footer"
+                "comment", "disqus", "author", "user-profile", "sidebar", "widget", "footer",
+                "slider", "carousel", "recommend", "related", "popular", "manga-block"
             ]):
                 return False
             parent = parent.find_parent()
 
         filename = src.split("?")[0].split("/")[-1]
-        if any(bad in filename for bad in ["logo", "icon", "banner", "loader", "discord", "patreon"]):
+        if any(bad in filename for bad in ["logo", "icon", "banner", "loader", "discord", "patreon", "dflazy"]):
             return False
         if re.search(r'[-_.]avatar[-_.]|^avatar[-_.]', filename):
             return False
-        if any(bad in src for bad in ["/ads/", "/ad/", "-ads-", "_ads_", "/advertisement/"]):
+        if any(bad in src for bad in [
+            "/ads/", "/ad/", "-ads-", "_ads_", "/advertisement/",
+            "/themes/", "/wp-content/themes/", "about_", "to_be_continued"
+        ]):
             return False
 
         return True

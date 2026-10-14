@@ -349,7 +349,7 @@ def main():
         print(f" 📱 Smartphone Wi-Fi     : http://{lan_ip}:{args.port}")
         print(f" 📚 Mihon / Tachiyomi OPDS: http://{lan_ip}:{args.port}/opds/v1.2/catalog")
         print("=" * 68 + "\n")
-        uvicorn.run("app:app", host=args.host, port=args.port, reload=False)
+        uvicorn.run("app:app", host=args.host, port=args.port, reload=True)
     elif args.update_library:
         from core.updater import run_library_update
         print("\n[*] Checking all library series for new releases...")

@@ -36,16 +36,26 @@ def token_sort_ratio(s1: str, s2: str) -> float:
     return matcher.ratio()
 
 
+TITLE_STOP_WORDS = {"the", "a", "an", "of", "and", "in", "on", "at", "to", "for", "with", "where", "is", "it"}
+
+def _distinctive_content_match(s1: str, s2: str) -> bool:
+    c1 = set(normalize_title(s1).split()) - TITLE_STOP_WORDS
+    c2 = set(normalize_title(s2).split()) - TITLE_STOP_WORDS
+    if not c1 or not c2:
+        return False
+    inter = len(c1 & c2)
+    return (inter >= 3 and inter / max(len(c1), len(c2)) >= 0.70) or (inter >= 2 and (c1.issubset(c2) or c2.issubset(c1)))
+
 def is_same_series(
     title1: str,
     title2: str,
     alt_titles1: Optional[List[str]] = None,
     alt_titles2: Optional[List[str]] = None,
-    threshold: float = 0.82
+    threshold: float = 0.80
 ) -> bool:
     """Determine if two titles represent the same underlying series."""
-    # Direct token match
-    if token_sort_ratio(title1, title2) >= threshold:
+    # Direct token match or distinctive content words match
+    if token_sort_ratio(title1, title2) >= threshold or _distinctive_content_match(title1, title2):
         return True
 
     # Cross-reference alternative titles
@@ -54,7 +64,7 @@ def is_same_series(
 
     for t1 in all_t1:
         for t2 in all_t2:
-            if token_sort_ratio(t1, t2) >= threshold:
+            if token_sort_ratio(t1, t2) >= threshold or _distinctive_content_match(t1, t2):
                 return True
 
     return False
@@ -146,11 +156,13 @@ def cluster_search_results(raw_hits: List[Dict[str, Any]], query: str = "") -> L
     for hit in raw_hits:
         hit_title = hit.get("title") or "Unknown"
         hit_alt = hit.get("alt_titles") or []
+        series_url = hit.get("series_url") or hit.get("url") or ""
         hit_source = {
             "source_key": hit.get("source_key", "unknown"),
             "source_name": hit.get("source_name", "Unknown Source"),
             "source_logo": hit.get("source_logo") or f"/docs/logos/{hit.get('source_key', 'heuristic')}.png",
-            "series_url": hit.get("series_url") or "",
+            "series_url": series_url,
+            "url": series_url,
             "latest_chapter": hit.get("latest_chapter") or "Chapter 1",
             "latest_chapter_num": float(hit.get("latest_chapter_num") or 0.0),
             "quality_tag": hit.get("quality_tag", "Standard"),
@@ -181,6 +193,9 @@ def cluster_search_results(raw_hits: List[Dict[str, Any]], query: str = "") -> L
                 # Upgrade cover if current cover is generic or missing
                 if not matched_cluster.get("cover_url") and hit.get("cover_url"):
                     matched_cluster["cover_url"] = hit.get("cover_url")
+                if not matched_cluster.get("series_url") and series_url:
+                    matched_cluster["series_url"] = series_url
+                    matched_cluster["url"] = series_url
         else:
             # Create a new canonical cluster
             canonical_slug = re.sub(r"[^a-zA-Z0-9]+", "-", normalize_title(hit_title)).strip("-")
@@ -189,6 +204,8 @@ def cluster_search_results(raw_hits: List[Dict[str, Any]], query: str = "") -> L
                 "canonical_id": canonical_slug or "series",
                 "canonical_title": hit_title,
                 "title": hit_title,
+                "series_url": series_url,
+                "url": series_url,
                 "alt_titles": [a for a in hit_alt if a],
                 "synopsis": hit.get("synopsis") or "",
                 "cover_url": hit.get("cover_url") or "",

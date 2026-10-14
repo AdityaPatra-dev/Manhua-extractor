@@ -9,6 +9,7 @@ except ImportError:
 import requests
 
 from .base import BaseExtractor
+from .comick import ComicKExtractor
 from .mangadex import MangaDexExtractor
 from .modern_ssr import ModernSSRExtractor
 from .madara import MadaraExtractor
@@ -36,6 +37,7 @@ class ExtractorDispatcher:
     def __init__(self):
         # Register engines in priority order
         self.engines: List[BaseExtractor] = [
+            ComicKExtractor(),
             MangaDexExtractor(),
             ModernSSRExtractor(),
             MadaraExtractor(),
@@ -226,30 +228,67 @@ class ExtractorDispatcher:
                     if len(hx_chaps) > len(chapters):
                         chapters = hx_chaps
 
-        # If we got very few chapters or 0 chapters, check if url is a chapter reader page
-        # and attempt to fetch the parent series page to get the full catalog
-        is_chapter_page = bool(re.search(r'/(?:chapter|ch|c)[-_/\d]', url, re.I))
+        # Check for paginated chapter list pages (e.g. mgread.io /chapter/page/\d+/, etc.)
+        page_links = soup.select("a[href*='/chapter/page/'], a[href*='/chapters/page/'], .pagination a[href*='page/']")
+        if page_links:
+            seen_page_urls = {url}
+            for pl in page_links:
+                p_href = pl.get("href")
+                if not p_href:
+                    continue
+                p_full = urljoin(url, p_href).split("#")[0]
+                if p_full in seen_page_urls:
+                    continue
+                seen_page_urls.add(p_full)
+                p_code, p_html, p_soup = self.fetch_page(p_full)
+                if p_code == 200:
+                    p_chaps = matched_engine.extract_chapter_list(p_soup, p_full, p_html)
+                    existing_nums = {c["chapter_num"] for c in chapters}
+                    for pc in p_chaps:
+                        if pc["chapter_num"] not in existing_nums:
+                            existing_nums.add(pc["chapter_num"])
+                            chapters.append(pc)
+                        else:
+                            for existing in chapters:
+                                if existing["chapter_num"] == pc["chapter_num"]:
+                                    if any(gen in existing["title"].lower() for gen in ("from start", "read now", "start reading", "read newest", "read")):
+                                        existing["title"] = pc["title"]
+                                        existing["url"] = pc["url"]
+                                    break
+
+        # If url is a chapter reader page, attempt to fetch the parent series page to get the full catalog
+        is_chapter_page = bool(re.search(r'[-_](?:chapter|ch|c)[-_/\d]|/(?:chapters?|ch|c)[-_/\d]', url, re.I))
         series_url = url
-        if is_chapter_page or len(chapters) <= 1:
+        if is_chapter_page:
             candidate_parent = None
 
             # 1. Check DOM breadcrumbs / series links first
             bc_links = soup.select(
-                "ol.breadcrumb li a, div.breadcrumb a, div.c-breadcrumb a, "
-                "a.back-to-series, a.all-chapters, div.allc a, "
-                "a[href*='/manga/'], a[href*='/series/'], a[href*='/comics/']"
-            )
+                ".ts-breadcrumb a, div.allc a, ol.breadcrumb li a, div.breadcrumb a, div.c-breadcrumb a, "
+                "a.back-to-series, a.all-chapters, .novel-title a"
+            ) or soup.select("a[href*='/manga/'], a[href*='/series/'], a[href*='/comics/'], a[href*='/comic/']")
             for bc in bc_links:
                 h = bc.get("href", "").strip()
-                if h and not re.search(r'/(?:chapter|ch|c)[-_/\d]', h, re.I):
-                    full_bc = urljoin(url, h)
-                    parsed_bc = urlparse(full_bc)
-                    parsed_cur = urlparse(url)
-                    if (full_bc != url and parsed_bc.netloc == parsed_cur.netloc 
-                            and len(parsed_bc.path.strip('/')) > 0
-                            and parsed_bc.path.strip('/') not in ("manga", "series", "comics", "webtoon")):
-                        candidate_parent = full_bc
-                        break
+                if not h or h.startswith("#") or h.startswith("javascript:"):
+                    continue
+                if "?" in h:
+                    continue
+                if any(bad in h.lower() for bad in ["/genre/", "/genres/", "/tag/", "/author/", "/status/", "/type/", "facebook", "twitter", "t.me", "random", "/random"]):
+                    continue
+                if re.search(r'/(?:chapter|ch|c)[-_/\d]', h, re.I):
+                    continue
+                full_bc = urljoin(url, h)
+                parsed_bc = urlparse(full_bc)
+                parsed_cur = urlparse(url)
+                if full_bc == url or parsed_bc.netloc != parsed_cur.netloc:
+                    continue
+                parts = parsed_bc.path.strip("/").split("/")
+                if len(parts) >= 2 and parts[0] in ("comics", "manga", "series", "comic", "webtoon"):
+                    candidate_parent = full_bc
+                    break
+                elif len(parts) == 1 and parts[0] not in ("comics", "manga", "series", "comic", "webtoon", "", "home", "random"):
+                    candidate_parent = full_bc
+                    break
 
             # 2. Regex fallback if breadcrumbs didn't yield a valid parent
             if not candidate_parent:
@@ -263,14 +302,29 @@ class ExtractorDispatcher:
                 series_url = candidate_parent
                 p_code, p_html, p_soup = self.fetch_page(series_url)
                 if p_code == 200:
-                    p_info = matched_engine.extract_series_info(p_soup, series_url, p_html)
+                    p_engine = matched_engine
+                    for eng in self.engines:
+                        if eng.can_handle(p_soup, series_url, p_html):
+                            p_engine = eng
+                            break
+                    p_info = p_engine.extract_series_info(p_soup, series_url, p_html)
                     if p_info.get("cover_url"):
                         series_info["cover_url"] = p_info["cover_url"]
                     if p_info.get("title") and len(p_info["title"]) > len(series_info.get("title") or ""):
                         series_info["title"] = p_info["title"]
-                    p_chaps = matched_engine.extract_chapter_list(p_soup, series_url, p_html)
+                    p_chaps = p_engine.extract_chapter_list(p_soup, series_url, p_html)
                     if len(p_chaps) > len(chapters):
                         chapters = p_chaps
+
+        # Filter social share links from chapters
+        chapters = [
+            c for c in chapters
+            if not any(s in c.get("url", "").lower() for s in (
+                "facebook.com", "twitter.com", "://x.com", ".x.com/", "/x.com/", "t.me/", "telegram.me/",
+                "whatsapp.com", "pinterest.com", "reddit.com", "tumblr.com",
+                "linkedin.com", "addtoany", "sharer.php"
+            ))
+        ]
 
         # Fallback: guarantee at least the current chapter is returned so the user can download or browse it
         if not chapters:

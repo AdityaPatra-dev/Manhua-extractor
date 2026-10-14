@@ -24,11 +24,13 @@ TIER_1_SOURCES = [
     {"key": "flamecomics", "name": "Flame Comics", "type": "flamecomics"},
     {"key": "vortexscans", "name": "Vortex Scans", "type": "vortexscans"},
     {"key": "roliascan", "name": "Rolia Scan", "type": "roliascan"},
-    {"key": "manhuaplus", "name": "ManhuaPlus", "type": "mangastream", "domain": "manhuaplus.org"},
+    {"key": "manhuaplus", "name": "ManhuaPlus", "type": "manhuaplus", "domain": "manhuaplus.org"},
     {"key": "ravenscans", "name": "Raven Scans", "type": "mangastream", "domain": "ravenscans.com"},
     {"key": "omegascans", "name": "Omega Scans", "type": "mangastream", "domain": "omegascans.org"},
     {"key": "rizzcomics", "name": "Rizz Comics", "type": "mangastream", "domain": "rizzfables.com"},
     {"key": "reaper", "name": "Reaper Scans", "type": "mangastream", "domain": "reapercomics.com"},
+    {"key": "thunderscans", "name": "Thunder Scans", "type": "mangastream", "domain": "en-thunderscans.com"},
+    {"key": "kingofshojo", "name": "King of Shojo", "type": "mangastream", "domain": "kingofshojo.com"},
 
     # WP Madara Network
     {"key": "topmanhua", "name": "TopManhua", "type": "madara", "domain": "topmanhua.net"},
@@ -48,6 +50,8 @@ TIER_1_SOURCES = [
     {"key": "mangahub", "name": "MangaHub", "type": "mangahub"},
     {"key": "mangahere", "name": "MangaHere", "type": "mangahere"},
     {"key": "mangatown", "name": "MangaTown", "type": "mangatown"},
+    {"key": "mgeko", "name": "MangaGeko", "type": "mgeko"},
+    {"key": "mgread", "name": "MangaRead.io", "type": "mgread"},
 ]
 
 TIER_2_MADARA = [
@@ -66,7 +70,7 @@ TIER_4_AGGREGATOR = [
 
 
 class SearchDispatcher:
-    def __init__(self, concurrency_limit: int = 15, timeout_seconds: float = 4.0):
+    def __init__(self, concurrency_limit: int = 15, timeout_seconds: float = 6.0):
         self.semaphore = asyncio.Semaphore(concurrency_limit)
         self.timeout = timeout_seconds
 
@@ -106,6 +110,10 @@ class SearchDispatcher:
         try:
             async with session.get(url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
                 text = await resp.text()
+                if resp.status == 200:
+                    lower = text.lower()
+                    if not any(m in lower for m in ("just a moment...", "<title>just a moment", "cf-browser-verification", "performing security verification")):
+                        return resp.status, text
                 is_challenge = resp.status in (403, 503) or any(
                     m in text.lower() for m in ("just a moment", "challenges.cloudflare.com", "cf-turnstile", "__cf_chl_opt")
                 )
@@ -326,10 +334,11 @@ class SearchDispatcher:
                 return []
             latency = int((time.time() - t0) * 1000)
             soup = BeautifulSoup(html, "html.parser")
+            items = soup.select(".listupd .bsx, .bsx, .bs, div.bsx, article.animepost, .animposx")
             results = []
             seen_series = set()
             for it in items[:12]:
-                link_el = it.select_one("a[title], a[href*='/manga/'], a[href*='/series/']")
+                link_el = it.select_one("a[title], a[href*='/manga/'], a[href*='/comics/'], a[href*='/series/']") or it.select_one("a")
                 if not link_el:
                     continue
                 raw_href = link_el.get("href") or ""
@@ -878,6 +887,168 @@ class SearchDispatcher:
         except Exception:
             return []
 
+    # --- Engine Adapter 16: MangaGeko ---
+    async def search_mgeko(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://www.mgeko.cc/autocomplete?term={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for it in soup.select("li.novel-item, .novel-item"):
+                    a = it.select_one("a[href*='/manga/']")
+                    if not a:
+                        continue
+                    href = a.get("href") or ""
+                    series_url = urllib.parse.urljoin("https://www.mgeko.cc", href)
+                    title = a.get("title") or (it.select_one("h4, .novel-title") or a).get_text(strip=True)
+                    img = it.select_one("img")
+                    cover_url = (img.get("src") or img.get("data-src") or "") if img else ""
+                    ch_text = it.get_text()
+                    m = re.search(r"Ch(?:apter)?\.?\s*(\d+(?:\.\d+)?)", ch_text, re.I)
+                    ch_num = float(m.group(1)) if m else 1.0
+                    ch_title = f"Chapter {int(ch_num) if ch_num.is_integer() else ch_num:g}" if m else "Available"
+                    results.append({
+                        "title": title.strip(),
+                        "alt_titles": [],
+                        "source_key": "mgeko",
+                        "source_name": "MangaGeko",
+                        "source_logo": "/docs/logos/mgeko.png",
+                        "series_url": series_url,
+                        "url": series_url,
+                        "cover_url": cover_url,
+                        "latest_chapter": ch_title,
+                        "latest_chapter_num": ch_num,
+                        "quality_tag": "Standard",
+                        "latency_ms": latency
+                    })
+                return results[:6]
+        except Exception:
+            return []
+
+    # --- Engine Adapter 17: MangaRead.io ---
+    async def search_mgread(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://mgread.io/?s={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                seen = set()
+                for art in soup.select("article"):
+                    a = art.select_one("a[href*='/manga/']")
+                    if not a:
+                        continue
+                    series_url = a.get("href") or ""
+                    if not series_url or series_url in seen:
+                        continue
+                    seen.add(series_url)
+                    title_el = art.select_one("h2, h3, h4, .entry-title") or a
+                    title = title_el.get_text(strip=True)
+                    img = art.select_one("img")
+                    cover_url = (img.get("data-src") or img.get("src") or "") if img else ""
+                    results.append({
+                        "title": title,
+                        "alt_titles": [],
+                        "source_key": "mgread",
+                        "source_name": "MangaRead.io",
+                        "source_logo": "/docs/logos/mgread.png",
+                        "series_url": series_url,
+                        "url": series_url,
+                        "cover_url": cover_url,
+                        "latest_chapter": "Available",
+                        "latest_chapter_num": 1.0,
+                        "quality_tag": "Standard",
+                        "latency_ms": latency
+                    })
+                return results[:6]
+        except Exception:
+            return []
+
+    # --- Engine Adapter: ManhuaPlus (Liliana Theme) ---
+    async def search_manhuaplus(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://manhuaplus.org/search?keyword={urllib.parse.quote(query)}"
+        headers = DEFAULT_HEADERS.copy()
+        headers["Referer"] = "https://manhuaplus.org/"
+        try:
+            async with session.get(url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                seen = set()
+
+                items = soup.select(".grid.gtc-f141a > div, .grid > div:has(div.b-img)")
+                if not items:
+                    items = [a.find_parent("div") for a in soup.select("div.b-img a[href*='/manga/']")]
+
+                for it in items:
+                    if not it:
+                        continue
+                    link = it.select_one(".text-center a, a[title]") or it.select_one("a[href*='/manga/']")
+                    if not link:
+                        continue
+                    raw_href = link.get("href", "")
+                    if not raw_href or "/chapter" in raw_href:
+                        continue
+                    series_url = urllib.parse.urljoin("https://manhuaplus.org", raw_href)
+                    if series_url in seen:
+                        continue
+                    seen.add(series_url)
+
+                    title = link.get("title") or link.get_text(strip=True)
+                    img_el = it.select_one("img")
+                    cover = ""
+                    if img_el:
+                        cover = img_el.get("data-src") or img_el.get("src") or ""
+                        if cover and not cover.startswith("http"):
+                            cover = urllib.parse.urljoin("https://manhuaplus.org", cover)
+
+                    ch_el = it.select_one("a[href*='chapter']")
+                    ch_txt = ch_el.get_text(strip=True) if ch_el else "Available"
+                    ch_m = re.search(r'chapter\s*([\d\.]+)|([\d\.]+)', ch_txt, re.I)
+                    ch_num = float(ch_m.group(1) or ch_m.group(2)) if ch_m else 1.0
+
+                    results.append({
+                        "title": title,
+                        "alt_titles": [],
+                        "source_key": "manhuaplus",
+                        "source_name": "ManhuaPlus",
+                        "source_logo": "/docs/logos/manhuaplus.png",
+                        "series_url": series_url,
+                        "url": series_url,
+                        "cover_url": cover,
+                        "latest_chapter": ch_txt,
+                        "latest_chapter_num": ch_num,
+                        "quality_tag": "HD Manhua",
+                        "latency_ms": latency
+                    })
+                    if len(results) >= 8:
+                        break
+
+                if not results and len(query.split()) > 3:
+                    words = [w for w in query.split() if w.lower() not in {"the", "where", "a", "an", "is", "it"}]
+                    candidates = [" ".join(words[i:i+3]) for i in range(len(words) - 2)]
+                    for cand in candidates:
+                        sub_results = await self.search_manhuaplus(cand, session)
+                        if sub_results:
+                            return sub_results
+
+                return results
+        except Exception:
+            return []
+
     # --- Dispatcher Worker for Single Source ---
     async def _query_single_source(self, source: Dict[str, Any], query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
         async with self.semaphore:
@@ -906,6 +1077,12 @@ class SearchDispatcher:
                 return await self.search_mangahere(query, session)
             elif stype == "mangatown":
                 return await self.search_mangatown(query, session)
+            elif stype == "mgeko":
+                return await self.search_mgeko(query, session)
+            elif stype == "mgread":
+                return await self.search_mgread(query, session)
+            elif stype == "manhuaplus":
+                return await self.search_manhuaplus(query, session)
             elif stype == "api_comick":
                 return await self.search_comick(query, session)
             elif stype == "manganato":
@@ -916,12 +1093,28 @@ class SearchDispatcher:
                 return await self.search_mangastream(source, query, session)
             return []
 
+    @staticmethod
+    def clean_search_term(query: str) -> str:
+        """If user inputs a full URL into search, extract the clean series slug as the search term."""
+        q = query.strip()
+        if q.startswith(("http://", "https://")):
+            parsed = urllib.parse.urlparse(q)
+            path = parsed.path.strip("/")
+            path = re.sub(r'/(?:chapters?|ch|c)[-_/\d].*$', '', path, flags=re.I)
+            parts = [p for p in path.split("/") if p and p not in ("manga", "series", "comic", "comics", "read", "detail")]
+            if parts:
+                slug = parts[-1]
+                slug = re.sub(r'^[0-9A-Z]{20,30}[-_]?', '', slug)
+                return slug.replace("-", " ").replace("_", " ").strip()
+        return q
+
     # --- Unified Search across all sources in tier ---
     async def search_all(self, query: str, tier: str = "fast") -> List[Dict[str, Any]]:
+        term = self.clean_search_term(query)
         sources = self.get_sources_for_tier(tier)
         conn = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=conn) as session:
-            tasks = [self._query_single_source(s, query, session) for s in sources]
+            tasks = [self._query_single_source(s, term, session) for s in sources]
             results_nested = await asyncio.gather(*tasks, return_exceptions=True)
 
         all_hits = []
@@ -929,10 +1122,11 @@ class SearchDispatcher:
             if isinstance(r, list):
                 all_hits.extend(r)
 
-        return cluster_search_results(all_hits, query=query)
+        return cluster_search_results(all_hits, query=term)
 
     # --- Real-Time SSE Search Generator ---
     async def search_stream(self, query: str, tier: str = "fast") -> AsyncIterator[Dict[str, Any]]:
+        term = self.clean_search_term(query)
         sources = self.get_sources_for_tier(tier)
         total_sources = len(sources)
         yield {
@@ -940,6 +1134,7 @@ class SearchDispatcher:
             "data": {
                 "total_sources": total_sources,
                 "query": query,
+                "search_term": term,
                 "tier": tier
             }
         }
@@ -950,7 +1145,7 @@ class SearchDispatcher:
         conn = aiohttp.TCPConnector(ssl=False)
         async with aiohttp.ClientSession(connector=conn) as session:
             # Launch tasks as completed
-            coros = [self._query_single_source(s, query, session) for s in sources]
+            coros = [self._query_single_source(s, term, session) for s in sources]
             for future in asyncio.as_completed(coros):
                 try:
                     hits = await future
@@ -958,7 +1153,7 @@ class SearchDispatcher:
                     if hits:
                         all_hits.extend(hits)
                         # Re-cluster and stream the latest state
-                        clustered = cluster_search_results(all_hits, query=query)
+                        clustered = cluster_search_results(all_hits, query=term)
                         yield {
                             "event": "update",
                             "data": {
@@ -980,7 +1175,7 @@ class SearchDispatcher:
                 except Exception:
                     completed += 1
 
-        final_clusters = cluster_search_results(all_hits, query=query)
+        final_clusters = cluster_search_results(all_hits, query=term)
         yield {
             "event": "complete",
             "data": {
