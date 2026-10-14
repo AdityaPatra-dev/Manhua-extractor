@@ -1278,6 +1278,17 @@ def run_backup_export_worker(job_id: str, plan: Dict[str, Any], include_files: b
             overall_chapter_index += len(b_items)
             generated_files.append(f"/api/backup/download/{filename}")
 
+            # Auto-save to Android public Downloads and trigger MediaScanner
+            if os.environ.get("MANHUA_IS_ANDROID"):
+                try:
+                    from com.manhua.extractor import FileUtils
+                    from com.chaquo.python import Python
+                    from java.io import File as JavaFile
+                    ctx = Python.getPlatform().getApplication()
+                    FileUtils.saveZipToPublicDownloads(ctx, JavaFile(zip_dest))
+                except Exception as ex:
+                    print(f"[Backup] Auto-save note: {ex}")
+
         backup_state["status"] = "completed"
         backup_state["is_running"] = False
         backup_state["percent"] = 100.0
@@ -1564,6 +1575,45 @@ async def clear_backup_cache():
         "freed_bytes": freed_bytes,
         "freed_formatted": format_bytes(freed_bytes)
     }
+
+
+@app.get("/api/backup/folder-info")
+async def get_backup_folder_info():
+    """Return device backup directory path."""
+    return {
+        "success": True,
+        "backups_dir": BACKUPS_DIR,
+        "downloads_dir": DOWNLOADS_DIR,
+        "is_android": bool(os.environ.get("MANHUA_IS_ANDROID"))
+    }
+
+
+@app.post("/api/backup/open-folder")
+async def open_backup_folder():
+    """Request opening the device backup folder in system file manager."""
+    try:
+        if os.environ.get("MANHUA_IS_ANDROID"):
+            try:
+                from com.manhua.extractor import FileUtils
+                from com.chaquo.python import Python
+                ctx = Python.getPlatform().getApplication()
+                FileUtils.openBackupFolder(ctx)
+                return {"success": True, "path": BACKUPS_DIR, "message": "Opened device file manager"}
+            except Exception as e:
+                return {"success": True, "path": BACKUPS_DIR, "message": f"Backups at: {BACKUPS_DIR}"}
+        else:
+            import platform, subprocess
+            sys_name = platform.system()
+            if sys_name == "Windows":
+                os.startfile(BACKUPS_DIR)
+            elif sys_name == "Darwin":
+                subprocess.Popen(["open", BACKUPS_DIR])
+            else:
+                subprocess.Popen(["xdg-open", BACKUPS_DIR])
+            return {"success": True, "path": BACKUPS_DIR, "message": "Opened folder"}
+    except Exception as e:
+        return {"success": False, "error": str(e), "path": BACKUPS_DIR}
+
 
 
 

@@ -2,8 +2,13 @@ package com.manhua.extractor
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.AlertDialog
+import android.app.DownloadManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -12,6 +17,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.JsResult
+import android.webkit.URLUtil
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -19,7 +26,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -42,6 +51,28 @@ class MainActivity : AppCompatActivity() {
 
     private var customView: View? = null
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
+
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val data = result.data
+            val uris: Array<Uri>? = when {
+                data?.clipData != null -> {
+                    val count = data.clipData!!.itemCount
+                    Array(count) { i -> data.clipData!!.getItemAt(i).uri }
+                }
+                data?.data != null -> arrayOf(data.data!!)
+                else -> null
+            }
+            fileChooserCallback?.onReceiveValue(uris)
+        } else {
+            fileChooserCallback?.onReceiveValue(null)
+        }
+        fileChooserCallback = null
+    }
 
     private val localServerPort = 8000
     private val localServerUrl = "http://127.0.0.1:$localServerPort/"
@@ -139,6 +170,38 @@ class MainActivity : AppCompatActivity() {
                     return true
                 }
 
+                override fun onShowFileChooser(
+                    webView: WebView?,
+                    filePathCallback: ValueCallback<Array<Uri>>?,
+                    fileChooserParams: FileChooserParams?
+                ): Boolean {
+                    fileChooserCallback?.onReceiveValue(null)
+                    fileChooserCallback = filePathCallback
+
+                    val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                        type = "*/*"
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                            "application/zip",
+                            "application/x-zip-compressed",
+                            "application/x-zip",
+                            "application/octet-stream",
+                            "*/*"
+                        ))
+                    }
+
+                    return try {
+                        filePickerLauncher.launch(Intent.createChooser(intent, "Select Backup Archive (.zip)"))
+                        true
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Failed to launch file picker: ${e.message}", e)
+                        fileChooserCallback?.onReceiveValue(null)
+                        fileChooserCallback = null
+                        false
+                    }
+                }
+
                 override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
                     if (customView != null) {
                         callback?.onCustomViewHidden()
@@ -157,6 +220,28 @@ class MainActivity : AppCompatActivity() {
                     webView.visibility = View.VISIBLE
                     customView = null
                     customViewCallback?.onCustomViewHidden()
+                }
+            }
+
+            setDownloadListener { url, userAgent, contentDisposition, mimetype, contentLength ->
+                try {
+                    val fileName = URLUtil.guessFileName(url, contentDisposition, mimetype ?: "application/zip")
+                    val request = DownloadManager.Request(Uri.parse(url)).apply {
+                        setMimeType(mimetype ?: "application/zip")
+                        setDescription("Saving Manhua Backup Archive...")
+                        setTitle(fileName)
+                        setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                        setDestinationInExternalPublicDir(
+                            Environment.DIRECTORY_DOWNLOADS,
+                            "Manhua/Backups/$fileName"
+                        )
+                    }
+                    val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    dm.enqueue(request)
+                    Toast.makeText(this@MainActivity, "Saving $fileName to Downloads/Manhua/Backups", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Log.e("WebView", "Download error: ${e.message}", e)
+                    Toast.makeText(this@MainActivity, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }

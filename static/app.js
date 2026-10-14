@@ -1678,6 +1678,48 @@ document.addEventListener("DOMContentLoaded", () => {
   let exportPollInterval = null;
   let selectedImportFiles = [];
 
+  window.openBackupFolder = async function() {
+    if (window.AndroidApp && typeof window.AndroidApp.openBackupFolder === "function") {
+      try {
+        window.AndroidApp.openBackupFolder();
+        showToast("Opening device backups folder...", "info");
+        return;
+      } catch (err) {
+        console.warn("Android openBackupFolder error", err);
+      }
+    }
+    try {
+      const res = await fetch("/api/backup/open-folder", { method: "POST" });
+      const data = await res.json();
+      if (data && data.success) {
+        showToast(data.message || "Opened backups folder", "success");
+      } else {
+        showToast("Backups stored in: " + (data.path || "backups/"), "info");
+      }
+    } catch (e) {
+      showToast("Backups stored in device backups folder", "info");
+    }
+  };
+
+  window.shareBackupFile = function(filename) {
+    if (window.AndroidApp && typeof window.AndroidApp.shareBackupFile === "function") {
+      try {
+        window.AndroidApp.shareBackupFile(filename);
+        return;
+      } catch (err) {
+        console.warn("Android shareBackupFile error", err);
+      }
+    }
+    if (navigator.share) {
+      navigator.share({
+        title: filename,
+        url: `/api/backup/download/${filename}`
+      }).catch(() => {});
+    } else {
+      showToast("Archive available at: /api/backup/download/" + filename, "info");
+    }
+  };
+
   async function loadBackupEstimate() {
     try {
       const res = await fetch("/api/backup/estimate?batch_size_mb=1450");
@@ -1713,7 +1755,11 @@ document.addEventListener("DOMContentLoaded", () => {
               <strong style="color: var(--text-main); font-size: 0.88rem;">${f.filename}</strong>
               <span style="color: var(--text-muted); font-size: 0.78rem; margin-left: 8px;">(${f.size_formatted})</span>
             </div>
-            <a href="${f.url}" download class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem; text-decoration: none; border-radius: 4px;">⬇️ Download</a>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <a href="${f.url}" download="${f.filename}" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; text-decoration: none; border-radius: 4px;">⬇️ Download</a>
+              <button onclick="openBackupFolder()" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; border-radius: 4px;">📂 View Folder</button>
+              <button onclick="shareBackupFile('${f.filename}')" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; border-radius: 4px;">🔗 Share</button>
+            </div>
           </div>
         `).join("");
       } else {
@@ -1821,17 +1867,30 @@ document.addEventListener("DOMContentLoaded", () => {
               statusLabel.textContent = "✅ Export Completed!";
               detailLabel.textContent = status.message;
 
-              // Display download links
+              // Display download links with View Folder, Save to Device, and Share
               const batchFiles = status.batch_files || data.batch_files || [];
               if (batchFiles.length > 0) {
                 filesList.innerHTML = batchFiles.map((url, idx) => {
                   const filename = url.split("/").pop();
                   const label = batchFiles.length > 1 ? `Part ${idx + 1} of ${batchFiles.length}` : "Complete Library Archive";
                   return `
-                    <a href="${url}" download class="btn btn-secondary" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; text-decoration: none; border-radius: 6px;">
-                      <span>📦 <strong>${label}</strong> (${filename})</span>
-                      <span style="color: var(--accent); font-weight: 600;">⬇️ Download</span>
-                    </a>
+                    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                        <span>📦 <strong>${label}</strong> <span style="font-size: 0.8rem; color: var(--text-muted);">(${filename})</span></span>
+                        <span style="font-size: 0.75rem; background: rgba(16, 185, 129, 0.2); color: var(--success); padding: 2px 8px; border-radius: 4px; font-weight: 600;">Saved on Device</span>
+                      </div>
+                      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <a href="${url}" download="${filename}" class="btn btn-primary" style="flex: 1; min-width: 140px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; font-size: 0.85rem;">
+                          ⬇️ Download ZIP
+                        </a>
+                        <button type="button" onclick="openBackupFolder()" class="btn btn-secondary" style="flex: 1; min-width: 130px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; font-size: 0.85rem;">
+                          📂 View Folder
+                        </button>
+                        <button type="button" onclick="shareBackupFile('${filename}')" class="btn btn-secondary" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; font-size: 0.85rem;">
+                          🔗 Share
+                        </button>
+                      </div>
+                    </div>
                   `;
                 }).join("");
                 downloadsBox.classList.remove("hidden");
@@ -1839,7 +1898,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
               btnStartExport.disabled = false;
               btnStartExport.textContent = "📦 Create Backup Export";
-              showToast("Backup export ready for download!", "success");
+              showToast("Backup export stored on device!", "success");
               loadBackupArchiveList();
             } else if (status.status === "error") {
               clearInterval(exportPollInterval);
@@ -1862,6 +1921,14 @@ document.addEventListener("DOMContentLoaded", () => {
         btnStartExport.textContent = "📦 Create Backup Export";
         showToast("Export error: " + err.message, "error");
       }
+    });
+  }
+
+  // View Folder button
+  const btnViewBackupFolder = document.getElementById("btn-view-backup-folder");
+  if (btnViewBackupFolder) {
+    btnViewBackupFolder.addEventListener("click", () => {
+      window.openBackupFolder();
     });
   }
 

@@ -10,7 +10,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/static/style.css?v=1.0.7">
+  <link rel="stylesheet" href="/static/style.css?v=1.0.8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -468,6 +468,7 @@
 
           <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 0.75rem;">
             <button id="btn-start-export" class="btn btn-primary" style="flex: 1; min-width: 180px;">📦 Create Backup Export</button>
+            <button id="btn-view-backup-folder" type="button" class="btn btn-secondary" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 16px;">📂 View Folder</button>
           </div>
 
           <!-- Live Export Progress Container -->
@@ -484,8 +485,11 @@
 
           <!-- Ready Download Links List -->
           <div id="backup-export-downloads-box" class="hidden" style="margin-top: 0.75rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px;">
-            <div style="font-size: 0.85rem; font-weight: 600; color: var(--success); margin-bottom: 8px;">✅ Export Ready for Download:</div>
-            <div id="backup-export-files-list" style="display: flex; flex-direction: column; gap: 6px;"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span style="font-size: 0.85rem; font-weight: 600; color: var(--success);">✅ Export Saved on Device:</span>
+              <button onclick="openBackupFolder()" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; display: inline-flex; align-items: center; gap: 4px;">📂 View Folder</button>
+            </div>
+            <div id="backup-export-files-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
           </div>
         </div>
 
@@ -495,14 +499,19 @@
           <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">Select one or multiple backup ZIP files (e.g. Part 1, Part 2). They will be synced sequentially into your library without creating duplicate cards.</p>
 
           <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0.75rem;">
-            <input type="file" id="backup-file-input" accept=".zip" multiple style="display: none;">
-            <div id="backup-drop-zone" style="border: 2px dashed var(--border-color); border-radius: 8px; padding: 18px; text-align: center; background: rgba(19, 27, 46, 0.5); cursor: pointer; transition: all 0.2s ease;">
-              <div style="font-size: 1.8rem; margin-bottom: 4px;">📂</div>
-              <div style="font-weight: 600; font-size: 0.92rem; color: var(--text-main);">Tap or Drag & Drop Backup ZIPs Here</div>
-              <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">Supports single or multi-part batches (Part 1, Part 2...)</div>
-              <div id="backup-selected-files-label" style="margin-top: 8px; font-size: 0.85rem; color: var(--accent); font-weight: 600;" class="hidden"></div>
+            <input type="file" id="backup-file-input" accept=".zip,application/zip,application/x-zip-compressed,application/octet-stream,*/*" multiple style="display: none;">
+            <div id="backup-drop-zone" style="border: 2px dashed var(--border-color); border-radius: 8px; padding: 22px 14px; text-align: center; background: rgba(19, 27, 46, 0.5); cursor: pointer; transition: all 0.2s ease;">
+              <div style="font-size: 2.2rem; margin-bottom: 6px;">📂</div>
+              <div style="font-weight: 700; font-size: 1rem; color: var(--text-main);">Tap to Open Folder & Select Backup ZIP</div>
+              <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 4px;">Opens your device file manager to choose archive(s) (e.g. Part 1, Part 2...)</div>
+              <div style="margin-top: 12px;">
+                <span class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; font-size: 0.85rem; pointer-events: none;">
+                  📁 Browse Device Files (.zip)
+                </span>
+              </div>
+              <div id="backup-selected-files-label" style="margin-top: 10px; font-size: 0.85rem; color: var(--accent); font-weight: 600;" class="hidden"></div>
             </div>
-            <button id="btn-start-import" class="btn btn-secondary" style="width: 100%; display: none;">📥 Start Restoring Selected Archive(s)</button>
+            <button id="btn-start-import" class="btn btn-primary" style="width: 100%; display: none; padding: 12px; font-weight: 700; font-size: 0.95rem;">📥 Start Restoring Selected Archive(s)</button>
           </div>
 
           <!-- Live Import Progress Container -->
@@ -796,7 +805,7 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="/static/app.js?v=1.0.7"></script>
+  <script src="/static/app.js?v=1.0.8"></script>
 </body>
 </html>
 
