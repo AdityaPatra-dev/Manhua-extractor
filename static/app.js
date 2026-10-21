@@ -685,15 +685,19 @@ document.addEventListener("DOMContentLoaded", () => {
                 📥 <strong>${s.downloaded_chapters || 0}</strong> chapters downloaded<br>
                 Engine: ${escapeHtml(s.engine || 'Auto')}
               </p>
-              <div class="series-card-actions" style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+              <div class="series-card-actions">
                 ${s.resume_chapter_id ? `
-                  <button class="btn btn-primary btn-resume-reading" style="padding: 7px 10px; font-size: 0.82rem; font-weight: 600; width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px; background: linear-gradient(135deg, #3b82f6, #6366f1); border: none; border-radius: 6px; box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Jump straight into exact chapter where you left">
-                    ▶ Start where you left (Ch. ${s.resume_chapter_num})
+                  <button class="btn btn-primary btn-resume-reading" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Start where you left (Ch. ${s.resume_chapter_num})">
+                    <span class="resume-text-full">▶ Start where you left (Ch. ${s.resume_chapter_num})</span>
+                    <span class="resume-text-mobile">▶ Ch. ${s.resume_chapter_num} (Resume)</span>
                   </button>
                 ` : ''}
-                <div style="display: flex; gap: 6px; width: 100%;">
-                  <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; flex: 1;" onclick="event.stopPropagation(); openSeriesModal(${s.id})">📖 View Chapters</button>
-                  <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(s.title)}')">🗑️</button>
+                <div class="series-card-btn-row">
+                  <button class="btn btn-secondary btn-view-chapters" onclick="event.stopPropagation(); openSeriesModal(${s.id})">
+                    <span class="view-text-full">📖 View Chapters</span>
+                    <span class="view-text-mobile">📖 Chapters</span>
+                  </button>
+                  <button class="btn btn-secondary btn-delete-series" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(s.title)}')">🗑️</button>
                 </div>
               </div>
             </div>
@@ -2401,7 +2405,10 @@ document.addEventListener("DOMContentLoaded", () => {
               </div>
             </div>
             <div class="search-card-actions">
-              <button class="btn btn-secondary btn-compare-sources" data-cluster-index="${idx}" onclick="event.stopPropagation(); window.openSourceComparisonModal(${idx})">🔍 Compare Sources</button>
+              <button class="btn btn-secondary btn-compare-sources" data-cluster-index="${idx}" onclick="event.stopPropagation(); window.openSourceComparisonModal(${idx})">
+                <span class="compare-text-full">🔍 Compare Sources</span>
+                <span class="compare-text-mobile">🔍 Sources</span>
+              </button>
               <button class="btn btn-primary btn-quick-dl" data-cluster-index="${idx}" onclick="event.stopPropagation(); window.quickDownloadCluster(${idx})">⚡ Quick DL</button>
             </div>
           </div>
