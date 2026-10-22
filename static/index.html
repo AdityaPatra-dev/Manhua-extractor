@@ -27,7 +27,7 @@
       <nav class="nav-tabs desktop-only-nav">
         <button class="nav-tab active" data-tab="tab-download">🔍 Discover</button>
         <button class="nav-tab" data-tab="tab-library">📚 Library <span id="library-count" class="tab-badge">0</span></button>
-        <button class="nav-tab" data-tab="tab-queue" id="nav-tab-queue">📥 Queue</button>
+        <button class="nav-tab" data-tab="tab-queue" id="nav-tab-queue">📥 Queue <span id="queue-badge-count" class="tab-badge hidden">0</span></button>
         <button class="nav-tab" data-tab="tab-lab">🧪 Lab</button>
         <button class="nav-tab" data-tab="tab-settings">⚙️ Settings</button>
         <button id="btn-theme-toggle" class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.85rem;" title="Toggle AMOLED Dark Theme">🌙</button>
@@ -258,7 +258,6 @@
           </div>
         </div>
       </div>
-      </div>
 
       <!-- Live Download Progress Monitor -->
       <div id="progress-card" class="card progress-card hidden">
@@ -267,7 +266,10 @@
             <h3 id="prog-series-title">Downloading Series</h3>
             <span id="prog-status-text" class="status-badge">Starting...</span>
           </div>
-          <span id="prog-panel-count" class="panel-counter">0 / 0</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="prog-panel-count" class="panel-counter">0 / 0</span>
+            <button id="btn-dismiss-progress" class="btn-clear" title="Dismiss progress card" style="font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 2px 6px; color: var(--text-muted); background: none; border: none;">&times;</button>
+          </div>
         </div>
 
         <div class="progress-bar-container">
@@ -289,6 +291,62 @@
         <div id="prog-completed-actions" class="hidden" style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; flex-wrap: wrap; gap: 0.75rem;">
           <button id="btn-prog-read-now" class="btn btn-primary" style="flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 6px;">📖 Read Chapter Now</button>
           <button id="btn-prog-view-library" class="btn btn-secondary" style="flex: 1; min-width: 140px; display: flex; align-items: center; justify-content: center; gap: 6px;">📚 View in Library</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- TAB: DOWNLOAD QUEUE & ACTIVITY -->
+    <main id="tab-queue" class="tab-content">
+      <div class="queue-container" style="max-width: 900px; margin: 0 auto; width: 100%; box-sizing: border-box;">
+        <div class="queue-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <h2 style="margin: 0; font-size: 1.4rem; display: flex; align-items: center; gap: 8px;">
+              📥 Download Queue
+              <span id="queue-header-count" class="tab-badge" style="font-size: 0.8rem; padding: 2px 8px;">0</span>
+            </h2>
+            <p class="text-muted" style="margin: 4px 0 0 0; font-size: 0.85rem;">Monitor multi-series downloads, pause, resume, or cancel active and queued jobs.</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-clear-queue-history" class="btn btn-secondary" style="font-size: 0.8rem; padding: 6px 12px;" title="Clear completed and cancelled jobs">🗑️ Clear History</button>
+          </div>
+        </div>
+
+        <!-- Active Download Section -->
+        <div id="queue-active-container" class="queue-section" style="margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1.05rem; margin-bottom: 0.75rem; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+            ⚡ Active Download
+          </h3>
+          <div id="queue-active-card" class="card progress-card" style="margin: 0;">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Queued Downloads Section -->
+        <div id="queue-pending-container" class="queue-section" style="margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1.05rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+            ⏳ Waiting in Queue (<span id="queue-pending-count">0</span>)
+          </h3>
+          <div id="queue-pending-list" class="queue-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Empty State -->
+        <div id="queue-empty-state" class="empty-state hidden" style="text-align: center; padding: 3rem 1rem;">
+          <div style="font-size: 3rem; margin-bottom: 0.75rem;">📥</div>
+          <h3 style="margin-bottom: 0.5rem;">Download queue is empty</h3>
+          <p class="text-muted" style="margin-bottom: 1.25rem;">Browse or search any manga and select chapters to download. They will appear here in real-time.</p>
+          <button class="btn btn-primary" onclick="switchTab('tab-download')">🔍 Browse & Download</button>
+        </div>
+
+        <!-- Completed / History Section -->
+        <div id="queue-history-container" class="queue-section">
+          <h3 style="font-size: 1.05rem; margin-bottom: 0.75rem; display: flex; align-items: center; gap: 6px;">
+            📜 Recent Activity (<span id="queue-history-count">0</span>)
+          </h3>
+          <div id="queue-history-list" class="queue-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+            <!-- Dynamically populated -->
+          </div>
         </div>
       </div>
     </main>
@@ -633,29 +691,29 @@
       <div class="modal-body">
         <div class="modal-series-info">
           <img id="modal-series-cover" src="" alt="Cover" class="modal-cover">
-          <div style="flex: 1;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+          <div class="modal-series-details-col" style="flex: 1 1 0%; min-width: 0; width: 100%; overflow: hidden;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
               <span id="modal-engine-badge" class="preview-badge">Engine</span>
-              <button id="modal-btn-delete-series" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); cursor: pointer;" title="Delete this series and downloaded files">🗑️ Delete Manhua</button>
+              <button id="modal-btn-delete-series" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); cursor: pointer;" title="Delete this series and downloaded files">🗑️ Delete Manhua</button>
             </div>
-            <div id="modal-meta-tags" style="margin: 6px 0; font-size: 0.85rem; color: var(--text-muted);"></div>
-            <div id="modal-source-url-box" style="margin: 8px 0; display: none;"></div>
-            <div id="modal-resume-box" style="margin: 8px 0; display: none;"></div>
-            <p id="modal-synopsis" class="modal-synopsis"></p>
+            <div id="modal-meta-tags" style="margin: 6px 0; font-size: 0.82rem; color: var(--text-muted); word-break: break-word;"></div>
+            <div id="modal-source-url-box" style="margin: 8px 0; display: none; width: 100%; min-width: 0; overflow: hidden;"></div>
+            <div id="modal-resume-box" style="margin: 8px 0; display: none; width: 100%; min-width: 0;"></div>
+            <p id="modal-synopsis" class="modal-synopsis" style="word-break: break-word; overflow-wrap: break-word;"></p>
             
             <!-- Storage Location Display -->
-            <div id="modal-storage-box" style="margin: 8px 0; padding: 8px 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 6px;">
+            <div id="modal-storage-box" class="modal-storage-box" style="margin: 8px 0; padding: 8px 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 6px; width: 100%; box-sizing: border-box; overflow: hidden;">
               <div style="font-size: 0.78rem; font-weight: 600; color: var(--accent); margin-bottom: 4px;">📁 Stored At:</div>
-              <div style="display: flex; gap: 6px; align-items: center;">
-                <input type="text" id="modal-storage-path" readonly style="flex: 1; padding: 4px 8px; font-size: 0.78rem; font-family: monospace; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; text-overflow: ellipsis;">
-                <button id="btn-copy-storage-path" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" title="Copy file path to clipboard">📋 Copy</button>
-                <button id="btn-open-storage-folder" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" title="Open storage directory">📂 Open</button>
+              <div style="display: flex; gap: 6px; align-items: center; width: 100%; min-width: 0;">
+                <input type="text" id="modal-storage-path" readonly style="flex: 1 1 0%; min-width: 0; width: 0; padding: 4px 8px; font-size: 0.75rem; font-family: monospace; background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                <button id="btn-copy-storage-path" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; flex-shrink: 0;" title="Copy file path to clipboard">📋 Copy</button>
+                <button id="btn-open-storage-folder" class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem; flex-shrink: 0;" title="Open storage directory">📂 Open</button>
               </div>
             </div>
 
-            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
-              <button id="modal-btn-sync-search-cover" class="btn btn-secondary" style="font-size: 0.8rem;">🖼️ Sync Global Search Cover</button>
-              <button id="modal-btn-refresh-meta" class="btn btn-secondary" style="font-size: 0.8rem;">🔄 Fetch MangaDex Metadata</button>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; width: 100%;">
+              <button id="modal-btn-sync-search-cover" class="btn btn-secondary" style="font-size: 0.78rem; flex: 1 1 auto;">🖼️ Sync Global Cover</button>
+              <button id="modal-btn-refresh-meta" class="btn btn-secondary" style="font-size: 0.78rem; flex: 1 1 auto;">🔄 Fetch MangaDex Meta</button>
             </div>
           </div>
         </div>

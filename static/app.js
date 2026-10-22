@@ -53,6 +53,8 @@ document.addEventListener("DOMContentLoaded", () => {
       loadDiagnosticsTable();
     } else if (targetId === "tab-settings") {
       loadSettings();
+    } else if (targetId === "tab-queue") {
+      fetchAndRenderQueue();
     }
   }
 
@@ -123,8 +125,20 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    if (coverUrl) {
-      currentCatalogCoverUrl = coverUrl;
+    currentCatalogCoverUrl = coverUrl || "";
+
+    const coverImg = document.getElementById("cat-series-cover");
+    if (coverImg) {
+      coverImg.onerror = function() {
+        this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="110"><rect fill="%231c2640" width="80" height="110"/><text fill="%2394a3b8" x="50%" y="50%" text-anchor="middle" font-size="10">No Cover</text></svg>';
+      };
+      if (coverUrl) {
+        coverImg.src = `/api/cover-proxy?url=${encodeURIComponent(coverUrl)}`;
+        coverImg.style.display = "block";
+      } else {
+        // Clear previous cover immediately so it does not stay visible for a new direct URL
+        coverImg.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="110"><rect fill="%231c2640" width="80" height="110"/><text fill="%2394a3b8" x="50%" y="50%" text-anchor="middle" font-size="10">Loading...</text></svg>';
+      }
     }
 
     if (!isSilent && btnInspect) {
@@ -136,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/api/inspect-series", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, cover_url: currentCatalogCoverUrl || undefined })
+        body: JSON.stringify({ url, cover_url: coverUrl || undefined })
       });
       const data = await res.json();
 
@@ -144,17 +158,11 @@ document.addEventListener("DOMContentLoaded", () => {
         currentCatalogChapters = data.chapters || [];
         currentCatalogUrl = url;
         currentSeriesTitle = data.series_title || "Unknown Series";
-        if (data.cover_url) {
-          currentCatalogCoverUrl = data.cover_url;
-        }
+        currentCatalogCoverUrl = data.cover_url || coverUrl || "";
 
         // Populate catalog card header
-        const coverImg = document.getElementById("cat-series-cover");
         if (coverImg) {
-          coverImg.onerror = function() {
-            this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="110"><rect fill="%231c2640" width="80" height="110"/><text fill="%2394a3b8" x="50%" y="50%" text-anchor="middle" font-size="10">No Cover</text></svg>';
-          };
-          const effCover = currentCatalogCoverUrl || data.cover_url;
+          const effCover = currentCatalogCoverUrl;
           if (effCover) {
             coverImg.src = `/api/cover-proxy?url=${encodeURIComponent(effCover)}`;
             coverImg.style.display = "block";
@@ -179,7 +187,8 @@ document.addEventListener("DOMContentLoaded", () => {
           synElem.textContent = data.synopsis || "Select chapters below to download or read.";
         }
 
-        renderCatalogChapters(catFilterInput ? catFilterInput.value.trim() : "");
+        if (catFilterInput) catFilterInput.value = "";
+        renderCatalogChapters("");
         if (seriesCatalogCard) {
           seriesCatalogCard.classList.remove("hidden");
           if (!isSilent) {
@@ -450,6 +459,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const progressCard = document.getElementById("progress-card");
   const btnPauseDownload = document.getElementById("btn-pause-download");
   const btnStopDownload = document.getElementById("btn-stop-download");
+  const btnDismissProgress = document.getElementById("btn-dismiss-progress");
+
+  if (btnDismissProgress && progressCard) {
+    btnDismissProgress.addEventListener("click", () => {
+      progressCard.classList.add("hidden");
+    });
+  }
 
   if (btnPauseDownload) {
     btnPauseDownload.addEventListener("click", async () => {
@@ -566,6 +582,9 @@ document.addEventListener("DOMContentLoaded", () => {
       try {
         const state = JSON.parse(event.data);
 
+        // Render download queue view
+        renderDownloadQueue(state);
+
         document.getElementById("prog-series-title").textContent = state.series_title || "Downloading Series";
         document.getElementById("prog-status-text").textContent = state.status.toUpperCase();
         document.getElementById("prog-message").textContent = state.message;
@@ -584,8 +603,6 @@ document.addEventListener("DOMContentLoaded", () => {
           lastHandledProgressStatus = "running";
           if (progActions) progActions.classList.add("hidden");
           if (progControls) progControls.style.display = "flex";
-          if (btnStartDownload) btnStartDownload.disabled = true;
-          if (btnDownloadSelected) btnDownloadSelected.disabled = true;
 
           if (btnPauseDownload) {
             btnPauseDownload.disabled = false;
@@ -661,6 +678,22 @@ document.addEventListener("DOMContentLoaded", () => {
     return String(str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
   }
 
+  function cleanTitle(title) {
+    if (!title) return "";
+    return String(title)
+      .replace(/â/g, "'")
+      .replace(/â/g, "–")
+      .replace(/â/g, "—")
+      .replace(/â/g, '"')
+      .replace(/â/g, '"')
+      .replace(/&rsquo;/g, "'")
+      .replace(/&lsquo;/g, "'")
+      .replace(/&rdquo;/g, '"')
+      .replace(/&ldquo;/g, '"')
+      .replace(/&amp;/g, '&')
+      .trim();
+  }
+
   // --- Library Tab ---
   let libraryDataCache = [];
   async function loadLibrary() {
@@ -676,33 +709,34 @@ document.addEventListener("DOMContentLoaded", () => {
         if (lCount) lCount.textContent = countTxt;
         const dCount = document.getElementById("drawer-library-count");
         if (dCount) dCount.textContent = countTxt;
-        grid.innerHTML = data.series.map((s) => `
+        grid.innerHTML = data.series.map((s) => {
+          const title = cleanTitle(s.title);
+          return `
           <div class="series-card" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
-            <img class="series-cover" src="/api/series/${s.id}/cover" alt="${escapeAttr(s.title)}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
+            <div class="series-cover-wrapper">
+              <img class="series-cover" src="/api/series/${s.id}/cover" alt="${escapeAttr(title)}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
+              <div class="series-badge-overlay">
+                <span class="series-badge-count">📥 ${s.downloaded_chapters || 0} Ch</span>
+              </div>
+            </div>
             <div class="series-details">
-              <h4 class="series-title">${escapeHtml(s.title)}</h4>
-              <p class="series-meta">
-                📥 <strong>${s.downloaded_chapters || 0}</strong> chapters downloaded<br>
-                Engine: ${escapeHtml(s.engine || 'Auto')}
-              </p>
+              <h4 class="series-title" title="${escapeAttr(title)}">${escapeHtml(title)}</h4>
               <div class="series-card-actions">
                 ${s.resume_chapter_id ? `
-                  <button class="btn btn-primary btn-resume-reading" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Start where you left (Ch. ${s.resume_chapter_num})">
-                    <span class="resume-text-full">▶ Start where you left (Ch. ${s.resume_chapter_num})</span>
-                    <span class="resume-text-mobile">▶ Ch. ${s.resume_chapter_num} (Resume)</span>
+                  <button class="btn btn-primary btn-card-resume" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Resume Ch. ${s.resume_chapter_num}">
+                    ▶ Ch. ${s.resume_chapter_num} (Resume)
                   </button>
                 ` : ''}
                 <div class="series-card-btn-row">
-                  <button class="btn btn-secondary btn-view-chapters" onclick="event.stopPropagation(); openSeriesModal(${s.id})">
-                    <span class="view-text-full">📖 View Chapters</span>
-                    <span class="view-text-mobile">📖 Chapters</span>
+                  <button class="btn btn-secondary btn-card-chapters" onclick="event.stopPropagation(); openSeriesModal(${s.id})">
+                    📖 Chapters
                   </button>
-                  <button class="btn btn-secondary btn-delete-series" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(s.title)}')">🗑️</button>
+                  <button class="btn btn-secondary btn-card-delete" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(title)}')">🗑️</button>
                 </div>
               </div>
             </div>
           </div>
-        `).join("");
+        `}).join("");
       } else {
         const lCount = document.getElementById("library-count");
         if (lCount) lCount.textContent = "0";
@@ -767,7 +801,8 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await res.json();
       if (data.success && data.series) {
         const s = data.series;
-        document.getElementById("modal-series-title").textContent = s.title;
+        const safeTitle = cleanTitle(s.title);
+        document.getElementById("modal-series-title").textContent = safeTitle;
         const coverEl = document.getElementById("modal-series-cover");
         if (coverEl) {
           coverEl.onerror = function() { this.src = '/static/placeholder.jpg'; };
@@ -777,10 +812,10 @@ document.addEventListener("DOMContentLoaded", () => {
         document.getElementById("modal-synopsis").textContent = s.synopsis || "Tracked in local library database.";
 
         const metaParts = [];
-        if (s.author) metaParts.push(`✍️ <strong>${s.author}</strong>`);
-        if (s.artist) metaParts.push(`🎨 <strong>${s.artist}</strong>`);
-        if (s.genres) metaParts.push(`🏷️ ${s.genres}`);
-        if (s.year) metaParts.push(`📅 ${s.year}`);
+        if (s.author) metaParts.push(`✍️ <strong>${escapeHtml(cleanTitle(s.author))}</strong>`);
+        if (s.artist) metaParts.push(`🎨 <strong>${escapeHtml(cleanTitle(s.artist))}</strong>`);
+        if (s.genres) metaParts.push(`🏷️ ${escapeHtml(s.genres)}`);
+        if (s.year) metaParts.push(`📅 ${escapeHtml(s.year)}`);
         document.getElementById("modal-meta-tags").innerHTML = metaParts.length > 0 ? metaParts.join(" &bull; ") : "<em>No author/genre metadata cached yet.</em>";
 
         // Manhua source URL in bio/card
@@ -789,10 +824,10 @@ document.addEventListener("DOMContentLoaded", () => {
           if (s.source_url) {
             sourceUrlBox.style.display = "block";
             sourceUrlBox.innerHTML = `
-              <div style="display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.7); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 6px;">
-                <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap;">🔗 URL:</span>
-                <a href="${escapeAttr(s.source_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: underline; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;" title="${escapeAttr(s.source_url)}">${escapeHtml(s.source_url)}</a>
-                <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem; white-space: nowrap;" onclick="navigator.clipboard.writeText('${escapeAttr(s.source_url)}'); showToast('Manhua URL copied!', 'success');" title="Copy URL">📋 Copy</button>
+              <div style="display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.7); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 6px; width: 100%; box-sizing: border-box; min-width: 0;">
+                <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap; flex-shrink: 0;">🔗 URL:</span>
+                <a href="${escapeAttr(s.source_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: underline; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 0%; min-width: 0;" title="${escapeAttr(s.source_url)}">${escapeHtml(s.source_url)}</a>
+                <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem; white-space: nowrap; flex-shrink: 0;" onclick="navigator.clipboard.writeText('${escapeAttr(s.source_url)}'); showToast('Manhua URL copied!', 'success');" title="Copy URL">📋 Copy</button>
               </div>
             `;
           } else {
@@ -2630,12 +2665,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // --- Queue Nav Tab ---
   const navTabQueue = document.getElementById("nav-tab-queue");
   navTabQueue?.addEventListener("click", () => {
-    switchTab("tab-download");
-    const progCard = document.getElementById("progress-card");
-    if (progCard) {
-      progCard.classList.remove("hidden");
-      progCard.scrollIntoView({ behavior: "smooth" });
-    }
+    switchTab("tab-queue");
   });
 
   // --- Reader Display Filters ---
@@ -2839,9 +2869,250 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.target === commandPaletteModal) closeCommandPalette();
   });
 
+  // --- Download Queue View & Multi-Series Management ---
+  async function fetchAndRenderQueue() {
+    try {
+      const res = await fetch("/api/queue");
+      const data = await res.json();
+      if (data.success) {
+        renderDownloadQueue(data);
+      }
+    } catch (e) {
+      console.warn("Failed to fetch download queue:", e);
+    }
+  }
+
+  function renderDownloadQueue(state) {
+    if (!state) return;
+
+    const activeJob = state.active_job;
+    const queueList = state.queue || [];
+    const historyList = state.history || [];
+    const totalCount = state.queue_count !== undefined ? state.queue_count : (queueList.length + (activeJob ? 1 : 0));
+
+    // Update navigation and drawer badge counters
+    const navBadge = document.getElementById("queue-badge-count");
+    if (navBadge) {
+      navBadge.textContent = totalCount;
+      if (totalCount > 0) navBadge.classList.remove("hidden");
+      else navBadge.classList.add("hidden");
+    }
+
+    const drawerBadge = document.getElementById("drawer-queue-count");
+    if (drawerBadge) {
+      drawerBadge.textContent = totalCount;
+      if (totalCount > 0) drawerBadge.classList.remove("hidden");
+      else drawerBadge.classList.add("hidden");
+    }
+
+    const headerCount = document.getElementById("queue-header-count");
+    if (headerCount) headerCount.textContent = totalCount;
+
+    const pendingCount = document.getElementById("queue-pending-count");
+    if (pendingCount) pendingCount.textContent = queueList.length;
+
+    const historyCount = document.getElementById("queue-history-count");
+    if (historyCount) historyCount.textContent = historyList.length;
+
+    // 1. Render Active Download Card
+    const activeContainer = document.getElementById("queue-active-container");
+    const activeCard = document.getElementById("queue-active-card");
+    if (activeContainer && activeCard) {
+      if (activeJob) {
+        activeContainer.classList.remove("hidden");
+        const title = cleanTitle(activeJob.series_title || state.series_title || "Downloading Series");
+        const fmt = (activeJob.format || "pdf").toLowerCase();
+        const status = (activeJob.status || state.status || "downloading").toLowerCase();
+        const isPaused = activeJob.is_paused || state.is_paused || status === "paused";
+        const totalPanels = state.total_panels || activeJob.total_panels || 0;
+        const currentPanel = state.current_panel || activeJob.current_panel || 0;
+        const pct = totalPanels > 0 ? Math.round((currentPanel / totalPanels) * 100) : 0;
+        const chIdx = state.chapter_index || (activeJob.chapters_processed + 1);
+        const chTot = state.total_chapters || activeJob.total_chapters || 1;
+        const chNum = state.chapter_num || activeJob.current_chapter_num || chIdx;
+        const cover = activeJob.cover_url || "";
+
+        activeCard.innerHTML = `
+          <div class="progress-header" style="align-items: flex-start; gap: 12px;">
+            <div style="display: flex; gap: 12px; align-items: center; flex: 1 1 0%; min-width: 0;">
+              ${cover ? `<img src="${escapeHtml(cover)}" class="queue-thumb" alt="Cover" onerror="this.outerHTML='<div class=\\'queue-thumb\\'>📖</div>'">` : `<div class="queue-thumb">📖</div>`}
+              <div style="flex: 1 1 0%; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                  <h3 style="margin: 0; font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">${escapeHtml(title)}</h3>
+                  <span class="badge-fmt badge-fmt-${fmt}">${fmt.toUpperCase()}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+                  <span class="badge-status badge-status-${status}">${status.toUpperCase()}</span>
+                  <span style="font-size: 0.8rem; color: var(--text-muted);">Chapter ${chNum} (${chIdx} of ${chTot})</span>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0;">
+              <span class="panel-counter" style="font-size: 1.05rem;">${currentPanel} / ${totalPanels}</span>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">${pct}%</span>
+            </div>
+          </div>
+
+          <div class="progress-bar-container" style="margin-top: 8px;">
+            <div class="progress-bar-fill" style="width: ${pct}%;"></div>
+          </div>
+
+          <div class="progress-details" style="margin-top: 6px; font-size: 0.8rem; color: var(--text-muted);">
+            <span>${escapeHtml(activeJob.message || state.message || "Downloading panels...")}</span>
+          </div>
+
+          <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end;">
+            ${isPaused 
+              ? `<button class="btn btn-primary btn-sm" onclick="window.resumeQueueJob('${activeJob.id}')" style="display: flex; align-items: center; gap: 4px;">▶️ Resume</button>`
+              : `<button class="btn btn-secondary btn-sm" onclick="window.pauseQueueJob('${activeJob.id}')" style="display: flex; align-items: center; gap: 4px;">⏸️ Pause</button>`
+            }
+            <button class="btn btn-danger btn-sm" onclick="window.cancelQueueJob('${activeJob.id}')" style="display: flex; align-items: center; gap: 4px;">⏹️ Cancel</button>
+          </div>
+        `;
+      } else {
+        activeContainer.classList.add("hidden");
+      }
+    }
+
+    // 2. Render Pending Queue List
+    const pendingContainer = document.getElementById("queue-pending-container");
+    const pendingList = document.getElementById("queue-pending-list");
+    if (pendingContainer && pendingList) {
+      if (queueList.length > 0) {
+        pendingContainer.classList.remove("hidden");
+        pendingList.innerHTML = queueList.map((job, idx) => {
+          const title = cleanTitle(job.series_title || "Pending Series");
+          const fmt = (job.format || "pdf").toLowerCase();
+          const cover = job.cover_url || "";
+          const isPaused = job.is_paused || job.status === "paused";
+          return `
+            <div class="queue-card-item">
+              ${cover ? `<img src="${escapeHtml(cover)}" class="queue-thumb" alt="Cover" onerror="this.outerHTML='<div class=\\'queue-thumb\\'>📖</div>'">` : `<div class="queue-thumb">📖</div>`}
+              <div class="queue-card-info">
+                <div class="queue-card-title">${escapeHtml(title)}</div>
+                <div class="queue-card-meta">
+                  <span class="badge-fmt badge-fmt-${fmt}">${fmt.toUpperCase()}</span>
+                  <span class="badge-status ${isPaused ? 'badge-status-paused' : 'badge-status-queued'}">${isPaused ? 'PAUSED' : 'WAITING'}</span>
+                  <span>📦 ${job.total_chapters} chapter(s)</span>
+                  <span>#${idx + 1} in queue</span>
+                </div>
+              </div>
+              <div class="queue-card-actions">
+                ${isPaused
+                  ? `<button class="btn btn-secondary btn-sm" onclick="window.resumeQueueJob('${job.id}')" title="Resume">▶️</button>`
+                  : `<button class="btn btn-secondary btn-sm" onclick="window.pauseQueueJob('${job.id}')" title="Pause">⏸️</button>`
+                }
+                <button class="btn btn-danger btn-sm" onclick="window.cancelQueueJob('${job.id}')" title="Remove from queue">❌</button>
+              </div>
+            </div>
+          `;
+        }).join("");
+      } else {
+        pendingContainer.classList.add("hidden");
+      }
+    }
+
+    // 3. Render History List
+    const historyContainer = document.getElementById("queue-history-container");
+    const historyListElem = document.getElementById("queue-history-list");
+    if (historyContainer && historyListElem) {
+      if (historyList.length > 0) {
+        historyContainer.classList.remove("hidden");
+        historyListElem.innerHTML = historyList.map(h => {
+          const title = cleanTitle(h.series_title || "Completed Series");
+          const fmt = (h.format || "pdf").toLowerCase();
+          const status = (h.status || "completed").toLowerCase();
+          return `
+            <div class="queue-card-item" style="padding: 8px 12px; opacity: 0.9;">
+              <div style="font-size: 1.2rem;">${status === 'completed' ? '✅' : (status === 'cancelled' ? '⏹️' : '⚠️')}</div>
+              <div class="queue-card-info">
+                <div style="font-weight: 600; font-size: 0.9rem; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(title)}</div>
+                <div class="queue-card-meta">
+                  <span class="badge-fmt badge-fmt-${fmt}">${fmt.toUpperCase()}</span>
+                  <span class="badge-status badge-status-${status}">${status.toUpperCase()}</span>
+                  <span>${h.chapters_processed || 0} / ${h.total_chapters || 0} ch</span>
+                  <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 250px;">${escapeHtml(h.message || "")}</span>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("");
+      } else {
+        historyContainer.classList.add("hidden");
+      }
+    }
+
+    // 4. Empty State
+    const emptyState = document.getElementById("queue-empty-state");
+    if (emptyState) {
+      if (!activeJob && queueList.length === 0 && historyList.length === 0) {
+        emptyState.classList.remove("hidden");
+      } else {
+        emptyState.classList.add("hidden");
+      }
+    }
+  }
+
+  // Expose queue control functions globally
+  window.pauseQueueJob = async function(jobId) {
+    triggerHaptic([10]);
+    try {
+      const res = await fetch(`/api/queue/pause/${jobId}`, { method: "POST" });
+      const data = await res.json();
+      if (!data.success) showToast(data.message || "Failed to pause", "error");
+      else {
+        showToast("Download paused", "info");
+        fetchAndRenderQueue();
+      }
+    } catch (e) {
+      showToast("Error pausing: " + e.message, "error");
+    }
+  };
+
+  window.resumeQueueJob = async function(jobId) {
+    triggerHaptic([10]);
+    try {
+      const res = await fetch(`/api/queue/resume/${jobId}`, { method: "POST" });
+      const data = await res.json();
+      if (!data.success) showToast(data.message || "Failed to resume", "error");
+      else {
+        showToast("Download resumed", "info");
+        fetchAndRenderQueue();
+      }
+    } catch (e) {
+      showToast("Error resuming: " + e.message, "error");
+    }
+  };
+
+  window.cancelQueueJob = async function(jobId) {
+    triggerHaptic([15]);
+    try {
+      const res = await fetch(`/api/queue/cancel/${jobId}`, { method: "POST" });
+      const data = await res.json();
+      if (!data.success) showToast(data.message || "Failed to cancel", "error");
+      else {
+        showToast("Download cancelled", "info");
+        fetchAndRenderQueue();
+      }
+    } catch (e) {
+      showToast("Error cancelling: " + e.message, "error");
+    }
+  };
+
+  document.getElementById("btn-clear-queue-history")?.addEventListener("click", async () => {
+    try {
+      await fetch("/api/queue/clear", { method: "POST" });
+      fetchAndRenderQueue();
+      showToast("Download history cleared", "info");
+    } catch (e) {
+      showToast("Failed to clear history: " + e.message, "error");
+    }
+  });
+
   // Initial load
   loadLibrary();
   listenToProgress();
+  fetchAndRenderQueue();
 });
 
 

@@ -195,8 +195,15 @@ body {
   box-sizing: border-box;
 }
 
+.sidebar-drawer:not(.open) {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 .sidebar-drawer.open {
   transform: translateX(0);
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 
 .drawer-header {
@@ -515,7 +522,7 @@ input:focus, select:focus {
 
 .library-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 1.25rem;
 }
 
@@ -526,39 +533,164 @@ input:focus, select:focus {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+  min-width: 0;
+  width: 100%;
 }
 
 .series-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  border-color: var(--accent);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
+}
+
+.series-cover-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  background: var(--bg-secondary);
 }
 
 .series-cover {
   width: 100%;
-  height: 250px;
+  height: 100%;
   object-fit: cover;
-  background: var(--bg-secondary);
+  display: block;
+  transition: transform 0.3s ease;
+}
+
+.series-card:hover .series-cover {
+  transform: scale(1.04);
+}
+
+.series-badge-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+}
+
+.series-badge-count {
+  background: rgba(11, 15, 25, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  letter-spacing: 0.02em;
 }
 
 .series-details {
-  padding: 1rem;
+  padding: 0.75rem;
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .series-title {
-  font-size: 1rem;
+  font-size: 0.92rem;
   font-weight: 600;
-  margin-bottom: 0.4rem;
+  color: var(--text-main);
   line-height: 1.3;
+  margin-bottom: 0.5rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+  min-height: 2.4em;
 }
 
 .series-meta {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
+  line-height: 1.25;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.series-card-actions {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.btn-card-resume {
+  width: 100%;
+  height: 34px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.btn-card-resume:hover {
+  background: linear-gradient(135deg, #4f46e5, #4338ca);
+}
+
+.series-card-btn-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.btn-card-chapters {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  border-radius: 8px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-card-delete {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger);
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.08);
+  cursor: pointer;
 }
 
 /* Diagnostic Lab */
@@ -1340,10 +1472,11 @@ input:focus, select:focus {
   /* 2-column mobile manga library grid - strictly bounded to screen */
   .library-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    gap: 0.55rem !important;
+    gap: 0.5rem !important;
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+    padding: 0 !important;
   }
 
   .series-card {
@@ -1356,94 +1489,57 @@ input:focus, select:focus {
     flex-direction: column !important;
   }
 
-  .series-cover {
-    width: 100% !important;
-    height: auto !important;
+  .series-cover-wrapper {
     aspect-ratio: 2 / 3 !important;
-    object-fit: cover !important;
   }
 
   .series-details {
-    padding: 0.45rem !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
+    padding: 0.45rem 0.55rem !important;
     box-sizing: border-box !important;
-    flex: 1 !important;
-    display: flex !important;
-    flex-direction: column !important;
+    width: 100% !important;
+    min-width: 0 !important;
   }
 
   .series-title {
-    font-size: 0.82rem !important;
+    font-size: 0.8rem !important;
     line-height: 1.25 !important;
-    margin-bottom: 0.25rem !important;
-    display: -webkit-box !important;
-    -webkit-line-clamp: 2 !important;
-    -webkit-box-orient: vertical !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    word-break: break-word !important;
-  }
-
-  .series-meta {
-    font-size: 0.7rem !important;
-    line-height: 1.2 !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
+    margin-bottom: 0.35rem !important;
+    min-height: 2.2em !important;
   }
 
   .series-card-actions {
-    margin-top: 0.35rem !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 4px !important;
+    margin-top: auto !important;
+    gap: 5px !important;
     width: 100% !important;
     min-width: 0 !important;
-    box-sizing: border-box !important;
   }
 
-  .series-card-actions .btn {
-    width: 100% !important;
-    min-width: 0 !important;
-    padding: 0 0.4rem !important;
-    font-size: 0.72rem !important;
-    flex: 1 !important;
-    justify-content: center !important;
-    height: 30px !important;
-    line-height: 1 !important;
-    white-space: nowrap !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    border-radius: 6px !important;
-  }
-
-  .btn-resume-reading {
+  .btn-card-resume {
     height: 32px !important;
-    font-size: 0.74rem !important;
-    font-weight: 600 !important;
+    font-size: 0.76rem !important;
+    border-radius: 6px !important;
+    width: 100% !important;
+    padding: 0 4px !important;
   }
 
   .series-card-btn-row {
-    display: flex !important;
-    gap: 4px !important;
+    gap: 5px !important;
     width: 100% !important;
     min-width: 0 !important;
-    box-sizing: border-box !important;
   }
 
-  .series-card-btn-row .btn-view-chapters {
-    flex: 1 !important;
-    min-width: 0 !important;
+  .btn-card-chapters {
+    height: 30px !important;
+    font-size: 0.74rem !important;
+    border-radius: 6px !important;
+    padding: 0 4px !important;
   }
 
-  .series-card-btn-row .btn-delete-series {
-    flex: 0 0 32px !important;
-    width: 32px !important;
-    padding: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
+  .btn-card-delete {
+    height: 30px !important;
+    width: 30px !important;
+    flex: 0 0 30px !important;
+    border-radius: 6px !important;
   }
 
   /* Responsive Action Text Toggle for Mobile */
@@ -2070,23 +2166,32 @@ input:focus, select:focus {
   }
 
   /* Mobile Bottom Sheet for Series Details Modal */
-  .modal-backdrop {
+  .modal-backdrop,
+  .modal-overlay {
     padding: 0 !important;
     align-items: flex-end !important;
+    overflow-x: hidden !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
   }
 
-  .modal-card {
-    max-width: 100% !important;
+  .modal-card,
+  .modal-content {
+    max-width: 100vw !important;
     width: 100% !important;
     max-height: 90vh !important;
     border-radius: 18px 18px 0 0 !important;
     margin: 0 !important;
     box-sizing: border-box !important;
+    overflow-x: hidden !important;
     animation: slideUpSheet 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
 
   .modal-header {
     padding: 0.75rem 1rem !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   .modal-header h3 {
@@ -2099,11 +2204,31 @@ input:focus, select:focus {
 
   .modal-body {
     padding: 0.75rem 1rem !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
   }
 
   .modal-series-info {
+    display: flex !important;
+    flex-direction: row !important;
     gap: 0.75rem !important;
     margin-bottom: 0.75rem !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  .modal-series-details-col {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
   }
 
   .modal-cover {
@@ -2112,9 +2237,49 @@ input:focus, select:focus {
     flex-shrink: 0 !important;
   }
 
+  .modal-storage-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
+  }
+
+  #modal-storage-path {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+    width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #modal-source-url-box {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  #modal-source-url-box a {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  #modal-synopsis {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+  }
+
   .modal-chapters-list {
     max-height: 48vh !important;
     gap: 6px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
   }
 
   .modal-chapter-row {
@@ -2124,6 +2289,7 @@ input:focus, select:focus {
     padding: 8px 10px !important;
     box-sizing: border-box !important;
     flex-shrink: 0 !important;
+    width: 100% !important;
   }
 
   .modal-chapter-row > div:first-child {
@@ -2132,6 +2298,8 @@ input:focus, select:focus {
     align-items: center !important;
     gap: 4px !important;
     font-size: 0.8rem !important;
+    width: 100% !important;
+    min-width: 0 !important;
   }
 
   .modal-chapter-row > div:last-child {
@@ -2429,6 +2597,141 @@ body.theme-amoled .modal-card {
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid var(--border-color);
+}
+
+/* ==========================================================================
+   Download Queue & Multi-Series Management
+   ========================================================================== */
+.queue-container {
+  padding-bottom: 2rem;
+}
+
+.queue-card-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.queue-card-item:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.queue-thumb {
+  width: 44px;
+  height: 60px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+}
+
+.queue-card-info {
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+.queue-card-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.queue-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.queue-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.badge-fmt {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.badge-fmt-pdf {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.badge-fmt-cbz {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.badge-fmt-folder {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.badge-status {
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.badge-status-downloading {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+}
+
+.badge-status-queued {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fde047;
+  border: 1px solid rgba(234, 179, 8, 0.4);
+}
+
+.badge-status-paused {
+  background: rgba(249, 115, 22, 0.2);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.4);
+}
+
+.badge-status-completed {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.badge-status-error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.badge-status-cancelled {
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.4);
 }
 
 

@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+import time
 import re
 import json
 import asyncio
@@ -210,7 +211,7 @@ async def inspect_series_catalog(req: InspectSeriesRequest):
             return JSONResponse(res, status_code=400)
 
         # Prioritize search cover passed from frontend or resolve from global search
-        if req.cover_url:
+        if req.cover_url and not res.get("cover_url"):
             res["cover_url"] = req.cover_url
         elif not res.get("cover_url"):
             from core.search.clustering import resolve_cover_from_search
@@ -408,18 +409,177 @@ def save_series_cover_locally(
         return target_path
     return None
 
-async def run_download_job(req: DownloadRequest):
+class DownloadQueueManager:
+    """Manages active and queued multi-series chapter downloads with pause, resume, and cancellation."""
+    def __init__(self):
+        self.queue: List[Dict[str, Any]] = []
+        self.history: List[Dict[str, Any]] = []
+        self.active_job: Optional[Dict[str, Any]] = None
+        self._lock = asyncio.Lock()
+        self._worker_task: Optional[asyncio.Task] = None
+
+    def enqueue(self, req: DownloadRequest) -> Dict[str, Any]:
+        job_id = f"job_{int(time.time() * 1000)}_{len(self.queue) + len(self.history) + 1}"
+        urls = [u.strip() for u in req.chapter_urls if u.strip()] if req.chapter_urls else []
+        target_count = len(urls) if urls else (req.count if req.mode in ("range", "single") else 999)
+        if not urls and req.mode == "single":
+            target_count = 1
+
+        title_display = req.series_title or "Analyzing Series..."
+        job = {
+            "id": job_id,
+            "url": req.url,
+            "series_title": title_display,
+            "cover_url": req.cover_url,
+            "format": (req.format or "pdf").lower(),
+            "total_chapters": target_count,
+            "chapters_processed": 0,
+            "current_chapter_num": None,
+            "current_panel": 0,
+            "total_panels": 0,
+            "status": "queued",
+            "message": "Waiting in queue...",
+            "req": req,
+            "is_paused": False,
+            "is_cancelled": False,
+            "created_at": time.time()
+        }
+        self.queue.append(job)
+        self.ensure_worker()
+        return job
+
+    def ensure_worker(self):
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                if self._worker_task is None or self._worker_task.done():
+                    self._worker_task = loop.create_task(self._worker_loop())
+        except RuntimeError:
+            pass
+
+    def pause_job(self, job_id: str) -> bool:
+        if self.active_job and self.active_job["id"] == job_id:
+            self.active_job["is_paused"] = True
+            self.active_job["status"] = "paused"
+            self.active_job["message"] = "Download paused."
+            global download_progress
+            download_progress["is_paused"] = True
+            download_progress["status"] = "paused"
+            download_progress["message"] = "Download paused."
+            return True
+        for j in self.queue:
+            if j["id"] == job_id:
+                j["is_paused"] = True
+                j["status"] = "paused"
+                j["message"] = "Paused in queue."
+                return True
+        return False
+
+    def resume_job(self, job_id: str) -> bool:
+        if self.active_job and self.active_job["id"] == job_id:
+            self.active_job["is_paused"] = False
+            self.active_job["status"] = "downloading"
+            self.active_job["message"] = "Resuming download..."
+            global download_progress
+            download_progress["is_paused"] = False
+            download_progress["status"] = "downloading"
+            download_progress["message"] = "Resuming download..."
+            return True
+        for j in self.queue:
+            if j["id"] == job_id:
+                j["is_paused"] = False
+                j["status"] = "queued"
+                j["message"] = "Waiting in queue..."
+                self.ensure_worker()
+                return True
+        return False
+
+    def cancel_job(self, job_id: str) -> bool:
+        if self.active_job and self.active_job["id"] == job_id:
+            self.active_job["is_cancelled"] = True
+            self.active_job["is_paused"] = False
+            self.active_job["status"] = "cancelled"
+            self.active_job["message"] = "Cancelling download..."
+            global download_progress
+            download_progress["is_cancelled"] = True
+            download_progress["is_paused"] = False
+            download_progress["status"] = "cancelled"
+            download_progress["message"] = "Download stopped by user."
+            return True
+        for i, j in enumerate(self.queue):
+            if j["id"] == job_id:
+                j["status"] = "cancelled"
+                j["message"] = "Cancelled from queue."
+                self.history.insert(0, {k: v for k, v in j.items() if k != "req"})
+                self.queue.pop(i)
+                return True
+        return False
+
+    def clear_history(self):
+        self.history.clear()
+
+    def get_state(self) -> Dict[str, Any]:
+        return {
+            "active_job": {k: v for k, v in self.active_job.items() if k != "req"} if self.active_job else None,
+            "queue": [{k: v for k, v in j.items() if k != "req"} for j in self.queue],
+            "history": [{k: v for k, v in j.items() if k != "req"} for j in self.history[:20]]
+        }
+
+    async def _worker_loop(self):
+        global download_progress
+        while True:
+            next_job = None
+            async with self._lock:
+                for j in self.queue:
+                    if j["status"] == "queued" and not j["is_paused"]:
+                        next_job = j
+                        break
+                if not next_job:
+                    self.active_job = None
+                    download_progress["is_running"] = False
+                    if download_progress.get("status") in ("downloading", "analyzing", "compiling", "slicing", "upscaling", "starting"):
+                        download_progress["status"] = "idle"
+                        download_progress["message"] = "Ready"
+                    break
+
+                self.queue.remove(next_job)
+                self.active_job = next_job
+                self.active_job["status"] = "downloading"
+
+            try:
+                await execute_download_job(self.active_job)
+            except Exception as e:
+                self.active_job["status"] = "error"
+                self.active_job["message"] = f"Error: {str(e)}"
+            finally:
+                async with self._lock:
+                    summary = {k: v for k, v in self.active_job.items() if k != "req"}
+                    self.history.insert(0, summary)
+                    if len(self.history) > 30:
+                        self.history.pop()
+                    self.active_job = None
+            await asyncio.sleep(0.5)
+
+download_queue_manager = DownloadQueueManager()
+
+async def execute_download_job(job: Dict[str, Any]):
+    req: DownloadRequest = job["req"]
     global download_progress
     download_progress["is_running"] = True
-    download_progress["is_paused"] = False
-    download_progress["is_cancelled"] = False
+    download_progress["is_paused"] = job.get("is_paused", False)
+    download_progress["is_cancelled"] = job.get("is_cancelled", False)
     download_progress["status"] = "starting"
     download_progress["message"] = "Starting extraction..."
+    job["status"] = "starting"
+    job["message"] = "Starting extraction..."
 
     specific_urls = [u.strip() for u in req.chapter_urls if u.strip()] if req.chapter_urls else []
     target_count = len(specific_urls) if specific_urls else (req.count if req.mode in ("range", "single") else 999)
     if not specific_urls and req.mode == "single":
         target_count = 1
+
+    job["total_chapters"] = target_count
+    download_progress["total_chapters"] = target_count
 
     current_url = specific_urls[0] if specific_urls else req.url.strip()
     chapters_processed = 0
@@ -428,17 +588,23 @@ async def run_download_job(req: DownloadRequest):
 
     try:
         while chapters_processed < target_count:
-            if download_progress.get("is_cancelled"):
+            if job.get("is_cancelled") or download_progress.get("is_cancelled"):
+                job["status"] = "cancelled"
+                job["message"] = "Download stopped by user."
                 download_progress["status"] = "cancelled"
                 download_progress["message"] = "Download stopped by user."
                 break
 
-            while download_progress.get("is_paused") and not download_progress.get("is_cancelled"):
+            while (job.get("is_paused") or download_progress.get("is_paused")) and not (job.get("is_cancelled") or download_progress.get("is_cancelled")):
+                job["status"] = "paused"
+                job["message"] = "Download paused."
                 download_progress["status"] = "paused"
                 download_progress["message"] = "Download paused."
                 await asyncio.sleep(0.5)
 
-            if download_progress.get("is_cancelled"):
+            if job.get("is_cancelled") or download_progress.get("is_cancelled"):
+                job["status"] = "cancelled"
+                job["message"] = "Download stopped by user."
                 download_progress["status"] = "cancelled"
                 download_progress["message"] = "Download stopped by user."
                 break
@@ -447,20 +613,27 @@ async def run_download_job(req: DownloadRequest):
                 current_url = specific_urls[chapters_processed]
             elif not current_url:
                 break
+
             download_progress["current_url"] = current_url
             download_progress["chapter_index"] = chapters_processed + 1
             download_progress["total_chapters"] = target_count
             download_progress["status"] = "analyzing"
             download_progress["message"] = f"Analyzing chapter {chapters_processed + 1} of {target_count}..."
 
+            job["chapters_processed"] = chapters_processed
+            job["status"] = "analyzing"
+            job["message"] = f"Analyzing chapter {chapters_processed + 1} of {target_count}..."
 
             # Analyze page
             data = dispatcher.analyze_url(current_url)
             if not data.get("success") or not data.get("pages"):
+                job["message"] = f"Failed to extract panels from {current_url}"
                 download_progress["message"] = f"Failed to extract panels from {current_url}"
                 break
 
-            if download_progress.get("is_cancelled"):
+            if job.get("is_cancelled") or download_progress.get("is_cancelled"):
+                job["status"] = "cancelled"
+                job["message"] = "Download stopped by user."
                 download_progress["status"] = "cancelled"
                 download_progress["message"] = "Download stopped by user."
                 break
@@ -478,8 +651,9 @@ async def run_download_job(req: DownloadRequest):
                     series_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', series_title.lower()).strip('_')
                 else:
                     series_slug = series_slug or "unknown_series"
+
             extracted_ch_num = data.get("chapter_num")
-            if extracted_ch_num is not None and extracted_ch_num not in downloaded_chapter_nums:
+            if extracted_ch_num is not None and extracted_ch_num > 0:
                 chapter_num = extracted_ch_num
             elif downloaded_chapter_nums:
                 chapter_num = max(downloaded_chapter_nums) + 1.0
@@ -504,48 +678,60 @@ async def run_download_job(req: DownloadRequest):
             if canonical and canonical.get("title"):
                 series_title = canonical["title"]
 
+            job["series_title"] = series_title
+            if effective_cover and not job.get("cover_url"):
+                job["cover_url"] = effective_cover
+            job["current_chapter_num"] = chapter_num
+            job["total_panels"] = len(pages)
+            job["current_panel"] = 0
+
             download_progress["series_title"] = series_title
             download_progress["chapter_num"] = chapter_num
             download_progress["total_panels"] = len(pages)
             download_progress["current_panel"] = 0
 
             # Create series directory
-            safe_title = re.sub(r'[\\/*?:"<>|]', "", series_title)
+            safe_title = re.sub(r'[\/*?:"<>|]', "", series_title)
             series_dir = os.path.join(base_save_dir, safe_title)
             os.makedirs(series_dir, exist_ok=True)
 
             # Progress callback for downloader
             def on_progress(done, total):
+                job["current_panel"] = done
+                job["total_panels"] = total
                 download_progress["current_panel"] = done
                 download_progress["total_panels"] = total
-                download_progress["status"] = "downloading"
-                download_progress["message"] = f"Downloading Ch {chapter_num}: {done}/{total} panels"
 
-            download_progress["status"] = "downloading"
-            download_progress["message"] = f"Downloading {len(pages)} panels..."
-
-            # Deterministic staging directory for panel resume
+            # Stream download pages
             staging_dir = get_staging_dir(base_save_dir, series_slug, chapter_num)
+            job["status"] = "downloading"
+            job["message"] = f"Downloading Chapter {chapter_num} (0/{len(pages)} panels)..."
+            download_progress["status"] = "downloading"
+            download_progress["message"] = f"Downloading Chapter {chapter_num} (0/{len(pages)} panels)..."
 
-            # Download panels
             panel_bytes = await download_panels_stream(
                 image_urls=pages,
                 referer=current_url,
-                max_width=req.max_width if req.upscale_scale <= 1 else None,
+                max_width=req.max_width,
                 jpeg_quality=req.quality,
                 staging_dir=staging_dir,
-                progress_callback=on_progress,
                 image_format=req.image_format,
                 webp_quality=req.webp_quality,
-                is_cancelled_callback=lambda: download_progress.get("is_cancelled", False)
+                progress_callback=on_progress,
+                is_cancelled_callback=lambda: job.get("is_cancelled", False) or download_progress.get("is_cancelled", False),
+                is_paused_callback=lambda: job.get("is_paused", False) or download_progress.get("is_paused", False)
             )
 
-            if download_progress.get("is_cancelled"):
+            if job.get("is_cancelled") or download_progress.get("is_cancelled"):
+                job["status"] = "cancelled"
+                job["message"] = "Download stopped by user."
                 download_progress["status"] = "cancelled"
                 download_progress["message"] = "Download stopped by user."
                 break
 
             if not panel_bytes:
+                job["status"] = "error"
+                job["message"] = f"Could not download panels for Chapter {chapter_num}"
                 download_progress["status"] = "error"
                 download_progress["message"] = f"Could not download panels for Chapter {chapter_num}"
                 break
@@ -556,12 +742,16 @@ async def run_download_job(req: DownloadRequest):
                 if known_sigs:
                     clean_panels, removed = filter_chapter_panels(panel_bytes, known_signatures=known_sigs)
                     if removed > 0:
+                        job["message"] = f"Removed {removed} promotional credit pages..."
                         download_progress["message"] = f"Removed {removed} promotional credit pages..."
                         panel_bytes = clean_panels
+                        job["total_panels"] = len(panel_bytes)
                         download_progress["total_panels"] = len(panel_bytes)
 
             # AI Super-Resolution Upscaling (Waifu2x / Real-ESRGAN / Lanczos)
             if req.upscale_scale > 1:
+                job["status"] = "upscaling"
+                job["message"] = f"Upscaling {len(panel_bytes)} panels ({req.upscale_scale}x)..."
                 download_progress["status"] = "upscaling"
                 download_progress["message"] = f"Upscaling {len(panel_bytes)} panels ({req.upscale_scale}x)..."
                 from core.upscaler import upscale_panel
@@ -573,6 +763,8 @@ async def run_download_job(req: DownloadRequest):
 
             # Smart E-Ink / Kindle slicing
             if req.slice_eink:
+                job["status"] = "slicing"
+                job["message"] = f"Slicing webtoon ribbons into e-ink pages..."
                 download_progress["status"] = "slicing"
                 download_progress["message"] = f"Slicing webtoon ribbons into e-ink pages..."
                 panel_bytes = slice_chapter_panels(
@@ -580,21 +772,40 @@ async def run_download_job(req: DownloadRequest):
                     target_aspect_ratio=req.aspect_ratio,
                     jpeg_quality=req.quality
                 )
+                job["total_panels"] = len(panel_bytes)
                 download_progress["total_panels"] = len(panel_bytes)
 
-
             # Compile into chosen format
+            effective_format = (req.format or "pdf").lower()
+            job["status"] = "compiling"
+            job["message"] = f"Compiling Chapter {chapter_num} to {effective_format.upper()}..."
             download_progress["status"] = "compiling"
-            download_progress["message"] = f"Compiling Chapter {chapter_num} to {req.format.upper()}..."
+            download_progress["message"] = f"Compiling Chapter {chapter_num} to {effective_format.upper()}..."
 
-            safe_slug = series_slug.replace('-', '_')
+            safe_slug = re.sub(r'[^a-zA-Z0-9_\-]+', '_', series_slug).strip('_')
             ch_str = f"{chapter_num:g}".replace('.', '_')
             output_file = ""
+            compile_success = False
 
-            if req.format == "pdf":
+            if effective_format == "pdf":
                 output_file = os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.pdf")
-                compile_pdf(panel_bytes, output_file)
-            elif req.format == "cbz":
+                compile_success = compile_pdf(panel_bytes, output_file)
+                # Robust fallback: If PDF compilation failed or produced a 0-byte file, fall back to CBZ so panels are preserved
+                if not compile_success or not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
+                    print(f"[Compiler] PDF compilation failed for {output_file}, falling back to CBZ archive...", file=sys.stderr)
+                    cbz_output = os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.cbz")
+                    compile_success = compile_cbz(
+                        panel_bytes,
+                        cbz_output,
+                        series_title=series_title,
+                        chapter_num=chapter_num,
+                        source_url=current_url,
+                        chapter_title=f"Chapter {chapter_num}"
+                    )
+                    if compile_success and os.path.exists(cbz_output) and os.path.getsize(cbz_output) > 0:
+                        output_file = cbz_output
+                        effective_format = "cbz"
+            elif effective_format == "cbz":
                 output_file = os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.cbz")
                 series_meta = get_series_by_id(series_id)
                 if not series_meta or not series_meta.get("author") or series_meta.get("author") == "Unknown":
@@ -606,7 +817,7 @@ async def run_download_job(req: DownloadRequest):
                             series_meta = get_series_by_id(series_id)
                     except Exception:
                         pass
-                compile_cbz(
+                compile_success = compile_cbz(
                     panel_bytes,
                     output_file,
                     series_title=series_title,
@@ -617,7 +828,8 @@ async def run_download_job(req: DownloadRequest):
                 )
             else: # folder
                 output_file = os.path.join(series_dir, f"Ch_{ch_str}")
-                save_raw_images(panel_bytes, output_file)
+                compile_success = save_raw_images(panel_bytes, output_file)
+                effective_format = "folder"
 
             # Ensure local series cover is cached
             series_rec = get_series_by_id(series_id)
@@ -631,10 +843,30 @@ async def run_download_job(req: DownloadRequest):
                     referer=current_url
                 )
 
-            # Compilation successful: clean up staging files
-            cleanup_staging_dir(staging_dir)
+            file_size = os.path.getsize(output_file) if (output_file and os.path.exists(output_file) and os.path.isfile(output_file)) else 0
 
-            file_size = os.path.getsize(output_file) if os.path.exists(output_file) and os.path.isfile(output_file) else 0
+            # Only mark completed and cleanup staging if output file was successfully written and non-empty
+            if compile_success and file_size > 0:
+                cleanup_staging_dir(staging_dir)
+                status_str = "completed"
+                # Overwrite cleanup: remove any obsolete conflicting file with same chapter number in a different format
+                possible_conflicts = [
+                    os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.pdf"),
+                    os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.cbz"),
+                    os.path.join(series_dir, f"Ch_{ch_str}")
+                ]
+                for conf in possible_conflicts:
+                    if conf != output_file and os.path.exists(conf):
+                        try:
+                            if os.path.isdir(conf):
+                                shutil.rmtree(conf, ignore_errors=True)
+                            else:
+                                os.remove(conf)
+                        except Exception:
+                            pass
+            else:
+                status_str = "failed"
+                print(f"[Compiler] Warning: Compilation produced empty/invalid file for {output_file}. Preserving staging directory.", file=sys.stderr)
 
             # Record chapter in database
             chap_id = add_or_update_chapter(
@@ -645,9 +877,9 @@ async def run_download_job(req: DownloadRequest):
                 source_url=current_url,
                 panel_count=len(panel_bytes),
                 file_path=output_file,
-                file_format=req.format,
+                file_format=effective_format,
                 file_size=file_size,
-                status="completed"
+                status=status_str
             )
 
             download_progress["last_downloaded_series_id"] = series_id
@@ -660,8 +892,8 @@ async def run_download_job(req: DownloadRequest):
             except Exception:
                 pass
 
-
             chapters_processed += 1
+            job["chapters_processed"] = chapters_processed
             if not specific_urls:
                 next_url = data.get("next_chapter_url")
                 if not next_url and chapters_processed < target_count:
@@ -670,73 +902,143 @@ async def run_download_job(req: DownloadRequest):
                 current_url = next_url
 
             # Small breather between chapters
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
 
-        if download_progress.get("is_cancelled"):
+        if job.get("is_cancelled") or download_progress.get("is_cancelled"):
+            job["status"] = "cancelled"
+            job["message"] = f"Download stopped. {chapters_processed} chapter(s) saved."
             download_progress["status"] = "cancelled"
             download_progress["message"] = f"Download stopped. {chapters_processed} chapter(s) saved."
         elif chapters_processed > 0:
+            job["status"] = "completed"
+            job["message"] = f"Successfully downloaded {chapters_processed} chapter(s)!"
             download_progress["status"] = "completed"
             download_progress["message"] = f"Successfully downloaded {chapters_processed} chapter(s)!"
         else:
-            if download_progress.get("status") not in ("error", "cancelled"):
+            if job.get("status") not in ("error", "cancelled"):
+                job["status"] = "error"
+                job["message"] = "Download failed: No chapters or panels could be downloaded."
                 download_progress["status"] = "error"
                 download_progress["message"] = "Download failed: No chapters or panels could be downloaded."
     except Exception as e:
+        job["status"] = "error"
+        job["message"] = f"Error: {str(e)}"
         download_progress["status"] = "error"
         download_progress["message"] = f"Error: {str(e)}"
     finally:
         download_progress["is_running"] = False
         download_progress["is_paused"] = False
 
-@app.post("/api/download")
-async def start_download(req: DownloadRequest, background_tasks: BackgroundTasks):
-    global download_progress
-    if download_progress["is_running"]:
-        return JSONResponse({"success": False, "error": "A download task is already in progress. Stop it first if you wish to start a new one."}, status_code=400)
+async def run_download_job(req: DownloadRequest):
+    """Legacy helper: enqueues job and waits until completed (backward compatibility)."""
+    job = download_queue_manager.enqueue(req)
+    while True:
+        if job["status"] in ("completed", "cancelled", "error"):
+            break
+        await asyncio.sleep(0.5)
 
-    background_tasks.add_task(run_download_job, req)
-    return {"success": True, "message": "Download task launched in background."}
+
+@app.post("/api/download")
+async def start_download(req: DownloadRequest):
+    job = download_queue_manager.enqueue(req)
+    is_active = (download_queue_manager.active_job and download_queue_manager.active_job["id"] == job["id"])
+    return {
+        "success": True,
+        "job_id": job["id"],
+        "queued": not is_active,
+        "message": "Download task started." if is_active else f"'{job['series_title']}' added to download queue."
+    }
+
+@app.get("/api/queue")
+async def get_download_queue():
+    """Retrieve full status of active, queued, and recently finished download jobs."""
+    return {
+        "success": True,
+        **download_queue_manager.get_state()
+    }
+
+@app.post("/api/queue/pause/{job_id}")
+async def pause_queue_job(job_id: str):
+    ok = download_queue_manager.pause_job(job_id)
+    return {"success": ok, "message": "Job paused." if ok else "Job not found in queue."}
+
+@app.post("/api/queue/resume/{job_id}")
+async def resume_queue_job(job_id: str):
+    ok = download_queue_manager.resume_job(job_id)
+    return {"success": ok, "message": "Job resumed." if ok else "Job not found in queue."}
+
+@app.post("/api/queue/cancel/{job_id}")
+async def cancel_queue_job(job_id: str):
+    ok = download_queue_manager.cancel_job(job_id)
+    return {"success": ok, "message": "Job cancelled." if ok else "Job not found in queue."}
+
+@app.post("/api/queue/clear")
+async def clear_queue_history():
+    download_queue_manager.clear_history()
+    return {"success": True, "message": "Download history cleared."}
 
 @app.post("/api/download/pause")
 async def pause_download():
     global download_progress
-    if not download_progress.get("is_running"):
+    if not download_progress.get("is_running") and not download_queue_manager.active_job:
         return JSONResponse({"success": False, "error": "No download currently in progress."}, status_code=400)
     download_progress["is_paused"] = True
     download_progress["status"] = "paused"
     download_progress["message"] = "Download paused."
+    if download_queue_manager.active_job:
+        download_queue_manager.pause_job(download_queue_manager.active_job["id"])
     return {"success": True, "message": "Download paused."}
 
 @app.post("/api/download/resume")
 async def resume_download():
     global download_progress
-    if not download_progress.get("is_running"):
-        return JSONResponse({"success": False, "error": "No download currently in progress."}, status_code=400)
+    if not download_progress.get("is_running") and not download_queue_manager.active_job:
+        paused_in_q = False
+        for j in download_queue_manager.queue:
+            if j.get("is_paused"):
+                download_queue_manager.resume_job(j["id"])
+                paused_in_q = True
+                break
+        if not paused_in_q:
+            return JSONResponse({"success": False, "error": "No download currently in progress."}, status_code=400)
+        return {"success": True, "message": "Queued download resumed."}
     download_progress["is_paused"] = False
     download_progress["status"] = "downloading"
     download_progress["message"] = "Resuming download..."
+    if download_queue_manager.active_job:
+        download_queue_manager.resume_job(download_queue_manager.active_job["id"])
     return {"success": True, "message": "Download resumed."}
 
 @app.post("/api/download/stop")
 async def stop_download():
     global download_progress
-    if not download_progress.get("is_running"):
+    if not download_progress.get("is_running") and not download_queue_manager.active_job:
         return JSONResponse({"success": False, "error": "No download currently in progress."}, status_code=400)
     download_progress["is_cancelled"] = True
     download_progress["is_paused"] = False
     download_progress["status"] = "stopping"
     download_progress["message"] = "Stopping download..."
+    if download_queue_manager.active_job:
+        download_queue_manager.cancel_job(download_queue_manager.active_job["id"])
     return {"success": True, "message": "Download stop signal sent."}
 
 @app.get("/api/download/progress")
 async def get_progress_stream(request: Request):
-    """Server-Sent Events (SSE) streaming live progress to the frontend."""
+    """Server-Sent Events (SSE) streaming live progress and download queue to the frontend."""
     async def event_generator():
         while True:
             if await request.is_disconnected():
                 break
-            payload = json.dumps(download_progress)
+            q_state = download_queue_manager.get_state()
+            active = q_state["active_job"]
+            total_active_and_pending = len(q_state["queue"]) + (1 if active else 0)
+            payload = json.dumps({
+                **download_progress,
+                "active_job": active,
+                "queue": q_state["queue"],
+                "history": q_state["history"],
+                "queue_count": total_active_and_pending
+            })
             yield f"data: {payload}\n\n"
             await asyncio.sleep(0.5)
 

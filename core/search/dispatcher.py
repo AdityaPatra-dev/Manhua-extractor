@@ -25,7 +25,7 @@ TIER_1_SOURCES = [
     {"key": "vortexscans", "name": "Vortex Scans", "type": "vortexscans"},
     {"key": "roliascan", "name": "Rolia Scan", "type": "roliascan"},
     {"key": "manhuaplus", "name": "ManhuaPlus", "type": "manhuaplus", "domain": "manhuaplus.org"},
-    {"key": "ravenscans", "name": "Raven Scans", "type": "mangastream", "domain": "ravenscans.com"},
+    {"key": "ravenscans", "name": "Raven Scans", "type": "mangastream", "domain": "ravenscans.org"},
     {"key": "omegascans", "name": "Omega Scans", "type": "mangastream", "domain": "omegascans.org"},
     {"key": "rizzcomics", "name": "Rizz Comics", "type": "mangastream", "domain": "rizzfables.com"},
     {"key": "reaper", "name": "Reaper Scans", "type": "mangastream", "domain": "reapercomics.com"},
@@ -52,6 +52,18 @@ TIER_1_SOURCES = [
     {"key": "mangatown", "name": "MangaTown", "type": "mangatown"},
     {"key": "mgeko", "name": "MangaGeko", "type": "mgeko"},
     {"key": "mgread", "name": "MangaRead.io", "type": "mgread"},
+
+    # Curated Webtoon & Manhwa Platforms
+    {"key": "toongod", "name": "ToonGod", "type": "toongod", "domain": "toongod.cc"},
+    {"key": "hentai20", "name": "Hentai20", "type": "mangastream", "domain": "hentai20.io"},
+    {"key": "manga18fx", "name": "Manga18fx", "type": "manga18fx", "domain": "manga18fx.com"},
+    {"key": "manhwaclub", "name": "ManhwaClub", "type": "madara", "domain": "manhwaclub.net"},
+    {"key": "allporncomics", "name": "AllPornComics", "type": "madara", "domain": "allporncomics.co"},
+    {"key": "manga18club", "name": "Manga18.club", "type": "manga18club", "domain": "manga18.club"},
+    {"key": "mangadass", "name": "MangaDass", "type": "mangadass", "domain": "mangadass.com"},
+    {"key": "toontop", "name": "ToonTop", "type": "toontop", "domain": "toontop.io"},
+    {"key": "comicland", "name": "ComicLand", "type": "comicland", "domain": "comicland.org"},
+    {"key": "manhwa18", "name": "Manhwa18", "type": "manhwa18", "domain": "manhwa18.net"},
 ]
 
 TIER_2_MADARA = [
@@ -59,7 +71,17 @@ TIER_2_MADARA = [
     {"key": "manhuaus", "name": "ManhuaUS", "type": "madara", "domain": "manhuaus.com"},
     {"key": "mangatx", "name": "MangaTX", "type": "madara", "domain": "mangatx.to"},
     {"key": "zinmanga", "name": "ZinManga", "type": "madara", "domain": "zinmanga.com"},
-    {"key": "hiperdex", "name": "Hiperdex", "type": "madara", "domain": "hiperdex.com"},
+    {"key": "hiperdex", "name": "Hiperdex", "type": "hiperdex", "domain": "hiperdex.tv"},
+    {"key": "toongod", "name": "ToonGod", "type": "toongod", "domain": "toongod.cc"},
+    {"key": "hentai20", "name": "Hentai20", "type": "mangastream", "domain": "hentai20.io"},
+    {"key": "manhwaclub", "name": "ManhwaClub", "type": "madara", "domain": "manhwaclub.net"},
+    {"key": "allporncomics", "name": "AllPornComics", "type": "madara", "domain": "allporncomics.co"},
+    {"key": "comicland", "name": "ComicLand", "type": "comicland", "domain": "comicland.org"},
+    {"key": "manhwa18", "name": "Manhwa18", "type": "manhwa18", "domain": "manhwa18.net"},
+    {"key": "toontop", "name": "ToonTop", "type": "toontop", "domain": "toontop.io"},
+    {"key": "manga18fx", "name": "Manga18fx", "type": "manga18fx", "domain": "manga18fx.com"},
+    {"key": "mangadass", "name": "MangaDass", "type": "mangadass", "domain": "mangadass.com"},
+    {"key": "manga18club", "name": "Manga18.club", "type": "manga18club", "domain": "manga18.club"},
 ]
 
 TIER_3_MANGASTREAM = []
@@ -76,12 +98,21 @@ class SearchDispatcher:
 
     def get_sources_for_tier(self, tier: str = "fast") -> List[Dict[str, Any]]:
         if tier == "fast":
-            return TIER_1_SOURCES
-        elif tier in ("popular", "top"):
-            return TIER_1_SOURCES + TIER_2_MADARA
+            raw = TIER_1_SOURCES
+        elif tier in ("popular", "top", "deep"):
+            raw = TIER_1_SOURCES + TIER_2_MADARA
         elif tier == "all":
-            return TIER_1_SOURCES + TIER_2_MADARA + TIER_3_MANGASTREAM + TIER_4_AGGREGATOR
-        return TIER_1_SOURCES
+            raw = TIER_1_SOURCES + TIER_2_MADARA + TIER_3_MANGASTREAM + TIER_4_AGGREGATOR
+        else:
+            raw = TIER_1_SOURCES
+
+        seen = set()
+        deduped = []
+        for s in raw:
+            if s["key"] not in seen:
+                seen.add(s["key"])
+                deduped.append(s)
+        return deduped
 
     async def fetch_html_with_clearance(
         self,
@@ -266,6 +297,7 @@ class SearchDispatcher:
                         "source_name": "Manganato",
                         "source_logo": "/docs/logos/manganato.png",
                         "series_url": series_url,
+                    "url": series_url,
                         "cover_url": cover_url,
                         "latest_chapter": ch_title,
                         "latest_chapter_num": ch_num,
@@ -313,6 +345,8 @@ class SearchDispatcher:
                     "source_name": source_info["name"],
                     "source_logo": f"/docs/logos/{source_info['key']}.png",
                     "series_url": series_url,
+                    "url": series_url,
+                    "url": series_url,
                     "cover_url": cover_url,
                     "latest_chapter": ch_title,
                     "latest_chapter_num": ch_num,
@@ -369,6 +403,7 @@ class SearchDispatcher:
                     "source_name": source_info["name"],
                     "source_logo": f"/docs/logos/{source_info['key']}.png",
                     "series_url": series_url,
+                    "url": series_url,
                     "cover_url": cover_url,
                     "latest_chapter": ch_title,
                     "latest_chapter_num": ch_num,
@@ -410,6 +445,7 @@ class SearchDispatcher:
                             "source_name": "WeebCentral",
                             "source_logo": "/docs/logos/weebcentral.png",
                             "series_url": series_url,
+                    "url": series_url,
                             "cover_url": cover_url,
                             "latest_chapter": "Latest",
                             "latest_chapter_num": 1.0,
@@ -642,6 +678,7 @@ class SearchDispatcher:
                         "source_name": "Asura Scans",
                         "source_logo": "/docs/logos/asura.png",
                         "series_url": series_url,
+                    "url": series_url,
                         "cover_url": cover_url,
                         "latest_chapter": f"Chapter {int(ch_num) if ch_num.is_integer() else ch_num:g}",
                         "latest_chapter_num": ch_num,
@@ -919,6 +956,7 @@ class SearchDispatcher:
                         "source_name": "MangaGeko",
                         "source_logo": "/docs/logos/mgeko.png",
                         "series_url": series_url,
+                    "url": series_url,
                         "url": series_url,
                         "cover_url": cover_url,
                         "latest_chapter": ch_title,
@@ -962,6 +1000,7 @@ class SearchDispatcher:
                         "source_name": "MangaRead.io",
                         "source_logo": "/docs/logos/mgread.png",
                         "series_url": series_url,
+                    "url": series_url,
                         "url": series_url,
                         "cover_url": cover_url,
                         "latest_chapter": "Available",
@@ -1027,6 +1066,7 @@ class SearchDispatcher:
                         "source_name": "ManhuaPlus",
                         "source_logo": "/docs/logos/manhuaplus.png",
                         "series_url": series_url,
+                    "url": series_url,
                         "url": series_url,
                         "cover_url": cover,
                         "latest_chapter": ch_txt,
@@ -1045,6 +1085,341 @@ class SearchDispatcher:
                         if sub_results:
                             return sub_results
 
+                return results
+        except Exception:
+            return []
+
+    async def search_hiperdex(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        base_url = "https://hiperdex.tv"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Origin": base_url,
+            "Referer": f"{base_url}/search",
+            "x-cfg-auth": "yceqt7qgu004"
+        }
+        try:
+            # Seed session cookie
+            async with session.get(f"{base_url}/", headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=5)) as init_resp:
+                pass
+
+            import json
+            q_input = {"json": {"query": query, "page": 1, "limit": 10}}
+            url = f"{base_url}/api/trpc/search.query?input=" + urllib.parse.quote(json.dumps(q_input))
+            async with session.get(url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                latency = int((time.time() - t0) * 1000)
+                hits = data.get("result", {}).get("data", {}).get("json", {}).get("hits", [])
+                results = []
+                for h in hits:
+                    slug = h.get("slug")
+                    if not slug:
+                        continue
+                    title = h.get("title") or slug.replace("-", " ").title()
+                    series_url = f"{base_url}/manga/{slug}"
+                    cover = h.get("coverUrl") or h.get("thumbnailUrl") or ""
+                    results.append({
+                        "title": title,
+                        "alt_titles": h.get("alternativeTitles", []),
+                        "source_key": "hiperdex",
+                        "source_name": "Hiperdex",
+                        "source_logo": "/docs/logos/hiperdex.png",
+                        "series_url": series_url,
+                        "url": series_url,
+                        "cover_url": cover,
+                        "latest_chapter": "Available",
+                        "latest_chapter_num": 1.0,
+                        "quality_tag": "WebP HQ",
+                        "latency_ms": latency
+                    })
+                return results
+        except Exception:
+            return []
+
+    async def search_toongod(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://toongod.cc/search/?s={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for it in soup.select(".latest-item")[:10]:
+                    a_title = it.select_one(".mm-name a")
+                    if not a_title:
+                        continue
+                    title = a_title.get_text(strip=True)
+                    series_url = urllib.parse.urljoin("https://toongod.cc", a_title.get("href"))
+                    img = it.select_one(".latest-left img")
+                    cover_url = img.get("src") if img else ""
+                    ch_a = it.select_one("ul li a")
+                    ch_name = ch_a.get_text(strip=True) if ch_a else "Chapter 1"
+                    m = re.search(r'(\d+(?:\.\d+)?)', ch_name)
+                    ch_num = float(m.group(1)) if m else 1.0
+                    results.append({
+                        "title": title,
+                        "alt_titles": [],
+                        "source_key": "toongod",
+                        "source_name": "ToonGod",
+                        "source_logo": "/docs/logos/toongod.png",
+                        "series_url": series_url,
+                        "url": series_url,
+                        "cover_url": cover_url,
+                        "latest_chapter": ch_name,
+                        "latest_chapter_num": ch_num,
+                        "quality_tag": "HQ Webtoon",
+                        "latency_ms": latency
+                    })
+                return results
+        except Exception:
+            return []
+
+    async def search_comicland(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        headers = {
+            **DEFAULT_HEADERS,
+            "Referer": "https://comicland.org/",
+            "Origin": "https://comicland.org"
+        }
+        url = f"https://api.comicland.org/api/comic/search?q={urllib.parse.quote(query)}&offset=0&limit=10"
+        try:
+            async with session.get(url, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                latency = int((time.time() - t0) * 1000)
+                results = []
+                for it in data.get("data", {}).get("items", []):
+                    slug = it.get("slug")
+                    if not slug:
+                        continue
+                    results.append({
+                        "title": it.get("title") or slug.replace("-", " ").title(),
+                        "alt_titles": [],
+                        "source_key": "comicland",
+                        "source_name": "ComicLand",
+                        "source_logo": "/docs/logos/comicland.png",
+                        "series_url": f"https://comicland.org/comic/{slug}",
+                        "url": f"https://comicland.org/comic/{slug}",
+                        "cover_url": it.get("cover_url") or "",
+                        "latest_chapter": "Available",
+                        "latest_chapter_num": 1.0,
+                        "quality_tag": "HD Official",
+                        "latency_ms": latency
+                    })
+                return results
+        except Exception:
+            return []
+
+    async def search_manhwa18(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://manhwa18.net/manga-list?q={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                app_el = soup.find("div", attrs={"data-page": True})
+                if not app_el or not app_el.get("data-page"):
+                    return []
+                import json
+                data = json.loads(app_el["data-page"])
+                items = data.get("props", {}).get("paginate", {}).get("data", [])
+                results = []
+                for it in items:
+                    slug = it.get("slug")
+                    if not slug:
+                        continue
+                    ch_info = it.get("latest_chapter") or {}
+                    ch_name = ch_info.get("name") or "Latest"
+                    ch_num_match = re.search(r"chapter\s*([\d\.]+)", ch_name, re.IGNORECASE) or re.search(r"([\d\.]+)", ch_name)
+                    ch_num = float(ch_num_match.group(1)) if ch_num_match else 1.0
+                    results.append({
+                        "title": it.get("name") or slug.replace("-", " ").title(),
+                        "alt_titles": [it.get("other_name")] if it.get("other_name") else [],
+                        "source_key": "manhwa18",
+                        "source_name": "Manhwa18",
+                        "source_logo": "/docs/logos/manhwa18.png",
+                        "series_url": f"https://manhwa18.net/manga/{slug}",
+                        "url": f"https://manhwa18.net/manga/{slug}",
+                        "cover_url": it.get("cover_url") or "",
+                        "latest_chapter": ch_name,
+                        "latest_chapter_num": ch_num,
+                        "quality_tag": "WebP HQ",
+                        "latency_ms": latency
+                    })
+                return results
+        except Exception:
+            return []
+
+    async def search_toontop(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://toontop.io/search?q={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                next_data = soup.find("script", id="__NEXT_DATA__")
+                if not next_data or not next_data.string:
+                    return []
+                import json
+                data = json.loads(next_data.string)
+                items = data.get("props", {}).get("pageProps", {}).get("ssrItems", [])
+                results = []
+                for it in items:
+                    slug = it.get("slug")
+                    if not slug:
+                        continue
+                    results.append({
+                        "title": it.get("name") or slug.replace("-", " ").title(),
+                        "alt_titles": [a.get("name") for a in it.get("altNames", []) if a.get("name")],
+                        "source_key": "toontop",
+                        "source_name": "ToonTop",
+                        "source_logo": "/docs/logos/toontop.png",
+                        "series_url": f"https://toontop.io/{slug}",
+                        "url": f"https://toontop.io/{slug}",
+                        "cover_url": it.get("cover") or "",
+                        "latest_chapter": it.get("displayChapters", "Available"),
+                        "latest_chapter_num": 1.0,
+                        "quality_tag": "WebP HQ",
+                        "latency_ms": latency
+                    })
+                return results
+        except Exception:
+            return []
+
+    async def search_manga18fx(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://manga18fx.com/search?q={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                seen = set()
+                for thumb in soup.select(".item-thumb, .thumb-manga"):
+                    a = thumb.select_one("a[href*='/manga/']")
+                    img = thumb.select_one("img")
+                    if a:
+                        href = urllib.parse.urljoin("https://manga18fx.com", a.get("href"))
+                        if href in seen or "/chapter-" in href:
+                            continue
+                        seen.add(href)
+                        title = a.get("title") or (img.get("alt") if img else "")
+                        if not title:
+                            parent = thumb.parent
+                            title_el = parent.select_one("h3 a, .title a, a[title]")
+                            if title_el:
+                                title = title_el.get_text(strip=True)
+                        cover = (img.get("data-src") or img.get("src") or "") if img else ""
+                        results.append({
+                            "title": title or "Manga18fx Series",
+                            "alt_titles": [],
+                            "source_key": "manga18fx",
+                            "source_name": "Manga18fx",
+                            "source_logo": "/docs/logos/manga18fx.png",
+                            "series_url": href,
+                            "url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Latest",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "WebP HQ",
+                            "latency_ms": latency
+                        })
+                return results
+        except Exception:
+            return []
+
+    async def search_mangadass(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://mangadass.com/search?q={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                seen = set()
+                for thumb in soup.select(".item-thumb, .thumb-manga"):
+                    a = thumb.select_one("a[href*='/manga/']")
+                    img = thumb.select_one("img")
+                    if a:
+                        href = urllib.parse.urljoin("https://mangadass.com", a.get("href"))
+                        if href in seen or "/chapter-" in href:
+                            continue
+                        seen.add(href)
+                        title = a.get("title") or (img.get("alt") if img else "")
+                        if not title:
+                            parent = thumb.parent
+                            title_el = parent.select_one("h3 a, .title a, a[title]")
+                            if title_el:
+                                title = title_el.get_text(strip=True)
+                        cover = (img.get("data-src") or img.get("src") or "") if img else ""
+                        results.append({
+                            "title": title or "MangaDass Series",
+                            "alt_titles": [],
+                            "source_key": "mangadass",
+                            "source_name": "MangaDass",
+                            "source_logo": "/docs/logos/mangadass.png",
+                            "series_url": href,
+                            "url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Latest",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "WebP HQ",
+                            "latency_ms": latency
+                        })
+                return results
+        except Exception:
+            return []
+
+    async def search_manga18club(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://manga18.club/list-manga?search={urllib.parse.quote(query)}"
+        try:
+            async with session.get(url, headers=DEFAULT_HEADERS, ssl=False, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                latency = int((time.time() - t0) * 1000)
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for item in soup.select(".story_item, .manga-item"):
+                    a = item.select_one("a[href*='/manga/'], a[href*='/manhwa/']")
+                    img = item.select_one("img")
+                    if a:
+                        title = a.get("title") or a.get_text(strip=True)
+                        href = urllib.parse.urljoin("https://manga18.club", a.get("href"))
+                        cover = (img.get("src") or img.get("data-src") or "") if img else ""
+                        results.append({
+                            "title": title or "Manga18.club Series",
+                            "alt_titles": [],
+                            "source_key": "manga18club",
+                            "source_name": "Manga18.club",
+                            "source_logo": "/docs/logos/manga18club.png",
+                            "series_url": href,
+                            "url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Latest",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "WebP HQ",
+                            "latency_ms": latency
+                        })
                 return results
         except Exception:
             return []
@@ -1087,6 +1462,22 @@ class SearchDispatcher:
                 return await self.search_comick(query, session)
             elif stype == "manganato":
                 return await self.search_manganato(query, session)
+            elif stype == "hiperdex":
+                return await self.search_hiperdex(query, session)
+            elif stype == "toongod":
+                return await self.search_toongod(query, session)
+            elif stype == "comicland":
+                return await self.search_comicland(query, session)
+            elif stype == "manhwa18":
+                return await self.search_manhwa18(query, session)
+            elif stype == "toontop":
+                return await self.search_toontop(query, session)
+            elif stype == "manga18fx":
+                return await self.search_manga18fx(query, session)
+            elif stype == "mangadass":
+                return await self.search_mangadass(query, session)
+            elif stype == "manga18club":
+                return await self.search_manga18club(query, session)
             elif stype == "madara":
                 return await self.search_madara(source, query, session)
             elif stype in ("mangastream", "astro", "nextjs"):
