@@ -4,6 +4,10 @@ on:
   schedule:
     # Runs daily at 02:00 UTC (07:30 AM IST)
     - cron: '0 2 * * *'
+  push:
+    paths:
+      - '.github/workflows/daily-scraper-check.yml'
+      - '.github/scripts/**'
   workflow_dispatch:
     inputs:
       sources:
@@ -67,3 +71,4 @@ jobs:
           name: scraper-health-report
           path: .github/reports/scraper_health.json
           retention-days: 14
+
