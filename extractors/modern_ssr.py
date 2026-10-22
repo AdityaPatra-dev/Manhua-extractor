@@ -55,7 +55,73 @@ class ModernSSRExtractor(BaseExtractor):
             elif isinstance(cover_val, str):
                 info["cover_url"] = cover_val
 
+        # Next.js __NEXT_DATA__ series info
+        next_data = soup.find("script", id="__NEXT_DATA__")
+        if next_data and next_data.string:
+            try:
+                data = json.loads(next_data.string)
+                page_props = data.get("props", {}).get("pageProps", {})
+                manga = page_props.get("initialManga") or page_props.get("manga") or {}
+                if isinstance(manga, dict):
+                    if manga.get("name"):
+                        info["title"] = manga["name"]
+                    if manga.get("slug"):
+                        info["slug"] = manga["slug"]
+                    m_cover = manga.get("cover") or manga.get("coverCensored") or manga.get("thumbnail")
+                    if m_cover and isinstance(m_cover, str) and m_cover.startswith("http"):
+                        info["cover_url"] = m_cover
+            except Exception:
+                pass
+
         return info
+
+    def extract_chapter_list(self, soup: BeautifulSoup, url: str = "", html: str = "") -> List[Dict[str, Any]]:
+        # 1. Check Next.js __NEXT_DATA__
+        next_data = soup.find("script", id="__NEXT_DATA__")
+        if next_data and next_data.string:
+            try:
+                data = json.loads(next_data.string)
+                page_props = data.get("props", {}).get("pageProps", {})
+                manga = page_props.get("initialManga") or page_props.get("manga") or {}
+                raw_chapters = None
+                if isinstance(manga, dict):
+                    raw_chapters = manga.get("chapters")
+                if not raw_chapters:
+                    raw_chapters = page_props.get("chapters") or page_props.get("initialChapters")
+
+                if isinstance(raw_chapters, list) and raw_chapters:
+                    chapters: List[Dict[str, Any]] = []
+                    for ch in raw_chapters:
+                        if not isinstance(ch, dict):
+                            continue
+                        ch_url = ch.get("url") or ch.get("slug")
+                        if not ch_url:
+                            continue
+                        if not ch_url.startswith("http"):
+                            ch_url = urljoin(url, ch_url)
+                        ch_name = ch.get("name") or ch.get("title") or ""
+                        ch_num_val = ch.get("number") or ch.get("chapter")
+                        if ch_num_val is not None:
+                            try:
+                                ch_num = float(ch_num_val)
+                            except Exception:
+                                ch_num = self.extract_chapter_number(ch_url, ch_name)
+                        else:
+                            ch_num = self.extract_chapter_number(ch_url, ch_name)
+                        if not ch_name:
+                            ch_name = f"Chapter {ch_num:g}"
+                        chapters.append({
+                            "chapter_num": ch_num,
+                            "title": ch_name,
+                            "url": ch_url
+                        })
+                    if chapters:
+                        chapters.sort(key=lambda x: x["chapter_num"])
+                        return chapters
+            except Exception:
+                pass
+
+        return super().extract_chapter_list(soup, url, html)
 
     def extract_pages(self, soup: BeautifulSoup, url: str, html: str) -> List[str]:
         parsed = urlparse(url)
@@ -137,6 +203,10 @@ class ModernSSRExtractor(BaseExtractor):
             images = soup.select("div[data-page] img")
         if not images:
             images = soup.find_all("img", src=re.compile(r'/chapters?/|asura-images', re.I))
+        if not images:
+            images = soup.select(".chapter-content img, .reader-area img, .reading-content img, div[id*='reader'] img, div[class*='reader'] img, div[class*='chapter'] img, main img")
+        if not images:
+            images = soup.find_all("img", src=re.compile(r'/(?:chapters?|uploads|series|comics|manga)/', re.I))
 
         raw_urls = []
         for img in images:

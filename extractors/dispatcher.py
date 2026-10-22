@@ -10,7 +10,10 @@ import requests
 
 from .base import BaseExtractor
 from .comick import ComicKExtractor
+from .comicland import ComicLandExtractor
+from .hiperdex import HiperdexExtractor
 from .mangadex import MangaDexExtractor
+from .manhwa18 import Manhwa18Extractor
 from .modern_ssr import ModernSSRExtractor
 from .madara import MadaraExtractor
 from .mangastream import MangaStreamExtractor
@@ -37,6 +40,9 @@ class ExtractorDispatcher:
     def __init__(self):
         # Register engines in priority order
         self.engines: List[BaseExtractor] = [
+            HiperdexExtractor(),
+            ComicLandExtractor(),
+            Manhwa18Extractor(),
             ComicKExtractor(),
             MangaDexExtractor(),
             ModernSSRExtractor(),
@@ -91,7 +97,7 @@ class ExtractorDispatcher:
         # 1. Try curl_cffi with full Chrome 124 TLS signature (includes cached clearance cookies)
         if self.cffi_session:
             try:
-                resp = self.cffi_session.get(url, headers=headers, timeout=25)
+                resp = self.cffi_session.get(url, headers=headers, timeout=25, allow_redirects=True)
                 if resp.status_code == 200 and not self._is_challenge_page(resp.text):
                     html = resp.text
                     soup = BeautifulSoup(html, "html.parser")
@@ -101,7 +107,7 @@ class ExtractorDispatcher:
 
         # 2. Fallback to Cloudscraper
         try:
-            resp = self.scraper.get(url, headers=headers, timeout=25)
+            resp = self.scraper.get(url, headers=headers, timeout=25, allow_redirects=True)
             html = resp.text
             soup = BeautifulSoup(html, "html.parser")
         except Exception:
@@ -109,8 +115,19 @@ class ExtractorDispatcher:
             html = ""
             soup = BeautifulSoup("", "html.parser")
 
-        # 3. Fallback to Browser Sidecar (FlareSolverr / nodriver) if blocked
+        # 3. Check verified active mirrors for known Cloudflare-blocked platforms before sidecar
         is_blocked = (resp is None) or (resp.status_code in (403, 503)) or self._is_challenge_page(html)
+        if is_blocked and ("toongod.org" in url or "toongod.app" in url):
+            for mirror_domain in ("toongod.cc", "toongod.app"):
+                try:
+                    mirror_url = re.sub(r'(?:www\.)?toongod\.(?:org|app)', mirror_domain, url)
+                    m_code, m_html, m_soup = self.fetch_page(mirror_url)
+                    if m_code == 200 and not self._is_challenge_page(m_html):
+                        return m_code, m_html, m_soup
+                except Exception:
+                    pass
+
+        # 4. Fallback to Browser Sidecar (FlareSolverr / nodriver) if blocked
         if is_blocked:
             try:
                 from .browser_sidecar import fetch_protected_page

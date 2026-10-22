@@ -94,7 +94,21 @@ class MadaraExtractor(BaseExtractor):
 
     def extract_chapter_list(self, soup: BeautifulSoup, url: str, html: str) -> List[Dict[str, Any]]:
         has_ajax_holder = bool(soup.select_one("#manga-chapters-holder, .manga-chapters-data, div[data-id]"))
-        
+
+        # Check manga_id in script or DOM attributes
+        manga_id = None
+        id_match = re.search(r'["\']manga[_-]?id["\']\s*[:=]\s*["\']?(\d+)["\']?', html, re.I)
+        if not id_match:
+            id_match = re.search(r'manga[_-]?id[\"\'\s:=]+(\d+)', html, re.I)
+        if id_match:
+            manga_id = id_match.group(1)
+        if not manga_id:
+            for el in soup.select('[data-id], #manga-chapters-holder, .manga-chapters-data'):
+                val = el.get("data-id") or el.get("data-post") or el.get("data-manga")
+                if val and val.isdigit():
+                    manga_id = val
+                    break
+
         # Check script for manga.base_url or canonical link
         m_base = re.search(r'["\']base_url["\']:\s*["\']([^"\']+)["\']', html)
         if m_base:
@@ -107,9 +121,8 @@ class MadaraExtractor(BaseExtractor):
                 base_series_url = re.sub(r'/(?:chapter|ch|c|ajax)[-_/\d].*$', '/', url, flags=re.I)
         if not base_series_url.endswith('/'):
             base_series_url += '/'
-        
-        # Try direct AJAX fetching first if the dynamic chapters container is explicitly present
-        if has_ajax_holder:
+
+        def _fetch_madara_ajax(endpoint: str, data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
             try:
                 import requests
                 headers = {
@@ -128,37 +141,46 @@ class MadaraExtractor(BaseExtractor):
                 except Exception:
                     pass
 
-                ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
-                resp = requests.post(ajax_endpoint, headers=headers, timeout=12)
+                resp = requests.post(endpoint, data=data, headers=headers, timeout=12)
                 if resp.status_code == 200 and resp.text:
                     ajax_soup = BeautifulSoup(resp.text, "html.parser")
-                    ajax_chapters = super().extract_chapter_list(ajax_soup, base_series_url, resp.text)
+                    ajax_chapters = super(MadaraExtractor, self).extract_chapter_list(ajax_soup, base_series_url, resp.text)
                     if ajax_chapters:
                         return ajax_chapters
             except Exception:
                 pass
+            return []
 
+        # 1. Try admin-ajax.php if manga_id is present
+        if manga_id:
+            admin_ajax_endpoint = urljoin(base_series_url, "/wp-admin/admin-ajax.php")
+            admin_chapters = _fetch_madara_ajax(admin_ajax_endpoint, {"action": "manga_get_chapters", "manga": manga_id})
+            if admin_chapters:
+                return admin_chapters
+
+        # 2. Try direct /ajax/chapters/ endpoint if dynamic container is present
+        if has_ajax_holder:
+            ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
+            ajax_chapters = _fetch_madara_ajax(ajax_endpoint)
+            if ajax_chapters:
+                return ajax_chapters
+
+        # 3. Extract from initial DOM
         chapters = super().extract_chapter_list(soup, url, html)
         if chapters:
             return chapters
 
-        # Fallback to AJAX if no chapters found in initial DOM
-        try:
-            import requests
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                "Referer": base_series_url,
-                "X-Requested-With": "XMLHttpRequest"
-            }
-            ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
-            resp = requests.post(ajax_endpoint, headers=headers, timeout=12)
-            if resp.status_code == 200 and resp.text:
-                ajax_soup = BeautifulSoup(resp.text, "html.parser")
-                ajax_chapters = super().extract_chapter_list(ajax_soup, base_series_url, resp.text)
-                if ajax_chapters:
-                    return ajax_chapters
-        except Exception:
-            pass
+        # 4. Fallback to /ajax/chapters/ or admin-ajax if no chapters in DOM
+        ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
+        ajax_chapters = _fetch_madara_ajax(ajax_endpoint)
+        if ajax_chapters:
+            return ajax_chapters
+
+        if manga_id:
+            admin_ajax_endpoint = urljoin(base_series_url, "/wp-admin/admin-ajax.php")
+            admin_chapters = _fetch_madara_ajax(admin_ajax_endpoint, {"action": "manga_get_chapters", "manga": manga_id})
+            if admin_chapters:
+                return admin_chapters
 
         return chapters
 

@@ -130,8 +130,14 @@ class BaseExtractor(ABC):
                 if cover_url:
                     break
 
+        if title:
+            if "_" in title and " " not in title:
+                title = title.replace('_', ' ').strip()
+        else:
+            title = slug.replace('_', ' ').replace('-', ' ').title()
+
         return {
-            "title": title or slug.replace('-', ' ').title(),
+            "title": title,
             "slug": slug,
             "cover_url": cover_url
         }
@@ -141,18 +147,31 @@ class BaseExtractor(ABC):
         # If title contains explicit chapter/episode numbering, prefer it (avoids internal database IDs in URLs)
         m = None
         if title:
-            m = re.search(r'(?:chapter|episode|ep|ch)\s*(\d+(?:[\.-]\d+)?)', title, re.I)
+            # Strip trailing dates and reader pagination first so page numbers (e.g. "- Page 1", "Sep 01,2021") are not picked up as chapters
+            clean_title = re.sub(r'[-—|:]\s*(?:read\b.*|online\b.*|page\s*\d+.*)', '', title, flags=re.I).strip()
+            clean_title = re.sub(r'\bpage\s*\d+\b.*', '', clean_title, flags=re.I).strip()
+            clean_title = re.sub(r'\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b\.?\s*\d{1,2},?\s*\d{2,4}', '', clean_title, flags=re.I).strip()
+            clean_title = re.sub(r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b', '', clean_title).strip()
+            clean_title = re.sub(r'\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b', '', clean_title).strip()
+
+            # Word-boundary check for chapter/episode/ch/c (avoid matching 'ep' in 'Sep')
+            m = re.search(r'\b(?:chapter|episode|ep|ch)\.?\s*[:#-]?\s*(\d+(?:[\.-]\d+)?)', clean_title, re.I)
             if not m:
-                m = re.search(r'#\s*(\d+(?:[\.-]\d+)?)', title)
+                m = re.search(r'\b(?:c)\.?\s*[:#-]?\s*(\d+(?:[\.-]\d+)?)', clean_title, re.I)
             if not m:
-                m = re.search(r'\b(?:chapter|episode|ep|ch)?\s*(\d+(?:[\.-]\d+)?)\s*$', title.strip(), re.I)
+                m = re.search(r'#\s*(\d+(?:[\.-]\d+)?)', clean_title)
+            if not m:
+                # Whole title is just a number or starts/ends with clear chapter number
+                m = re.search(r'^(?:chapter|episode|ep|ch)?\s*(\d+(?:[\.-]\d+)?)$', clean_title.strip(), re.I)
+            if not m:
+                m = re.search(r'[-_:\s](\d+(?:[\.-]\d+)?)\s*$', clean_title.strip())
 
         # Look in URL if title did not yield a valid chapter number
         clean_url = (url or "").split('?')[0].rstrip('/')
         path_last = clean_url.split('/')[-1] if clean_url else ""
 
         if not m:
-            m = re.search(r'(?:chapter|episode|ep|ch)[-_/](\d+(?:[\.-]\d+)?)', clean_url, re.I)
+            m = re.search(r'\b(?:chapter|episode|ep|ch)[-_/](\d+(?:[\.-]\d+)?)', clean_url, re.I)
         if not m:
             m = re.search(r'[-_/]c(?:h|hapter)?[-/.]?(\d+(?:[\.-]\d+)?)', clean_url, re.I)
         if not m:
@@ -160,7 +179,9 @@ class BaseExtractor(ABC):
         if not m:
             m = re.search(r'/(\d+(?:[\.-]\d+)?)$', clean_url)
         if not m:
-            m = re.search(r'(\d+(?:[\.-]\d+)?)', path_last)
+            # Guard against extracting numbers from series slugs (e.g. 66666 from "the-dark-magician...-66666-years")
+            if not any(w in path_last.lower() for w in ("manga", "manhua", "manhwa", "transmigrates", "years", "comic", "series")):
+                m = re.search(r'(\d+(?:[\.-]\d+)?)', path_last)
 
         if m:
             raw_num = m.group(1).replace('-', '.')
@@ -195,8 +216,13 @@ class BaseExtractor(ABC):
         # Filter branding icons, loaders, and placeholders from filename
         if any(bad in filename for bad in [
             "logo", "icon", "banner", "loader", "discord", "patreon",
-            "dflazy", "loading", "blank", "placeholder", "thumbnail", "win-cross", "cross", "detail-btn", "downlist", "emotion-form"
+            "dflazy", "loading", "blank", "placeholder", "thumbnail", "win-cross", "cross", "detail-btn", "downlist", "emotion-form",
+            "wetried_only", "avatar", "favicon"
         ]):
+            return None
+
+        # Filter Next.js tiny UI thumbnails/icons
+        if re.search(r'[?&]w=(?:16|32|48|64|96|128)\b', lower):
             return None
 
         # Filter avatar if it appears in filename (e.g. user-avatar.jpg), not if in series directory path
@@ -206,7 +232,8 @@ class BaseExtractor(ABC):
         # Filter actual ad directory patterns and static web UI themes
         if any(bad in lower for bad in [
             "/ads/", "/ad/", "-ads-", "_ads_", "/advertisement/", "loading.gif", "blank.gif", "dflazy.jpg",
-            "/themes/", "/wp-content/themes/", "about_", "to_be_continued", "static.fanfox.net", "static.mangahere"
+            "/themes/", "/wp-content/themes/", "about_", "to_be_continued", "static.fanfox.net", "static.mangahere",
+            "/avatars/", "/users/avatars/"
         ]):
             return None
 
@@ -263,6 +290,8 @@ class BaseExtractor(ABC):
 
         # 2. Check <a> links (common on series pages & reader sidebars)
         selectors = [
+            "ul.chapter-list li a",
+            "ul.chapter-list a",
             "li.chapter-list-item a",
             "li.chapter-item a",
             "li.wp-manga-chapter a",
@@ -292,13 +321,31 @@ class BaseExtractor(ABC):
         if not link_candidates and clean_series_path:
             link_candidates = soup.select(f"a[href^='/{clean_series_path}/'], a[href*='/{clean_series_path}/']")
 
+        def _extract_series_slug(path: str) -> str:
+            m = re.search(r'/(?:manga|series|comic|comics|webtoon|read)/([^/]+)', path, re.I)
+            if m:
+                s = m.group(1).lower()
+                if s not in ("manga", "series", "comic", "comics", "webtoon", "read", "ajax", "page", "chapter", "chapters"):
+                    return s
+            parts = [p.lower() for p in path.strip('/').split('/') if p]
+            if len(parts) >= 1 and parts[0] not in ("manga", "series", "comic", "comics", "webtoon", "read", "ajax", "page", "chapter", "chapters"):
+                return parts[0]
+            return ""
+
+        target_slug = _extract_series_slug(parsed.path) or (clean_series_path.split('/')[-1] if clean_series_path else "")
+        target_slug = target_slug.lower()
+
         for a in link_candidates:
-            # Skip links inside unrelated widget / recommendation containers
+            # Skip links inside unrelated widget / recommendation / sidebar containers
             parent_classes = " ".join(a.find_parent().get("class", [])) if a.find_parent() else ""
             p_lower = parent_classes.lower()
             if any(bad in p_lower for bad in ("widget", "popular", "related", "footer", "comment")) and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "volume", "eplister", "clstyle", "chapter-list")):
                 continue
             if "sidebar" in p_lower and not any(ok in p_lower for ok in ("chapter", "reader", "episodes", "drawer", "eplister", "clstyle")):
+                continue
+
+            anc_str = " ".join(" ".join(p.get("class", [])) + " " + p.get("id", "") for p in a.parents if hasattr(p, "get")).lower()
+            if any(bad in anc_str for bad in ("sidebar-pp", "content-sidebar", "sidebar-panel", "popular", "related", "recommend")) and not any(ok in anc_str for ok in ("listing-chapters_content", "chapterlist", "chapter-list", "manga-chapters-holder", "bxcl", "clstyle", "eplister")):
                 continue
 
             href = a.get("href", "").strip()
@@ -317,18 +364,29 @@ class BaseExtractor(ABC):
             )):
                 continue
 
-            # Must look like a chapter URL or contain chapter text
-            txt = a.get_text(separator=" ", strip=True)
+            # Prioritize dedicated chapter name element to prevent date concatenation (e.g. Chapter 109 18 Oct 2026)
+            name_el = a.select_one(".chapter-name, .chap-name, .chapternum, .name, .chapter-title, .title")
+            if name_el:
+                txt = name_el.get_text(separator=" ", strip=True)
+            else:
+                txt = a.get_text(separator=" ", strip=True)
+
             txt = re.sub(r'Last Read.*$', '', txt, flags=re.I).strip()
             # Clean trailing relative time like "2 days ago" or view counts
             txt_clean = re.sub(r'\s*\d+\s*(?:sec|second|min|minute|hour|hr|day|week|month|year)s?\s*(?:ago)?.*$', '', txt, flags=re.I).strip()
             txt_clean = re.sub(r'\s*\d+(?:\.\d+)?\s*(?:views?|reads?|comments?|[km])\b.*$', '', txt_clean, flags=re.I).strip()
-            # Clean trailing dates like "June 9, 2026" or "August 27, 2025" from chapter title
-            txt_clean = re.sub(r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}', '', txt_clean, flags=re.I).strip()
+            # Clean trailing dates like "June 9, 2026", "Sep 01,2021", or ISO dates from chapter title
+            txt_clean = re.sub(r'\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b\.?\s*\d{1,2},?\s*\d{2,4}', '', txt_clean, flags=re.I).strip()
+            txt_clean = re.sub(r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b', '', txt_clean).strip()
+            txt_clean = re.sub(r'\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b', '', txt_clean).strip()
             if not txt_clean:
                 txt_clean = txt
 
-            has_ch_kw = bool(re.search(r'[-_](?:chapter|ch|c|ep|episode)[-_/\d]|/(?:chapters?|ch|c|ep|episodes?)[-_/\d]|[-_/]\d+/?$', href, re.I) or re.search(r'(?:chapter|episode|ep|ch)\s*\d+', txt, re.I))
+            # Filter out non-chapter auxiliary links (e.g. comment threads, subscriptions)
+            if any(junk in txt.lower() for junk in ("follow-up comments", "notify me", "new replies", "leave a comment", "cancel reply")):
+                continue
+
+            has_ch_kw = bool(re.search(r'[-_](?:chapter|ch|c|ep|episode)[-_/\d]|/(?:chapters?|ch|c|ep|episodes?)[-_/\d]|[-_/]\d+/?$', href, re.I) or re.search(r'\b(?:chapter|episode|ep|ch|c)\.?\s*[:#-]?\s*\d+', txt, re.I))
             if not has_ch_kw and not a.find_parent(class_=re.compile(r'eplister|chapter[-_]?list|wp-manga-chapter|clstyle|bxcl|chapter-item', re.I)) and not a.find_parent(id=re.compile(r'chapter[-_]?list|eplister|chapters', re.I)):
                 continue
 
@@ -338,9 +396,27 @@ class BaseExtractor(ABC):
             if parsed_href.path.rstrip('/') == parsed.path.rstrip('/'):
                 continue
 
+            # Guard against candidate links belonging to a different manga series
+            cand_slug = _extract_series_slug(parsed_href.path)
+            if target_slug and cand_slug and target_slug not in ("manga", "series", "comic", "comics", "webtoon", "full-chapter-list"):
+                clean_target = re.sub(r'-(?:raw|all|full|scan|scans|eng|english|chapter|chapters|\d+)$', '', target_slug)
+                clean_cand = re.sub(r'-(?:raw|all|full|scan|scans|eng|english|chapter|chapters|\d+)$', '', cand_slug)
+                if clean_cand != clean_target and clean_target not in cand_slug and cand_slug not in clean_target:
+                    continue
+
+            if target_slug and len(target_slug) > 3 and target_slug not in ("manga", "series", "comic", "comics", "webtoon"):
+                clean_target = re.sub(r'-(?:raw|all|full|scan|scans|eng|english|chapter|chapters|\d+)$', '', target_slug)
+                href_path = parsed_href.path.lower()
+                m_direct = re.search(r'/([^/]+)-(?:chapter|ch|c)[-_/]\d+', href_path)
+                if m_direct:
+                    direct_slug = m_direct.group(1)
+                    clean_direct = re.sub(r'-(?:raw|all|full|scan|scans|eng|english|\d+)$', '', direct_slug)
+                    if clean_direct != clean_target and clean_target not in direct_slug and direct_slug not in clean_target:
+                        continue
+
             if full_url in seen_urls or not full_url.startswith("http"):
                 # If already seen, check if we can upgrade a generic title like 'Read Now' or 'Start Reading'
-                if full_url in seen_urls and re.search(r'(?:chapter|episode|ep|ch)\s*\d+', txt_clean, re.I):
+                if full_url in seen_urls and re.search(r'\b(?:chapter|episode|ep|ch|c)\.?\s*[:#-]?\s*\d+', txt_clean, re.I):
                     for existing in chapters:
                         if existing["url"] == full_url:
                             if any(gen in existing["title"].lower() for gen in ("read now", "start reading", "read newest", "from start", "read")):
