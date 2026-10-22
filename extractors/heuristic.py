@@ -59,9 +59,9 @@ class HeuristicExtractor(BaseExtractor):
         ]
 
         # 0. Check for client-side packed script reader (MangaFox, MangaHere, DM5 engines)
+        packed_imgs = []
         if "eval(function(p,a,c,k" in html:
-            packed_scripts = re.findall(r'<script[^>]*>(eval\(function\(p,a,c,k.*?)</script>', html, re.DOTALL)
-            packed_imgs = []
+            packed_scripts = re.findall(r'<script[^>]*>\s*(eval\(function\(p,a,c,k.*?)</script>', html, re.DOTALL)
             for script in packed_scripts:
                 pattern = r"}\('(.*)',(\d+),(\d+),'(.*)'\.split\('\|'\)"
                 pm = re.search(pattern, script)
@@ -74,6 +74,19 @@ class HeuristicExtractor(BaseExtractor):
                     return base36(n // len(alphabet)) + alphabet[n % len(alphabet)]
                 k_dict = {base36(i): k[i] if i < len(k) and k[i] else base36(i) for i in range(c)}
                 unpacked = re.sub(r'\b\w+\b', lambda mo: k_dict.get(mo.group(0), mo.group(0)), p).replace(r'\/', '/').replace(r"\'", "'")
+                
+                # Check for pix + pvalue format (DM5/MangaFox)
+                pix_m = re.search(r'var\s+pix\s*=\s*[\"\']([^\"\']+)[\"\']', unpacked)
+                pval_m = re.search(r'var\s+pvalue\s*=\s*(\[.*?\]);', unpacked)
+                if pix_m and pval_m:
+                    pix = pix_m.group(1)
+                    pvals = re.findall(r'[\"\']([^\"\']+)[\"\']', pval_m.group(1))
+                    for pv in pvals:
+                        u = ('https:' + pix if pix.startswith('//') else pix) + pv
+                        clean = self.clean_image_url(u, base_url)
+                        if clean:
+                            packed_imgs.append(clean)
+
                 for im in re.finditer(r'(?:https?:)?//[a-zA-Z0-9_.\-]+?\.[a-zA-Z]{2,6}/[^\s\'\"\\]+?\.(?:jpg|jpeg|png|webp)(?:\?[^\s\'\"\\]*)?', unpacked):
                     u = im.group(0)
                     if u.startswith('//'):
@@ -81,8 +94,61 @@ class HeuristicExtractor(BaseExtractor):
                     clean = self.clean_image_url(u, base_url)
                     if clean:
                         packed_imgs.append(clean)
-            if packed_imgs:
-                return self.deduplicate_urls(packed_imgs)
+
+        # Check for base64-encoded image lists (e.g. Manga18.club slides_p_path = ["..."])
+        b64_slides = re.search(r'(?:slides_p_path|chapter_images_b64|image_list_b64)\s*=\s*\[(.*?)\]', html, re.DOTALL)
+        if b64_slides:
+            b64_items = re.findall(r'\"([A-Za-z0-9+/=]+)\"', b64_slides.group(1))
+            b64_urls = []
+            for item in b64_items:
+                try:
+                    import base64
+                    decoded = base64.b64decode(item).decode("utf-8")
+                    clean = self.clean_image_url(decoded, base_url)
+                    if clean:
+                        b64_urls.append(clean)
+                except Exception:
+                    pass
+            if b64_urls:
+                return self.deduplicate_urls(b64_urls)
+
+        # Dynamic chapterfun.ashx loader fallback for DM5/MangaFox/MangaHere
+        if not packed_imgs and re.search(r'var\s+chapterid\s*=\s*(\d+)', html):
+            cid_m = re.search(r'var\s+chapterid\s*=\s*(\d+)', html)
+            if cid_m:
+                try:
+                    import requests
+                    cid = cid_m.group(1)
+                    base_chapter_url = url.split('?')[0].rstrip('/')
+                    if base_chapter_url.endswith('.html'):
+                        base_chapter_url = '/'.join(base_chapter_url.split('/')[:-1])
+                    fun_url = f'{base_chapter_url}/chapterfun.ashx?cid={cid}&page=1&key='
+                    resp = requests.get(fun_url, headers={'User-Agent': 'Mozilla/5.0', 'Referer': url, 'X-Requested-With': 'XMLHttpRequest'}, timeout=8)
+                    if resp.status_code == 200 and 'eval(function' in resp.text:
+                        pm = re.search(r"}\('(.*)',(\d+),(\d+),'(.*)'\.split\('\|'\)", resp.text)
+                        if pm:
+                            p, a, c, k = pm.group(1), int(pm.group(2)), int(pm.group(3)), pm.group(4).split('|')
+                            def base36(n):
+                                alphabet = '0123456789abcdefghijklmnopqrstuvwxyz'
+                                if n < len(alphabet): return alphabet[n]
+                                return base36(n // len(alphabet)) + alphabet[n % len(alphabet)]
+                            k_dict = {base36(i): k[i] if i < len(k) and k[i] else base36(i) for i in range(c)}
+                            unpacked = re.sub(r'\b\w+\b', lambda mo: k_dict.get(mo.group(0), mo.group(0)), p).replace(r'\/', '/').replace(r"\'", "'")
+                            pix_m = re.search(r'var\s+pix\s*=\s*[\"\']([^\"\']+)[\"\']', unpacked)
+                            pval_m = re.search(r'var\s+pvalue\s*=\s*(\[.*?\]);', unpacked)
+                            if pix_m and pval_m:
+                                pix = pix_m.group(1)
+                                pvals = re.findall(r'[\"\']([^\"\']+)[\"\']', pval_m.group(1))
+                                for pv in pvals:
+                                    u = ('https:' + pix if pix.startswith('//') else pix) + pv
+                                    clean = self.clean_image_url(u, base_url)
+                                    if clean:
+                                        packed_imgs.append(clean)
+                except Exception:
+                    pass
+
+        if packed_imgs:
+            return self.deduplicate_urls(packed_imgs)
         best_container = None
         for sel in reader_selectors:
             el = soup.select_one(sel)

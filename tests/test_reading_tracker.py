@@ -95,6 +95,14 @@ class TestReadingTrackerAndMetadata(unittest.TestCase):
         self.assertEqual(extractor.extract_chapter_number("https://arenascan.com/island-of-stars-and-chains-3/"), 3.0)
         self.assertEqual(extractor.extract_chapter_number("https://example.com/manga/solo/chapter-10.5/"), 10.5)
 
+        # Test FanFox and aggregator date formatted titles
+        self.assertEqual(extractor.extract_chapter_number("https://fanfox.net/manga/slug/c015/1.html", "Ch.015 Sep 01,2021"), 15.0)
+        self.assertEqual(extractor.extract_chapter_number("https://fanfox.net/manga/slug/c132/1.html", "Ch.132 Sep 07,2024"), 132.0)
+        self.assertEqual(extractor.extract_chapter_number("https://fanfox.net/manga/slug/c169/1.html", "Ch.169 Feb 12,2026"), 169.0)
+        self.assertEqual(extractor.extract_chapter_number("https://fanfox.net/manga/slug/c207/1.html", "Ch.207 Oct 15,2026"), 207.0)
+        self.assertEqual(extractor.extract_chapter_number("https://ravenscans.org/manga/slug-chapter-1/", "Chapter 1"), 1.0)
+        self.assertEqual(extractor.extract_chapter_number("https://ravenscans.org/manga/slug-chapter-202/", "Chapter 202"), 202.0)
+
     def test_next_chapter_heuristic_increment(self):
         from extractors.heuristic import HeuristicExtractor
         h = HeuristicExtractor()
