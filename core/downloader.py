@@ -8,6 +8,11 @@ try:
     import aiohttp
 except ImportError:
     aiohttp = None
+try:
+    from curl_cffi import requests as cffi_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
 import requests
 from .optimizer import optimize_panel_image
 
@@ -60,39 +65,68 @@ async def fetch_single_panel(
         except Exception:
             pass
 
+    # Check database for cached clearance cookie (Cloudflare bypass for protected CDNs)
+    try:
+        from database.db import get_clearance_cookie
+        from urllib.parse import urlparse
+        img_domain = urlparse(url).netloc
+        ref_domain = urlparse(headers.get("Referer", "")).netloc if headers.get("Referer") else ""
+        cached_cf = get_clearance_cookie(img_domain) or (get_clearance_cookie(ref_domain) if ref_domain else None)
+        if cached_cf:
+            headers = dict(headers)
+            if not headers.get("Cookie"):
+                headers["Cookie"] = cached_cf["cookie_string"]
+            if cached_cf.get("user_agent"):
+                headers["User-Agent"] = cached_cf["user_agent"]
+    except Exception:
+        pass
+
     async with semaphore:
         for attempt in range(retries):
             try:
                 raw_bytes = None
                 if aiohttp is not None and session is not None and isinstance(session, aiohttp.ClientSession):
-                    timeout = aiohttp.ClientTimeout(total=30)
-                    async with session.get(url, headers=headers, timeout=timeout) as response:
-                        if response.status == 200:
-                            raw_bytes = await response.read()
-                else:
+                    try:
+                        timeout = aiohttp.ClientTimeout(total=12, connect=5)
+                        async with session.get(url, headers=headers, timeout=timeout) as response:
+                            if response.status == 200:
+                                raw_bytes = await response.read()
+                    except Exception:
+                        raw_bytes = None
+
+                if raw_bytes is None:
                     def _sync_fetch() -> Optional[bytes]:
-                        # 1. Standard fetch
+                        # 1. Try curl_cffi with Chrome impersonation if available
+                        if HAS_CURL_CFFI:
+                            try:
+                                resp = cffi_requests.get(url, headers=headers, impersonate="chrome120", timeout=12)
+                                if resp.status_code == 200 and len(resp.content) > 500:
+                                    return resp.content
+                            except Exception:
+                                pass
+
+                        # 2. Standard fetch
                         try:
-                            resp = requests.get(url, headers=headers, timeout=25)
+                            resp = requests.get(url, headers=headers, timeout=10)
                             if resp.status_code == 200 and len(resp.content) > 500:
                                 return resp.content
                         except Exception:
                             pass
 
-                        # 2. Domain root referer with verify=False
+                        # 3. Domain root referer with verify=False
                         try:
                             alt_headers = dict(headers)
                             if headers.get("Referer"):
                                 ref_parts = headers["Referer"].split("/")
                                 domain_ref = "/".join(ref_parts[:3]) + "/" if len(ref_parts) >= 3 else headers["Referer"]
                                 alt_headers["Referer"] = domain_ref
-                            resp = requests.get(url, headers=alt_headers, timeout=25, verify=False)
+                            resp = requests.get(url, headers=alt_headers, timeout=10, verify=False)
                             if resp.status_code == 200 and len(resp.content) > 500:
                                 return resp.content
                         except Exception:
                             pass
 
-                        # 3. Bare headers fallback
+                        # 4. Bare headers fallback
                         try:
                             bare_headers = {
                                 "User-Agent": headers.get("User-Agent", "Mozilla/5.0"),
@@ -140,7 +174,8 @@ async def download_panels_stream(
     progress_callback: Optional[Callable[[int, int], None]] = None,
     image_format: str = "JPEG",
     webp_quality: int = 80,
-    is_cancelled_callback: Optional[Callable[[], bool]] = None
+    is_cancelled_callback: Optional[Callable[[], bool]] = None,
+    is_paused_callback: Optional[Callable[[], bool]] = None
 ) -> List[bytes]:
     """
     Download a list of panel image URLs concurrently with retry logic,
@@ -175,17 +210,25 @@ async def download_panels_stream(
             completed = 0
             total = len(task_objs)
             try:
-                for fut in asyncio.as_completed(task_objs):
+                pending_set = set(task_objs)
+                while pending_set:
                     if is_cancelled_callback and is_cancelled_callback():
-                        for t in task_objs:
+                        for t in pending_set:
                             t.cancel()
                         return []
-                    res = await fut
-                    results.append(res)
-                    if res[1] is not None:
-                        completed += 1
-                    if progress_callback:
-                        progress_callback(completed, total)
+                    while is_paused_callback and is_paused_callback() and not (is_cancelled_callback and is_cancelled_callback()):
+                        await asyncio.sleep(0.5)
+                    done, pending_set = await asyncio.wait(pending_set, return_when=asyncio.FIRST_COMPLETED, timeout=0.5)
+                    for t in done:
+                        try:
+                            res = t.result()
+                            results.append(res)
+                            if res[1] is not None:
+                                completed += 1
+                            if progress_callback:
+                                progress_callback(completed, total)
+                        except Exception:
+                            pass
             except asyncio.CancelledError:
                 for t in task_objs:
                     t.cancel()
@@ -209,17 +252,25 @@ async def download_panels_stream(
         completed = 0
         total = len(task_objs)
         try:
-            for fut in asyncio.as_completed(task_objs):
+            pending_set = set(task_objs)
+            while pending_set:
                 if is_cancelled_callback and is_cancelled_callback():
-                    for t in task_objs:
+                    for t in pending_set:
                         t.cancel()
                     return []
-                res = await fut
-                results.append(res)
-                if res[1] is not None:
-                    completed += 1
-                if progress_callback:
-                    progress_callback(completed, total)
+                while is_paused_callback and is_paused_callback() and not (is_cancelled_callback and is_cancelled_callback()):
+                    await asyncio.sleep(0.5)
+                done, pending_set = await asyncio.wait(pending_set, return_when=asyncio.FIRST_COMPLETED, timeout=0.5)
+                for t in done:
+                    try:
+                        res = t.result()
+                        results.append(res)
+                        if res[1] is not None:
+                            completed += 1
+                        if progress_callback:
+                            progress_callback(completed, total)
+                    except Exception:
+                        pass
         except asyncio.CancelledError:
             for t in task_objs:
                 t.cancel()

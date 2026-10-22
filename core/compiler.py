@@ -8,6 +8,27 @@ try:
 except ImportError:
     img2pdf = None
 
+def _decode_image_fallback(img_bytes: bytes) -> Optional[Image.Image]:
+    """Decode image using Android native BitmapFactory if Pillow lacks codec support (e.g. WebP)."""
+    try:
+        from java import jclass, jarray, jbyte
+        BitmapFactory = jclass("android.graphics.BitmapFactory")
+        Bitmap = jclass("android.graphics.Bitmap")
+        ByteArrayOutputStream = jclass("java.io.ByteArrayOutputStream")
+
+        j_bytes = jarray(jbyte)(img_bytes)
+        bmp = BitmapFactory.decodeByteArray(j_bytes, 0, len(img_bytes))
+        if bmp is not None:
+            baos = ByteArrayOutputStream()
+            bmp.compress(Bitmap.CompressFormat.JPEG, 90, baos)
+            jpeg_bytes = bytes(baos.toByteArray())
+            bmp.recycle()
+            baos.close()
+            return Image.open(BytesIO(jpeg_bytes))
+    except Exception:
+        pass
+    return None
+
 def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
     """Compile a list of JPEG image bytes into a single PDF document."""
     if not image_bytes_list:
@@ -19,7 +40,8 @@ def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
             pdf_bytes = img2pdf.convert(image_bytes_list)
             with open(output_path, "wb") as f:
                 f.write(pdf_bytes)
-            return True
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                return True
         except Exception:
             pass
 
@@ -27,13 +49,20 @@ def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
     try:
         pil_images = []
         for b in image_bytes_list:
+            im = None
             try:
                 im = Image.open(BytesIO(b))
-                if im.mode != "RGB":
-                    im = im.convert("RGB")
-                pil_images.append(im)
             except Exception:
-                pass
+                im = _decode_image_fallback(b)
+
+            if im is not None:
+                try:
+                    if im.mode != "RGB":
+                        im = im.convert("RGB")
+                    pil_images.append(im)
+                except Exception:
+                    pass
+
         if pil_images:
             pil_images[0].save(
                 output_path,
@@ -42,7 +71,7 @@ def compile_pdf(image_bytes_list: List[bytes], output_path: str) -> bool:
                 save_all=True,
                 append_images=pil_images[1:]
             )
-            return True
+            return os.path.exists(output_path) and os.path.getsize(output_path) > 0
     except Exception:
         return False
     return False
@@ -119,22 +148,43 @@ def save_raw_images(image_bytes_list: List[bytes], folder_path: str) -> bool:
         return False
 
 
+def detect_file_format(file_path: str, fallback_format: str = "cbz") -> str:
+    """Detect actual file format (cbz, pdf, folder) based on path, extension, and magic header."""
+    if not file_path or not os.path.exists(file_path):
+        return fallback_format or "cbz"
+    if os.path.isdir(file_path):
+        return "folder"
+    ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+    if ext in ("pdf", "cbz"):
+        return ext
+    try:
+        with open(file_path, "rb") as f:
+            hdr = f.read(4)
+        if hdr.startswith(b"PK"):
+            return "cbz"
+        elif hdr.startswith(b"%PDF"):
+            return "pdf"
+    except Exception:
+        pass
+    return fallback_format or "cbz"
+
 def get_chapter_page_count(file_path: str, file_format: str) -> int:
     """Return total number of pages in a compiled chapter (CBZ, Folder, or PDF)."""
     if not os.path.exists(file_path):
         return 0
-    if file_format == "cbz":
+    actual_format = detect_file_format(file_path, file_format)
+    if actual_format == "cbz":
         try:
             with zipfile.ZipFile(file_path, "r") as zf:
                 return len([n for n in zf.namelist() if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
         except Exception:
             return 0
-    elif file_format == "folder":
+    elif actual_format == "folder":
         try:
             return len([f for f in os.listdir(file_path) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
         except Exception:
             return 0
-    elif file_format == "pdf":
+    elif actual_format == "pdf":
         try:
             import pikepdf
             with pikepdf.Pdf.open(file_path) as pdf:
@@ -160,7 +210,8 @@ def get_chapter_page_bytes(file_path: str, file_format: str, page_index: int) ->
     """Retrieve raw image bytes for a specific 0-indexed page in a compiled chapter."""
     if not os.path.exists(file_path):
         return None
-    if file_format == "cbz":
+    actual_format = detect_file_format(file_path, file_format)
+    if actual_format == "cbz":
         try:
             with zipfile.ZipFile(file_path, "r") as zf:
                 names = sorted([n for n in zf.namelist() if n.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
@@ -168,7 +219,7 @@ def get_chapter_page_bytes(file_path: str, file_format: str, page_index: int) ->
                     return zf.read(names[page_index])
         except Exception:
             return None
-    elif file_format == "folder":
+    elif actual_format == "folder":
         try:
             names = sorted([f for f in os.listdir(file_path) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))])
             if 0 <= page_index < len(names):
@@ -176,7 +227,7 @@ def get_chapter_page_bytes(file_path: str, file_format: str, page_index: int) ->
                     return f.read()
         except Exception:
             return None
-    elif file_format == "pdf":
+    elif actual_format == "pdf":
         try:
             import pikepdf
             with pikepdf.Pdf.open(file_path) as pdf:
