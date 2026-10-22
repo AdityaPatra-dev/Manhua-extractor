@@ -17,5 +17,8 @@ local.properties
 android/local.properties
 android/app/src/main/python/
 
+# Health check reports
+.github/reports/
+
 
 

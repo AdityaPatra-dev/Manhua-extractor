@@ -1,0 +1,69 @@
+name: Daily Scraper Sentinel & Health Check
+
+on:
+  schedule:
+    # Runs daily at 02:00 UTC (07:30 AM IST)
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: 'Sources to test (comma-separated keys or "all")'
+        required: false
+        default: 'all'
+      query:
+        description: 'Search query to test'
+        required: false
+        default: 'hero'
+      concurrency:
+        description: 'Concurrency limit'
+        required: false
+        default: '4'
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  healthcheck:
+    name: Scraper Sentinel Runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Execute Scraper Health Check
+        run: |
+          python3 .github/scripts/check_scrapers.py \
+            --sources "${{ inputs.sources || 'all' }}" \
+            --query "${{ inputs.query || 'hero' }}" \
+            --concurrency "${{ inputs.concurrency || '4' }}"
+
+      - name: Process Results & Manage GitHub Issues
+        env:
+          # Uses user's PAT_TOKEN if configured, otherwise falls back to GITHUB_TOKEN
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          REPORT_PATH: .github/reports/scraper_health.json
+        run: |
+          python3 .github/scripts/manage_issues.py
+
+      - name: Upload Health Check Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-health-report
+          path: .github/reports/scraper_health.json
+          retention-days: 14
