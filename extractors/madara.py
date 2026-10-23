@@ -112,7 +112,7 @@ class MadaraExtractor(BaseExtractor):
         # Check script for manga.base_url or canonical link
         m_base = re.search(r'["\']base_url["\']:\s*["\']([^"\']+)["\']', html)
         if m_base:
-            base_series_url = m_base.group(1)
+            base_series_url = m_base.group(1).replace(r'\/', '/').replace('\\/', '/')
         else:
             canonical = soup.select_one("link[rel='canonical']")
             if canonical and canonical.get("href"):
