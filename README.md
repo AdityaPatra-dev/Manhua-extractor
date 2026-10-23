@@ -10,7 +10,7 @@
 
 <!-- Live Status Badges -->
 [![Release](https://img.shields.io/github/v/release/AdityaPatra-dev/Manhua-extractor?color=7c3aed&label=Latest%20Release&logo=github&style=for-the-badge)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
-[![Android APK](https://img.shields.io/badge/Android-APK%20v1.0.9-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
+[![Android APK](https://img.shields.io/badge/Android-APK%20v1.1.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
 [![Scraper Sentinel](https://img.shields.io/github/actions/workflow/status/AdityaPatra-dev/Manhua-extractor/daily-scraper-check.yml?branch=main&label=Scraper%20Sentinel&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/actions/workflows/daily-scraper-check.yml)
 [![Docker Image](https://img.shields.io/badge/Docker-adityapatra%2Fmanhua--extractor-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/adityapatra/manhua-extractor)
 [![Python Version](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)

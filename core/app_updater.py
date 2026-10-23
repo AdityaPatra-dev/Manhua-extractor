@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("app_updater")
 
-CURRENT_APP_VERSION = "1.0.9"
+CURRENT_APP_VERSION = "1.1.0"
 GITHUB_REPO = "AdityaPatra-dev/Manhua-extractor"
 CACHE_TTL = 1800  # 30 minutes
 
@@ -93,8 +93,8 @@ def get_latest_release(force: bool = False, simulate: bool = False, prefer_debug
                 has_update = is_version_newer(clean_tag, CURRENT_APP_VERSION)
                 if simulate:
                     has_update = True
-                    clean_tag = "1.1.0"
-                    tag_name = "v1.1.0"
+                    clean_tag = "1.2.0"
+                    tag_name = "v1.2.0"
 
                 result = {
                     "status": "success",
