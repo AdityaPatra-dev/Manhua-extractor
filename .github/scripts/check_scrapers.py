@@ -98,37 +98,48 @@ async def test_single_source(
         if alt_q != query:
             queries_to_try.append(alt_q)
 
+    series_candidates = []
     for q_try in queries_to_try:
         try:
-            hits = await asyncio.wait_for(
+            cur_hits = await asyncio.wait_for(
                 dispatcher._query_single_source(source, q_try, session),
                 timeout=25.0
             )
-            if hits:
-                query = q_try
-                break
+            if cur_hits and isinstance(cur_hits, list):
+                valid_hits = [h for h in cur_hits if (h.get("series_url") or h.get("url")) and h.get("title")]
+                if valid_hits:
+                    cand_list = []
+                    for vh in valid_hits:
+                        u = vh.get("series_url") or vh.get("url")
+                        if u and u not in cand_list:
+                            cand_list.append(u)
+                    if cand_list:
+                        test_cand = cand_list[0]
+                        s_chk = await asyncio.to_thread(extractor_dispatcher.inspect_series, test_cand)
+                        if s_chk and any(c.get("url") and c.get("url").rstrip('/') != test_cand.rstrip('/') for c in s_chk.get("chapters", [])):
+                            hits = cur_hits
+                            query = q_try
+                            series_candidates = cand_list
+                            break
+                        elif not series_candidates:
+                            hits = cur_hits
+                            series_candidates = cand_list
         except asyncio.TimeoutError:
             result["search_error"] = "Search request timed out after 25s (Network latency or anti-bot hang)"
         except Exception as e:
             result["search_error"] = f"Search exception: {type(e).__name__} - {str(e)}"
 
-    if hits and isinstance(hits, list) and len(hits) > 0:
-        valid_hits = [h for h in hits if (h.get("series_url") or h.get("url")) and h.get("title")]
-        if valid_hits:
-            result["search_status"] = "PASS"
-            result["search_hits"] = len(valid_hits)
-            result["sample_series_url"] = valid_hits[0].get("series_url") or valid_hits[0].get("url")
-        else:
-            result["search_status"] = "FAIL"
-            result["search_error"] = f"Search returned {len(hits)} raw items, but none had valid series_url or title"
+    if series_candidates:
+        result["search_status"] = "PASS"
+        result["search_hits"] = len(series_candidates)
+        result["sample_series_url"] = series_candidates[0]
     else:
         result["search_status"] = "FAIL"
         if not result["search_error"]:
             result["search_error"] = f"Search returned 0 results for queries {queries_to_try} (Selector changed, site structure updated, or blocked)"
 
     # Fallback series URL if search failed but domain is specified
-    series_url_to_test = result.get("sample_series_url")
-    if not series_url_to_test and domain:
+    if not series_candidates and domain:
         # Try fetching domain homepage to extract an active series link
         try:
             home_code, home_html, home_soup = await asyncio.to_thread(extractor_dispatcher.fetch_page, f"https://{domain}")
@@ -138,62 +149,74 @@ async def test_single_source(
                     series_matches = re.findall(r'href=[\"\'](/(?:manga|series|comic|comics|webtoon)/[^/\"\'#?]+/?)[^\"\']*[\"\']', home_html, re.I)
                     if series_matches:
                         series_matches = [urllib.parse.urljoin(f"https://{domain}", s) for s in series_matches]
-                if series_matches:
-                    series_url_to_test = series_matches[0]
-                    result["sample_series_url"] = series_url_to_test
+                for sm in series_matches:
+                    if sm not in series_candidates:
+                        series_candidates.append(sm)
+                if series_candidates:
+                    result["sample_series_url"] = series_candidates[0]
         except Exception:
             pass
 
     # --- Phase 2: Direct Series Inspection Test ---
-    if series_url_to_test:
-        try:
-            series_data = await asyncio.wait_for(
-                asyncio.to_thread(
-                    extractor_dispatcher.inspect_series,
-                    series_url_to_test
-                ),
-                timeout=35.0
-            )
+    series_data = None
+    series_url_to_test = None
+    if series_candidates:
+        for cand_url in series_candidates[:3]:
+            try:
+                s_data = await asyncio.wait_for(
+                    asyncio.to_thread(extractor_dispatcher.inspect_series, cand_url),
+                    timeout=25.0
+                )
+                if s_data and s_data.get("chapters"):
+                    real_ch = [
+                        c for c in s_data["chapters"]
+                        if c.get("url") and c.get("url").rstrip('/') != cand_url.rstrip('/')
+                    ]
+                    if real_ch:
+                        series_data = s_data
+                        series_url_to_test = cand_url
+                        result["sample_series_url"] = cand_url
+                        break
+                if not series_data and s_data:
+                    series_data = s_data
+                    series_url_to_test = cand_url
+            except Exception as e:
+                if not result.get("direct_parse_error"):
+                    result["direct_parse_error"] = str(e)
 
-            if series_data and isinstance(series_data, dict):
-                status_code = series_data.get("status_code", 0)
-                chapters = series_data.get("chapters", [])
-                err = series_data.get("error")
+        if series_data and isinstance(series_data, dict):
+            status_code = series_data.get("status_code", 200)
+            chapters = series_data.get("chapters", [])
+            err = series_data.get("error")
 
-                real_chapters = [
-                    c for c in chapters
-                    if c.get("url") and c.get("url").rstrip('/') != series_url_to_test.rstrip('/')
-                ]
-                if real_chapters:
-                    result["direct_parse_status"] = "PASS"
-                    result["chapters_found"] = len(real_chapters)
-                    ch_url = None
-                    for c in real_chapters:
-                        u = c.get("url", "")
-                        if any(k in u.lower() for k in ("chapter", "ch-", "ch/", "/c-", "/c/")):
-                            ch_url = u
-                            break
-                    if not ch_url:
-                        ch_url = real_chapters[0].get("url")
-                    result["sample_chapter_url"] = ch_url
-                else:
-                    result["direct_parse_status"] = "FAIL"
-                    result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 distinct chapters were parsed"
-                    if status_code in (403, 503):
-                        result["direct_parse_error"] = f"HTTP {status_code}: Cloudflare or anti-bot challenge active"
-                    elif err:
-                        result["direct_parse_error"] = f"Series inspector error: {err}"
-                    else:
-                        result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 chapters were parsed (CSS selectors broken)"
+            real_chapters = [
+                c for c in chapters
+                if c.get("url") and c.get("url").rstrip('/') != (series_url_to_test or "").rstrip('/')
+            ]
+            if real_chapters:
+                result["direct_parse_status"] = "PASS"
+                result["chapters_found"] = len(real_chapters)
+                ch_url = None
+                for c in real_chapters:
+                    u = c.get("url", "")
+                    if any(k in u.lower() for k in ("chapter", "ch-", "ch/", "/c-", "/c/")):
+                        ch_url = u
+                        break
+                if not ch_url:
+                    ch_url = real_chapters[0].get("url")
+                result["sample_chapter_url"] = ch_url
             else:
                 result["direct_parse_status"] = "FAIL"
-                result["direct_parse_error"] = "inspect_series returned empty or invalid response"
-        except asyncio.TimeoutError:
+                result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 distinct chapters were parsed"
+                if status_code in (403, 503):
+                    result["direct_parse_error"] = f"HTTP {status_code}: Cloudflare or anti-bot challenge active"
+                elif err:
+                    result["direct_parse_error"] = f"Series inspector error: {err}"
+                else:
+                    result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 chapters were parsed (CSS selectors broken)"
+        else:
             result["direct_parse_status"] = "FAIL"
-            result["direct_parse_error"] = "Direct series parsing timed out after 35s (Connection stall or challenge hang)"
-        except Exception as e:
-            result["direct_parse_status"] = "FAIL"
-            result["direct_parse_error"] = f"Series inspection exception: {type(e).__name__} - {str(e)}"
+            result["direct_parse_error"] = result.get("direct_parse_error") or "inspect_series returned empty or invalid response"
     else:
         result["direct_parse_status"] = "SKIPPED"
         result["direct_parse_error"] = "No series URL available to test inspection"

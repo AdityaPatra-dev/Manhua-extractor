@@ -322,14 +322,16 @@ class BaseExtractor(ABC):
             link_candidates = soup.select(f"a[href^='/{clean_series_path}/'], a[href*='/{clean_series_path}/']")
 
         def _extract_series_slug(path: str) -> str:
-            m = re.search(r'/(?:manga|series|comic|comics|webtoon|read)/([^/]+)', path, re.I)
+            m = re.search(r'/(?:manga|series|comic|comics|webtoon|read|reader)(?:/[a-z]{2}(?:-[a-z]{2})?)?(?:/\d+)?/([^/]+)', path, re.I)
             if m:
                 s = m.group(1).lower()
-                if s not in ("manga", "series", "comic", "comics", "webtoon", "read", "ajax", "page", "chapter", "chapters"):
+                s = re.sub(r'-(?:chapter|ch|c)[-_/\d].*$', '', s, flags=re.I)
+                if s not in ("manga", "series", "comic", "comics", "webtoon", "read", "reader", "ajax", "page", "chapter", "chapters", "en", "es", "fr", "raw") and not re.match(r'^\d+(?:-\d+)?$', s):
                     return s
             parts = [p.lower() for p in path.strip('/').split('/') if p]
-            if len(parts) >= 1 and parts[0] not in ("manga", "series", "comic", "comics", "webtoon", "read", "ajax", "page", "chapter", "chapters"):
-                return parts[0]
+            filtered = [p for p in parts if p not in ("manga", "series", "comic", "comics", "webtoon", "read", "reader", "ajax", "page", "chapter", "chapters", "en", "es", "fr", "raw") and not re.match(r'^\d+(?:-\d+)?$', p)]
+            if filtered:
+                return re.sub(r'-(?:chapter|ch|c)[-_/\d].*$', '', filtered[0], flags=re.I)
             return ""
 
         target_slug = _extract_series_slug(parsed.path) or (clean_series_path.split('/')[-1] if clean_series_path else "")
@@ -398,6 +400,8 @@ class BaseExtractor(ABC):
 
             # Guard against candidate links belonging to a different manga series
             cand_slug = _extract_series_slug(parsed_href.path)
+            if "full-chapter-list" in parsed.path.lower() or "ajax/chapters" in parsed.path.lower():
+                cand_slug = target_slug
             if target_slug and cand_slug and target_slug not in ("manga", "series", "comic", "comics", "webtoon", "full-chapter-list"):
                 clean_target = re.sub(r'-(?:raw|all|full|scan|scans|eng|english|chapter|chapters|\d+)$', '', target_slug)
                 clean_cand = re.sub(r'-(?:raw|all|full|scan|scans|eng|english|chapter|chapters|\d+)$', '', cand_slug)

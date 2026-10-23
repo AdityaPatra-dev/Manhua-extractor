@@ -404,6 +404,7 @@ class ExtractorDispatcher:
 
         return {
             "success": True,
+            "status_code": status_code,
             "series_title": series_info.get("title") or "Unknown Series",
             "series_slug": series_info.get("slug") or "series",
             "series_url": series_url,
