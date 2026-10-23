@@ -2734,6 +2734,64 @@ body.theme-amoled .modal-card {
   border: 1px solid rgba(148, 163, 184, 0.4);
 }
 
+/* App Auto-Updater Styles */
+.app-update-banner {
+  background: linear-gradient(90deg, #1e1b4b, #0f172a);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.4);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.update-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.update-banner-icon {
+  font-size: 1.1rem;
+}
+
+.update-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-sm {
+  padding: 4px 10px !important;
+  font-size: 0.8rem !important;
+  height: 28px !important;
+}
+
+.btn-banner-close {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.btn-banner-close:hover {
+  color: #f1f5f9;
+}
+
 
 
 

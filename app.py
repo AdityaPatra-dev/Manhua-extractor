@@ -9,7 +9,7 @@ import threading
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Tuple, Union, Callable
 from fastapi import FastAPI, BackgroundTasks, Request, Response, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from urllib.parse import urlparse
@@ -47,6 +47,7 @@ from core.downloader import download_panels_stream, get_staging_dir, cleanup_sta
 from core.slicer import slice_chapter_panels
 from core.ad_filter import compute_perceptual_hash, filter_chapter_panels
 from core.scrobbler import verify_anilist_token, verify_mal_token, sync_trackers
+from core.app_updater import CURRENT_APP_VERSION, get_latest_release
 from core.compiler import (
     compile_pdf,
     compile_cbz,
@@ -82,6 +83,26 @@ async def health_check():
         "status": "ok",
         "platform": "android" if os.environ.get("MANHUA_IS_ANDROID") else "desktop"
     }
+
+@app.get("/api/app/version")
+async def get_app_version():
+    return {
+        "version": CURRENT_APP_VERSION,
+        "platform": "android" if os.environ.get("MANHUA_IS_ANDROID") else "desktop"
+    }
+
+@app.get("/api/app/check-update")
+async def check_app_update(force: bool = False, simulate: bool = False, debug: bool = False):
+    info = await asyncio.to_thread(get_latest_release, force=force, simulate=simulate, prefer_debug=debug)
+    return info
+
+@app.get("/api/app/download-update")
+async def download_update_redirect():
+    info = await asyncio.to_thread(get_latest_release, force=False)
+    apk_url = info.get("apk_url")
+    if not apk_url:
+        return JSONResponse(status_code=404, content={"error": "No APK asset found for latest release"})
+    return RedirectResponse(url=apk_url)
 
 # Mount static folder
 static_path = os.path.join(BASE_DIR, "static")

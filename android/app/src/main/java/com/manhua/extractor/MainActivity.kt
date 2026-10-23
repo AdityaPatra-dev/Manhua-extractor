@@ -345,6 +345,28 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    fun notifyUpdateProgress(percent: Int) {
+        webView.evaluateJavascript("if (window.onUpdateDownloadProgress) { window.onUpdateDownloadProgress($percent); }", null)
+    }
+
+    fun notifyUpdateError(error: String) {
+        val safeErr = org.json.JSONObject.quote(error)
+        webView.evaluateJavascript("if (window.onUpdateDownloadError) { window.onUpdateDownloadError($safeErr); }", null)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        try {
+            val updateFile = java.io.File(cacheDir, "updates/update.apk")
+            if (updateFile.exists() && updateFile.length() > 0L) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+                    webView.evaluateJavascript("if (window.onUpdateReadyToInstall) { window.onUpdateReadyToInstall(); }", null)
+                }
+            }
+        } catch (_: Exception) {
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         webView.destroy()

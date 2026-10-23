@@ -2755,7 +2755,8 @@ document.addEventListener("DOMContentLoaded", () => {
     { title: "📦 Backup & Export Batches", category: "Backup", action: () => { switchTab("tab-settings"); document.getElementById("backup-sync-card")?.scrollIntoView({ behavior: "smooth" }); } },
     { title: "📱 Phone & OPDS Connection", category: "Connectivity", action: () => { document.getElementById("btn-phone-connect")?.click(); } },
     { title: "🖤 Toggle AMOLED True Black", category: "Theme", action: () => { btnThemeToggle?.click(); } },
-    { title: "🧪 Open Compatibility Lab", category: "Lab", action: () => { switchTab("tab-lab"); } }
+    { title: "🧪 Open Compatibility Lab", category: "Lab", action: () => { switchTab("tab-lab"); } },
+    { title: "🚀 Check for App Updates", category: "System", action: () => checkForAppUpdates({ showNotificationIfNone: true, force: true }) }
   ];
 
   function openCommandPalette() {
@@ -3109,10 +3110,229 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // ==========================================
+  // IN-APP AUTO-UPDATER
+  // ==========================================
+  let currentUpdateInfo = null;
+
+  async function checkForAppUpdates(options = { showNotificationIfNone: false, force: false, simulate: false }) {
+    const statusText = document.getElementById("updater-status-text");
+    const checkBtn = document.getElementById("btn-check-app-update");
+    if (statusText) statusText.textContent = "Checking GitHub for updates...";
+    if (checkBtn) { checkBtn.disabled = true; checkBtn.textContent = "Checking..."; }
+
+    try {
+      const q = new URLSearchParams();
+      if (options.force) q.set("force", "true");
+      if (options.simulate) q.set("simulate", "true");
+      if (window.AndroidApp && typeof window.AndroidApp.isDebug === "function" && window.AndroidApp.isDebug()) {
+        q.set("debug", "true");
+      }
+      const url = `/api/app/check-update${q.toString() ? "?" + q.toString() : ""}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      currentUpdateInfo = data;
+
+      // Update version badge
+      const verBadge = document.getElementById("updater-version-badge");
+      if (verBadge && data.current_version) {
+        verBadge.textContent = `v${data.current_version}`;
+      }
+
+      if (data.status === "success" && data.has_update) {
+        // Show update badge in drawer
+        const drawerBadge = document.getElementById("drawer-update-badge");
+        if (drawerBadge) drawerBadge.classList.remove("hidden");
+
+        // Show top banner
+        const banner = document.getElementById("app-update-banner");
+        const bannerText = document.getElementById("update-banner-text");
+        if (banner && bannerText) {
+          bannerText.textContent = `New update available: v${data.latest_version}!`;
+          banner.classList.remove("hidden");
+        }
+
+        if (statusText) {
+          statusText.innerHTML = `<span style="color: #10b981;">✨ Update available: v${data.latest_version}</span>`;
+        }
+
+        // If user manually tapped check or simulate, open modal immediately
+        if (options.showNotificationIfNone || options.simulate) {
+          openAppUpdateModal(data);
+        }
+      } else {
+        if (statusText) {
+          statusText.innerHTML = `<span style="color: var(--text-muted);">✓ You are on the latest version (v${data.current_version})</span>`;
+        }
+        if (options.showNotificationIfNone) {
+          showToast(`You are on the latest version (v${data.current_version})!`, "info");
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to check for app update:", e);
+      if (statusText) statusText.textContent = "Could not reach update server";
+      if (options.showNotificationIfNone) {
+        showToast("Failed to check for updates: " + e.message, "error");
+      }
+    } finally {
+      if (checkBtn) { checkBtn.disabled = false; checkBtn.textContent = "🔍 Check for Updates"; }
+    }
+  }
+
+  function openAppUpdateModal(info) {
+    if (!info) return;
+    const modal = document.getElementById("app-update-modal");
+    if (!modal) return;
+
+    const curVerEl = document.getElementById("update-modal-current-version");
+    const latVerEl = document.getElementById("update-modal-latest-version");
+    const apkSizeEl = document.getElementById("update-modal-apk-size");
+    const changelogEl = document.getElementById("update-modal-changelog");
+
+    if (curVerEl) curVerEl.textContent = `v${info.current_version}`;
+    if (latVerEl) latVerEl.textContent = `v${info.latest_version}`;
+    
+    const sizeMb = info.apk_size ? (info.apk_size / (1024 * 1024)).toFixed(1) + " MB" : "APK";
+    if (apkSizeEl) apkSizeEl.textContent = sizeMb;
+
+    if (changelogEl) {
+      changelogEl.textContent = info.release_notes || "Bug fixes, performance improvements, and updated scraper engine.";
+    }
+
+    // Reset progress container
+    const progressContainer = document.getElementById("update-modal-progress-container");
+    const progressBar = document.getElementById("update-modal-progress-bar");
+    const progressPercent = document.getElementById("update-modal-progress-percent");
+    const progressStatus = document.getElementById("update-modal-progress-status");
+    const installHint = document.getElementById("update-modal-install-hint");
+    const downloadBtn = document.getElementById("btn-update-download");
+
+    if (progressContainer) progressContainer.classList.add("hidden");
+    if (progressBar) progressBar.style.width = "0%";
+    if (progressPercent) progressPercent.textContent = "0%";
+    if (progressStatus) progressStatus.textContent = "Downloading APK...";
+    if (installHint) installHint.classList.add("hidden");
+    if (downloadBtn) {
+      downloadBtn.disabled = false;
+      const isAndroid = !!(window.AndroidApp && typeof window.AndroidApp.downloadAndInstallApk === "function");
+      downloadBtn.innerHTML = isAndroid 
+        ? `<span>⬇️</span> Download & Install Update` 
+        : `<span>⬇️</span> Download APK (v${info.latest_version})`;
+    }
+
+    modal.classList.remove("hidden");
+  }
+
+  document.getElementById("update-modal-close")?.addEventListener("click", () => {
+    document.getElementById("app-update-modal")?.classList.add("hidden");
+  });
+  document.getElementById("btn-update-cancel")?.addEventListener("click", () => {
+    document.getElementById("app-update-modal")?.classList.add("hidden");
+  });
+  document.getElementById("btn-banner-dismiss")?.addEventListener("click", () => {
+    document.getElementById("app-update-banner")?.classList.add("hidden");
+  });
+  document.getElementById("btn-banner-update")?.addEventListener("click", () => {
+    if (currentUpdateInfo) openAppUpdateModal(currentUpdateInfo);
+  });
+  document.getElementById("drawer-check-app-update")?.addEventListener("click", () => {
+    document.getElementById("drawer-close")?.click();
+    checkForAppUpdates({ showNotificationIfNone: true, force: true });
+  });
+  document.getElementById("btn-check-app-update")?.addEventListener("click", () => {
+    checkForAppUpdates({ showNotificationIfNone: true, force: true });
+  });
+
+  document.getElementById("btn-update-download")?.addEventListener("click", () => {
+    if (!currentUpdateInfo || !currentUpdateInfo.apk_url) {
+      showToast("No APK download link found for this release", "error");
+      return;
+    }
+
+    const apkUrl = currentUpdateInfo.apk_url;
+    const isAndroid = !!(window.AndroidApp && typeof window.AndroidApp.downloadAndInstallApk === "function");
+
+    if (isAndroid) {
+      const progressContainer = document.getElementById("update-modal-progress-container");
+      const progressBar = document.getElementById("update-modal-progress-bar");
+      const progressPercent = document.getElementById("update-modal-progress-percent");
+      const progressStatus = document.getElementById("update-modal-progress-status");
+      const installHint = document.getElementById("update-modal-install-hint");
+      const downloadBtn = document.getElementById("btn-update-download");
+
+      // If APK was already downloaded, trigger install directly
+      if (progressBar && progressBar.style.width === "100%" && window.AndroidApp?.installDownloadedApk) {
+        window.AndroidApp.installDownloadedApk();
+        return;
+      }
+
+      if (progressContainer) progressContainer.classList.remove("hidden");
+      if (downloadBtn) { downloadBtn.disabled = true; downloadBtn.innerHTML = "<span>⏳</span> Downloading..."; }
+      if (installHint) installHint.classList.remove("hidden");
+
+      window.onUpdateDownloadProgress = function(percent) {
+        if (progressBar) progressBar.style.width = `${percent}%`;
+        if (progressPercent) progressPercent.textContent = `${percent}%`;
+        if (progressStatus) {
+          progressStatus.textContent = percent >= 100 
+            ? "Download complete! Opening package installer..." 
+            : `Downloading update (${percent}%)...`;
+        }
+        if (percent >= 100) {
+          if (downloadBtn) { 
+            downloadBtn.disabled = false;
+            downloadBtn.innerHTML = "<span>🚀</span> Install Update"; 
+          }
+        }
+      };
+
+      window.onUpdateDownloadError = function(errMsg) {
+        if (progressStatus) progressStatus.textContent = `Error: ${errMsg}`;
+        if (downloadBtn) { downloadBtn.disabled = false; downloadBtn.innerHTML = "<span>🔄</span> Retry Download"; }
+        showToast("Update error: " + errMsg, "error");
+      };
+
+      try {
+        window.AndroidApp.downloadAndInstallApk(apkUrl);
+      } catch (err) {
+        showToast("Android install error: " + err.message, "error");
+        if (downloadBtn) { downloadBtn.disabled = false; downloadBtn.innerHTML = "<span>⬇️</span> Download & Install Update"; }
+      }
+    } else {
+      window.open(apkUrl, "_blank");
+      showToast("Downloading APK update...", "info");
+    }
+  });
+
+  // Handle return from Android "Install unknown apps" settings
+  window.onUpdateReadyToInstall = function() {
+    const downloadBtn = document.getElementById("btn-update-download");
+    const progressStatus = document.getElementById("update-modal-progress-status");
+    if (downloadBtn) {
+      downloadBtn.disabled = false;
+      downloadBtn.innerHTML = "<span>🚀</span> Install Update";
+    }
+    if (progressStatus) {
+      progressStatus.textContent = "Permission granted! Launching package installer...";
+    }
+    if (window.AndroidApp && typeof window.AndroidApp.installDownloadedApk === "function") {
+      window.AndroidApp.installDownloadedApk();
+    }
+  };
+
+  // Expose updater globally for console / debugging
+  window.checkAppUpdates = checkForAppUpdates;
+  window.openAppUpdateModal = openAppUpdateModal;
+
   // Initial load
   loadLibrary();
   listenToProgress();
   fetchAndRenderQueue();
+  // Check for app update in background after launch
+  setTimeout(() => {
+    checkForAppUpdates({ showNotificationIfNone: false, force: false });
+  }, 2500);
 });
 
 
