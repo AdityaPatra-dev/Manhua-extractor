@@ -21,14 +21,13 @@ TIER_1_SOURCES = [
     # Top Scanlators & Custom Engines
     {"key": "asura", "name": "Asura Scans", "type": "asura"},
     {"key": "arenascan", "name": "Arena Scans", "type": "mangastream", "domain": "arenascan.com"},
-    {"key": "flamecomics", "name": "Flame Comics", "type": "flamecomics"},
+    {"key": "flamecomics", "name": "Flame Comics", "type": "flamecomics", "domain": "flamecomics.xyz"},
     {"key": "vortexscans", "name": "Vortex Scans", "type": "vortexscans"},
     {"key": "roliascan", "name": "Rolia Scan", "type": "roliascan"},
     {"key": "manhuaplus", "name": "ManhuaPlus", "type": "manhuaplus", "domain": "manhuaplus.org"},
     {"key": "ravenscans", "name": "Raven Scans", "type": "mangastream", "domain": "ravenscans.org"},
     {"key": "omegascans", "name": "Omega Scans", "type": "mangastream", "domain": "omegascans.org"},
     {"key": "rizzcomics", "name": "Rizz Comics", "type": "mangastream", "domain": "rizzfables.com"},
-    {"key": "reaper", "name": "Reaper Scans", "type": "mangastream", "domain": "reapercomics.com"},
     {"key": "thunderscans", "name": "Thunder Scans", "type": "mangastream", "domain": "en-thunderscans.com"},
     {"key": "kingofshojo", "name": "King of Shojo", "type": "mangastream", "domain": "kingofshojo.com"},
 
@@ -39,6 +38,7 @@ TIER_1_SOURCES = [
     {"key": "mangaeffect", "name": "MangaEffect", "type": "madara", "domain": "mangaeffect.com"},
     {"key": "manhwaden", "name": "ManhwaDen", "type": "madara", "domain": "manhwaden.com"},
     {"key": "manhwanex", "name": "ManhwaNex", "type": "madara", "domain": "manhwanex.com"},
+    {"key": "zinmanga", "name": "ZinManga", "type": "madara", "domain": "www.zinmanga.net"},
 
     # Curated High-Speed Aggregators
     {"key": "mangadex", "name": "MangaDex", "type": "api_mangadex"},
@@ -67,10 +67,7 @@ TIER_1_SOURCES = [
 ]
 
 TIER_2_MADARA = [
-    {"key": "kunmanga", "name": "KunManga", "type": "madara", "domain": "kunmanga.com"},
-    {"key": "manhuaus", "name": "ManhuaUS", "type": "madara", "domain": "manhuaus.com"},
-    {"key": "mangatx", "name": "MangaTX", "type": "madara", "domain": "mangatx.to"},
-    {"key": "zinmanga", "name": "ZinManga", "type": "madara", "domain": "zinmanga.com"},
+    {"key": "zinmanga", "name": "ZinManga", "type": "madara", "domain": "www.zinmanga.net"},
     {"key": "hiperdex", "name": "Hiperdex", "type": "hiperdex", "domain": "hiperdex.tv"},
     {"key": "toongod", "name": "ToonGod", "type": "toongod", "domain": "toongod.cc"},
     {"key": "hentai20", "name": "Hentai20", "type": "mangastream", "domain": "hentai20.io"},
@@ -86,9 +83,7 @@ TIER_2_MADARA = [
 
 TIER_3_MANGASTREAM = []
 
-TIER_4_AGGREGATOR = [
-    {"key": "manganato", "name": "Manganato", "type": "manganato", "domain": "manganato.com"},
-]
+TIER_4_AGGREGATOR = []
 
 
 class SearchDispatcher:

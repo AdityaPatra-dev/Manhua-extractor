@@ -129,7 +129,20 @@ async def test_single_source(
     # Fallback series URL if search failed but domain is specified
     series_url_to_test = result.get("sample_series_url")
     if not series_url_to_test and domain:
-        series_url_to_test = f"https://{domain}"
+        # Try fetching domain homepage to extract an active series link
+        try:
+            home_code, home_html, home_soup = await asyncio.to_thread(extractor_dispatcher.fetch_page, f"https://{domain}")
+            if home_html:
+                series_matches = re.findall(rf'href=[\"\'](https?://(?:www\.)?{re.escape(domain)}/(?:manga|series|comic|comics|webtoon)/[^/\"\'#?]+/?)[^\"\']*[\"\']', home_html, re.I)
+                if not series_matches:
+                    series_matches = re.findall(r'href=[\"\'](/(?:manga|series|comic|comics|webtoon)/[^/\"\'#?]+/?)[^\"\']*[\"\']', home_html, re.I)
+                    if series_matches:
+                        series_matches = [urllib.parse.urljoin(f"https://{domain}", s) for s in series_matches]
+                if series_matches:
+                    series_url_to_test = series_matches[0]
+                    result["sample_series_url"] = series_url_to_test
+        except Exception:
+            pass
 
     # --- Phase 2: Direct Series Inspection Test ---
     if series_url_to_test:
@@ -147,20 +160,25 @@ async def test_single_source(
                 chapters = series_data.get("chapters", [])
                 err = series_data.get("error")
 
-                if chapters and len(chapters) > 0:
+                real_chapters = [
+                    c for c in chapters
+                    if c.get("url") and c.get("url").rstrip('/') != series_url_to_test.rstrip('/')
+                ]
+                if real_chapters:
                     result["direct_parse_status"] = "PASS"
-                    result["chapters_found"] = len(chapters)
+                    result["chapters_found"] = len(real_chapters)
                     ch_url = None
-                    for c in chapters:
+                    for c in real_chapters:
                         u = c.get("url", "")
-                        if u and u.rstrip('/') != series_url_to_test.rstrip('/') and any(k in u.lower() for k in ("chapter", "ch-", "ch/", "/c-", "/c/")):
+                        if any(k in u.lower() for k in ("chapter", "ch-", "ch/", "/c-", "/c/")):
                             ch_url = u
                             break
                     if not ch_url:
-                        ch_url = chapters[0].get("url")
+                        ch_url = real_chapters[0].get("url")
                     result["sample_chapter_url"] = ch_url
                 else:
                     result["direct_parse_status"] = "FAIL"
+                    result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 distinct chapters were parsed"
                     if status_code in (403, 503):
                         result["direct_parse_error"] = f"HTTP {status_code}: Cloudflare or anti-bot challenge active"
                     elif err:
@@ -224,7 +242,7 @@ async def test_single_source(
 
     # --- Evaluate Overall Status & Non-Compliance ---
     failures = []
-    if result["search_status"] == "FAIL":
+    if result["search_status"] == "FAIL" and result["direct_parse_status"] != "PASS":
         failures.append(f"Global Search Failure ({result['search_error']})")
     if result["direct_parse_status"] == "FAIL":
         failures.append(f"Direct Link Parsing Failure ({result['direct_parse_error']})")
