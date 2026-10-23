@@ -369,14 +369,18 @@ class SearchDispatcher:
             latency = int((time.time() - t0) * 1000)
             soup = BeautifulSoup(html, "html.parser")
             items = soup.select(".listupd .bsx, .bsx, .bs, div.bsx, article.animepost, .animposx")
+            if not items:
+                items = soup.select("article:has(a[href*='/series/']), div.embla__slide:has(a[href*='/series/']), a[href*='/series/'], a[href*='/manga/']")
             results = []
             seen_series = set()
             for it in items[:12]:
-                link_el = it.select_one("a[title], a[href*='/manga/'], a[href*='/comics/'], a[href*='/series/']") or it.select_one("a")
+                link_el = it if it.name == "a" else (it.select_one("a[title], a[href*='/manga/'], a[href*='/comics/'], a[href*='/series/']") or it.select_one("a"))
                 if not link_el:
                     continue
                 raw_href = link_el.get("href") or ""
                 series_url = re.sub(r'/chapter[-/].*$', '', raw_href, flags=re.I)
+                if not series_url.startswith("http"):
+                    series_url = urllib.parse.urljoin(f"https://{domain}", series_url)
                 if not series_url or series_url in seen_series:
                     continue
                 seen_series.add(series_url)
