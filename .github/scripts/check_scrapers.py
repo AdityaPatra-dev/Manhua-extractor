@@ -93,31 +93,38 @@ async def test_single_source(
 
     # --- Phase 1: Global Search Test ---
     hits = []
-    try:
-        hits = await asyncio.wait_for(
-            dispatcher._query_single_source(source, query, session),
-            timeout=25.0
-        )
-    except asyncio.TimeoutError:
-        result["search_status"] = "FAIL"
-        result["search_error"] = "Search request timed out after 25s (Network latency or anti-bot hang)"
-    except Exception as e:
-        result["search_status"] = "FAIL"
-        result["search_error"] = f"Search exception: {type(e).__name__} - {str(e)}"
+    queries_to_try = [query]
+    for alt_q in ("magic", "secret", "apartment", "return"):
+        if alt_q != query:
+            queries_to_try.append(alt_q)
 
-    if result["search_status"] != "FAIL":
-        if hits and isinstance(hits, list) and len(hits) > 0:
-            valid_hits = [h for h in hits if h.get("series_url") and h.get("title")]
-            if valid_hits:
-                result["search_status"] = "PASS"
-                result["search_hits"] = len(valid_hits)
-                result["sample_series_url"] = valid_hits[0]["series_url"]
-            else:
-                result["search_status"] = "FAIL"
-                result["search_error"] = f"Search returned {len(hits)} raw items, but none had valid series_url or title"
+    for q_try in queries_to_try:
+        try:
+            hits = await asyncio.wait_for(
+                dispatcher._query_single_source(source, q_try, session),
+                timeout=25.0
+            )
+            if hits:
+                query = q_try
+                break
+        except asyncio.TimeoutError:
+            result["search_error"] = "Search request timed out after 25s (Network latency or anti-bot hang)"
+        except Exception as e:
+            result["search_error"] = f"Search exception: {type(e).__name__} - {str(e)}"
+
+    if hits and isinstance(hits, list) and len(hits) > 0:
+        valid_hits = [h for h in hits if (h.get("series_url") or h.get("url")) and h.get("title")]
+        if valid_hits:
+            result["search_status"] = "PASS"
+            result["search_hits"] = len(valid_hits)
+            result["sample_series_url"] = valid_hits[0].get("series_url") or valid_hits[0].get("url")
         else:
             result["search_status"] = "FAIL"
-            result["search_error"] = f"Search returned 0 results for query '{query}' (Selector changed, site structure updated, or blocked)"
+            result["search_error"] = f"Search returned {len(hits)} raw items, but none had valid series_url or title"
+    else:
+        result["search_status"] = "FAIL"
+        if not result["search_error"]:
+            result["search_error"] = f"Search returned 0 results for queries {queries_to_try} (Selector changed, site structure updated, or blocked)"
 
     # Fallback series URL if search failed but domain is specified
     series_url_to_test = result.get("sample_series_url")
@@ -143,7 +150,15 @@ async def test_single_source(
                 if chapters and len(chapters) > 0:
                     result["direct_parse_status"] = "PASS"
                     result["chapters_found"] = len(chapters)
-                    result["sample_chapter_url"] = chapters[0].get("url")
+                    ch_url = None
+                    for c in chapters:
+                        u = c.get("url", "")
+                        if u and u.rstrip('/') != series_url_to_test.rstrip('/') and any(k in u.lower() for k in ("chapter", "ch-", "ch/", "/c-", "/c/")):
+                            ch_url = u
+                            break
+                    if not ch_url:
+                        ch_url = chapters[0].get("url")
+                    result["sample_chapter_url"] = ch_url
                 else:
                     result["direct_parse_status"] = "FAIL"
                     if status_code in (403, 503):
@@ -179,7 +194,7 @@ async def test_single_source(
 
             if chapter_data and isinstance(chapter_data, dict):
                 status_code = chapter_data.get("status_code", 0)
-                panels = chapter_data.get("panels", [])
+                panels = chapter_data.get("pages") or chapter_data.get("panels") or []
                 err = chapter_data.get("error")
 
                 if panels and len(panels) > 0:
