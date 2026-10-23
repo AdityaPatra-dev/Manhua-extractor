@@ -5,17 +5,18 @@
 
 <!-- Dynamic Animated Typing Banner -->
 <p align="center">
-  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=21&pause=1000&color=6366F1&center=true&vCenter=true&width=820&lines=Download+Manga%2C+Manhua+%26+Manhwa+from+95%25%2B+Sites;100%25+Standalone+Android+App+(Embedded+Python+Inside);Sequential+1.5+GB+Multi-Volume+Backup+%26+Cross-Device+Sync;Cloudflare+Turnstile+Bypass+%2B+Anti-Hotlink+CDN+Spoofer;Kindle+E-Ink+Gutter+Slicer+%2B+128-bit+pHash+Ad+Trimmer;Built-in+OPDS+1.2+Catalog+for+Mihon%2C+Tachiyomi+%26+Moon%2B" alt="Universal Manhua Extractor Typing Banner" />
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=21&pause=1000&color=6366F1&center=true&vCenter=true&width=820&lines=Download+Manga%2C+Manhua+%26+Manhwa+from+95%25%2B+Sites;100%25+Standalone+Android+App+(Embedded+Python+Inside);Sequential+1.5+GB+Multi-Volume+Backup+%26+Cross-Device+Sync;Cloudflare+Turnstile+Bypass+%2B+Anti-Hotlink+CDN+Spoofer;Kindle+E-Ink+Gutter+Slicer+%2B+128-bit+pHash+Ad+Trimmer;Built-in+OPDS+1.2+Catalog+for+Mihon%2C+Tachiyomi+%26+Moon%2B;In-App+Auto-Updater+with+Native+APK+Installer" alt="Universal Manhua Extractor Typing Banner" />
 </p>
 
 <!-- Live Status Badges -->
 [![Release](https://img.shields.io/github/v/release/AdityaPatra-dev/Manhua-extractor?color=7c3aed&label=Latest%20Release&logo=github&style=for-the-badge)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
 [![Android APK](https://img.shields.io/badge/Android-APK%20v1.1.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-adityapatra%2Fmanhua--extractor-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/adityapatra/manhua-extractor)
+[![GHCR](https://img.shields.io/badge/GHCR-adityapatra--dev%2Fmanhua--extractor-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/pkgs/container/manhua-extractor)
 [![Scraper Sentinel](https://img.shields.io/github/actions/workflow/status/AdityaPatra-dev/Manhua-extractor/daily-scraper-check.yml?branch=main&label=Scraper%20Sentinel&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/actions/workflows/daily-scraper-check.yml)
-[![Docker Image](https://img.shields.io/badge/Docker-adityapatra%2Fmanhua--extractor-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/adityapatra/manhua-extractor)
 [![Python Version](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.99.1-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![Tests](https://img.shields.io/badge/Unit%20Tests-87%20Passed-10b981?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
+[![Tests](https://img.shields.io/badge/Unit%20Tests-91%20Passed-10b981?style=for-the-badge&logo=pytest&logoColor=white)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-F59E0B?style=for-the-badge&logo=open-source-initiative&logoColor=white)](LICENSE)
 
 <br/>
@@ -37,32 +38,70 @@
   <img src="https://raw.githubusercontent.com/Tarikul-Islam-Anik/Animated-Fluent-Emojis/master/Emojis/Objects/Satellite%20Antenna.png" alt="OPDS" width="46" height="46" />
 </p>
 
-**Universal Manhua Extractor** is an all-in-one webtoon/manga downloader, offline library manager, and **standalone Android application**. Powered by a 6-engine auto-detection dispatcher, it effortlessly navigates Cloudflare Turnstile, anti-hotlink CDN shields, dynamic Astro/Next.js hydration, and infinite scrolling across **95%+ of online manga platforms**.
+**Universal Manhua Extractor** is an all-in-one webtoon/manga downloader, offline library manager, and **standalone Android application**. Powered by a specialized multi-engine auto-detection dispatcher, it effortlessly navigates Cloudflare Turnstile, anti-hotlink CDN shields, dynamic Astro/Next.js hydration, and infinite scrolling across **95%+ of online manga platforms**.
 
 </div>
 
 ---
 
-## 🌐 Supported Websites & Platform Engine Types
+## ⚡ Specialized Extractor Engines & Architecture
 
-Universal Manhua Extractor utilizes a multi-tiered fallback architecture. Platforms are auto-detected by engine signature, CDN patterns, and DOM layout.
-
-### 📑 Supported Engines Overview
+Universal Manhua Extractor utilizes a multi-tiered fallback architecture. Platforms are auto-detected by engine signature, CDN patterns, and DOM layout, ensuring that even unlisted or custom platforms parse seamlessly.
 
 ```mermaid
 graph TD
-    A["Incoming URL"] --> B{"Engine Dispatcher"}
-    B -->|Astro v7/v8 / Next.js SSR / API| C["⚡ Modern SSR Engine"]
-    B -->|WP-Manga / Ajax REST| D["🌸 WordPress Madara Engine"]
+    A["Incoming URL or Search Query"] --> B{"Core Dispatcher"}
+    B -->|Astro Island / Next.js / Inertia / Vite| C["⚡ Modern SSR & SPA Engine"]
+    B -->|WP-Manga / Admin-Ajax REST| D["🌸 WordPress Madara Engine"]
     B -->|Themesia / Tsuyoki / Liliana| E["🌊 MangaStream Engine"]
-    B -->|CDN Anti-Hotlink Mirrors| F["📦 Aggregator Engine"]
-    B -->|Bato.to v3x / JSON-LD| G["🏔️ Batoto & MangaPeak Engine"]
-    B -->|Custom CMS / Unlisted Site| H["🔍 Universal Heuristic Fallback"]
+    B -->|Anti-Hotlink / Chunked Mirrors / REST API| F["📦 Aggregator & API Engine"]
+    B -->|JSON-LD / Scrambled Coordinate Matrix| G["🏔️ Batoto & MangaPeak Engine"]
+    B -->|Unlisted Site / Dynamic Canvas / Blog| H["🔍 Universal Heuristic Fallback"]
+    B -->|Global Multi-Source Title Search| I["🌐 Search Dispatcher & Clustering"]
 ```
+
+### 1. ⚡ Modern SSR & Hydrated SPA Engine
+* **Target Technologies**: Astro v7/v8 (`astro-island`), Next.js (`__NEXT_DATA__`), Laravel Inertia (`data-page`), React/Vite SPAs, and tRPC batch endpoints (`x-cfg-auth`).
+* **Flagship Platforms**: Asura Scans, Flame Comics, ToonTop, Manhwa18, Hiperdex, ComicLand.
+* **Capabilities**: Directly extracts embedded JSON state manifests directly from raw HTML responses without requiring a resource-heavy headless browser. Automatically unmasks protected high-resolution WebP CDN mirrors and preserves original scan dimensions.
+
+### 2. 🌸 WordPress Madara Engine (WP-Manga)
+* **Target Technologies**: WP-Manga network, customized child themes, and dynamic Ajax administration endpoints (`admin-ajax.php`).
+* **Flagship Platforms**: TopManhua, ManhuaTop, MangaRead, MangaEffect, Toonily, MangaTX, KunManga, ZinManga, AllPornComics, ManhwaClub, ManhuaUS, S2Manga.
+* **Capabilities**: Bypasses dynamic chapter pagination, decrypts reversed chapter sorting schemas, handles lazy-loaded `.data-src`/`.data-lazy-src` panel intersections, and caches anti-bot clearance cookies.
+
+### 3. 🌊 MangaStream / Themesia Engine
+* **Target Technologies**: Themesia dark reader skin, Tsuyoki responsive framework, Liliana layout.
+* **Flagship Platforms**: ManhuaPlus, Arena Scans, Rizz Comics (Realm Scans), Thunder Scans, King of Shojo, Hentai20, Manga18fx.
+* **Capabilities**: Parses dynamic dark-themed reader areas, traces sequential chapter routes, extracts WebP CDN ribbons, and navigates anti-leech image proxy servers.
+
+### 4. 📦 Aggregator & Anti-Hotlink Engine
+* **Target Technologies**: REST API v5 (MangaDex), API v1.0 (ComicK), GraphQL manifests (MangaHub), anti-hotlinking CDN proxies (`*.cacaca.net`, `*.cdnpk.net`).
+* **Flagship Platforms**: MangaDex, ComicK, WeebCentral, MangaPill, MangaKatana, MangaFox, MangaHub, MangaHere, MangaTown, MangaGeko, MangaRead.io, Manganato.
+* **Capabilities**: Dynamically injects contextual `Referer`, `Origin`, and `Sec-Fetch-Site: same-site` headers to defeat CDN anti-hotlinking. Streams raw image bytes directly to disk with zero-RAM buffering.
+
+### 5. 🏔️ Batoto & MangaPeak Engine
+* **Target Technologies**: Batoto v3x schema, JSON-LD reader data streams, canvas de-scrambling coordinate matrices.
+* **Flagship Platforms**: Batoto (`bato.to`), Mangatoto, Battwo, MangaPeak.
+* **Capabilities**: Solves dynamic server-assigned token URLs, parses scrambled image manifests, and reconstructs scrambled coordinate canvas tiles into lossless JPEG/WebP strips.
+
+### 6. 🔍 Universal Heuristic & Canvas Fallback Engine
+* **Target Technologies**: Custom webtoon blogs, unlisted CMS sites, encoded Base64 streams, Tumblr/WordPress galleries.
+* **Flagship Platforms**: Manga18.club, personal scanlator blogs, unlisted webtoon sites.
+* **Capabilities**: Evaluates visual DOM image density, automatically filtering out UI chrome, avatars, navigation buttons, and ads. Decodes Base64-encoded panel streams (`slides_p_path`) and reconstructs dynamic image arrays.
+
+### 7. 🌐 Global Multi-Source Search & Clustering Dispatcher
+* **Target Technologies**: Integrated search dispatcher spanning 30+ verified scanlators and aggregators.
+* **Features**: Configurable search tiers (`fast`, `madara`, `all`), Levenshtein distance title normalization, cross-source deduplication, latency benchmarking, and automated single-source noise suppression.
 
 ---
 
-### 📚 Comprehensive Website Directory (80+ Platforms)
+## 📚 Supported Websites Directory (85+ Verified Platforms)
+
+<details>
+<summary><b>👉 Click to Expand / Collapse Complete Website Directory (85+ Platforms)</b></summary>
+
+<br/>
 
 | Icon | Platform Name | Website URL | Engine Type | Anti-Bot & Defenses Handled | Status |
 | :---: | :--- | :--- | :--- | :--- | :---: |
@@ -98,7 +137,7 @@ graph TD
 | <img src="docs/logos/manhwa18.png" width="24" height="24" alt="Manhwa18" /> | **Manhwa18** | [manhwa18.net](https://manhwa18.net) | **Inertia.js SPA** | Laravel Inertia state hydrate (`data-page`), high-density WebP CDNs | `🟢 Verified` |
 | <img src="docs/logos/comicland.png" width="24" height="24" alt="ComicLand" /> | **ComicLand** | [comicland.org](https://comicland.org) | **React / Vite SPA** | JSON REST API (`api.comicland.org`), HD panels CDN | `🟢 Verified` |
 | <img src="docs/logos/toontop.png" width="24" height="24" alt="ToonTop" /> | **ToonTop** | [toontop.io](https://toontop.io) | **Modern SSR (Next.js)** | SSR state manifests (`__NEXT_DATA__`), rx CDN storage | `🟢 Verified` |
-| <img src="docs/logos/toongod.png" width="24" height="24" alt="ToonGod" /> | **ToonGod** | [toongod.org](https://www.toongod.org) | **WP Madara** | Automatic mirror failover (`toongod.app`), fast WebP CDNs | `🟢 Verified` |
+| <img src="docs/logos/toongod.png" width="24" height="24" alt="ToonGod" /> | **ToonGod** | [toongod.cc](https://toongod.cc) | **WP Madara** | Automatic mirror failover (`toongod.cc`), fast WebP CDNs | `🟢 Verified` |
 | <img src="docs/logos/hentai20.png" width="24" height="24" alt="Hentai20" /> | **Hentai20** | [hentai20.io](https://hentai20.io) | **MangaStream / Themesia** | Modern dark theme, dynamic chapter navigation, WebP streams | `🟢 Verified` |
 | <img src="docs/logos/manga18fx.png" width="24" height="24" alt="Manga18fx" /> | **Manga18fx** | [manga18fx.com](https://manga18fx.com) | **MangaStream / Themesia** | Modern reader layout, multi-server image CDNs | `🟢 Verified` |
 | <img src="docs/logos/mangadass.png" width="24" height="24" alt="MangaDass" /> | **MangaDass** | [mangadass.com](https://mangadass.com) | **Custom SSR** | High-speed image CDN, dynamic chapter list | `🟢 Verified` |
@@ -132,9 +171,8 @@ graph TD
 | <img src="docs/logos/realm.png" width="24" height="24" alt="Realm Scans / Rizz Comics" /> | **Realm Scans / Rizz Comics** | [rizzfables.com](https://rizzfables.com) | **MangaStream** | Domain hopping redirects, dynamic CDN roots | `🟢 Verified` |
 | <img src="docs/logos/immortal.png" width="24" height="24" alt="Immortal Updates" /> | **Immortal Updates** | [immortalupdates.com](https://immortalupdates.com) | **MangaStream** | Cultivation manhua strips, custom CDN hosts | `🟢 Verified` |
 | <img src="docs/logos/disaster.png" width="24" height="24" alt="Disaster Scans" /> | **Disaster Scans** | [disasterscans.com](https://disasterscans.com) | **MangaStream** | Tsuyoki framework, automated chapter list | `🟢 Verified` |
-| <img src="docs/logos/omegascans.png" width="24" height="24" alt="Omega Scans" /> | **Omega Scans** | [omegascans.org](https://omegascans.org) | **MangaStream** | Custom Next-gen Themesia skin, encrypted CDN ribbons | `🟢 Verified` |
 | <img src="docs/logos/shinigami.png" width="24" height="24" alt="Shinigami ID" /> | **Shinigami ID** | [shinigami.moe](https://shinigami.moe) | **MangaStream** | Indonesian scanlations, bypass Cloudflare DDoS challenge | `🟢 Verified` |
-| <img src="docs/logos/ravenscans.png" width="24" height="24" alt="Raven Scans" /> | **Raven Scans** | [ravenscans.com](https://ravenscans.com) | **MangaStream** | Modern Themesia dark skin, high-res webtoon stitching | `🟡 Turnstile Challenge` |
+| <img src="docs/logos/ravenscans.png" width="24" height="24" alt="Raven Scans" /> | **Raven Scans** | [ravenscans.org](https://ravenscans.org) | **MangaStream** | Cloudflare Turnstile challenge | `🟡 Retired (Turnstile Protected)` |
 | <img src="docs/logos/vortexscans.png" width="24" height="24" alt="Vortex Scans" /> | **Vortex Scans** | [vortexscans.org](https://vortexscans.org) | **MangaStream** | Automated sequential panel stream, anti-hotlink CDN | `🟢 Verified` |
 | <img src="docs/logos/kaliscan.png" width="24" height="24" alt="Kali Scan" /> | **Kali Scan** | [kaliscan.com](https://kaliscan.com) | **MangaStream** | Tsuyoki responsive engine, direct image decryptors | `🟢 Verified` |
 | <img src="docs/logos/thunderscans.png" width="24" height="24" alt="Thunder Scans" /> | **Thunder Scans** | [en-thunderscans.com](https://en-thunderscans.com) | **MangaStream** | Themesia dynamic chapter router, encrypted tokens | `🟢 Verified` |
@@ -171,6 +209,8 @@ graph TD
 | <img src="docs/logos/mangapeak.png" width="24" height="24" alt="MangaPeak" /> | **MangaPeak** | [mangapeak.com](https://mangapeak.com) | **MangaPeak Engine** | Custom image obfuscation, encrypted manifests | `🟢 Verified` |
 | <img src="docs/logos/heuristic.png" width="24" height="24" alt="Any Unlisted Site / Custom Blog" /> | **Any Unlisted Site / Custom Blog** | *Paste any URL* | **Universal Heuristic** | Density-based DOM image crawler, viewport filters | `🟢 Verified` |
 
+</details>
+
 ---
 
 <details>
@@ -191,6 +231,7 @@ flowchart TD
     subgraph Backend["⚙️ Embedded FastAPI / Uvicorn Server"]
         Router["REST API Router & SSE Streamer<br/>(/api/download, /api/backup, /opds)"]
         State["Atomic Progress Queue<br/>(Pause / Resume / Cancel Controls)"]
+        Updater["In-App Auto-Updater Subsystem<br/>(GitHub Releases, APK Downloads, Native Hand-off)"]
     end
 
     subgraph Core["🧠 Extraction & Compilation Engine"]
@@ -212,6 +253,7 @@ flowchart TD
     WebReader --> Router
     ExternalApp --> Router
     Router --> State
+    Router --> Updater
     Router --> Dispatcher
     Dispatcher --> Sidecar
     Dispatcher --> Downloader
@@ -236,7 +278,7 @@ flowchart TD
 
 ### 3. Sequential 1.5 GB Multi-Volume Backup & Sync Engine
 * **Greedy Bin-Packing Algorithm**: Inspects uncompressed chapter archives, recursively traversing directory chapters (`file_format == 'folder'`) and standalone CBZ/PDFs. Packs library assets into discrete volumes targeting a **1,450 MB soft ceiling** to guarantee that archives stay under 1.5 GB on disk (ideal for FAT32 SD cards and cloud drives).
-* **Self-Contained Series Metadata & Covers**: If Part 2 contains chapters of *Ultra Alter*, Part 2 also bundles that series' `cover.jpg` and canonical metadata, ensuring archives can be restored in **any arbitrary order** without missing covers.
+* **Self-Contained Series Metadata & Covers**: If Part 2 contains chapters of a series, Part 2 also bundles that series' `cover.jpg` and canonical metadata, ensuring archives can be restored in **any arbitrary order** without missing covers.
 * **Zip-Slip Boundary Defense**: Extraction enforces `os.path.commonpath([dest_dir, target_file]) == dest_dir`, rejecting any malicious directory traversal patterns (`../../`).
 * **Zero-RAM Direct-to-Disk Streamer**: Uploaded backup parts stream directly to disk in 64 KB chunks, preventing mobile out-of-memory crashes.
 * **Non-Destructive Series Unification**: Restoring backups across phones matches series by `lower(trim(title))`, `slug`, and `title_slug`, preventing duplicate series cards and retaining highest read bookmarks.
@@ -260,6 +302,13 @@ flowchart TD
 * Implements the Atom-compliant OPDS 1.2 catalog specification at `/opds/v1.2/catalog`.
 * Exposes series feeds, cover thumbnails, and direct acquisition links (`application/vnd.comicbook+zip`) over local Wi-Fi, allowing instant wireless streaming into **Mihon**, **Tachiyomi**, **Moon+ Reader**, **Panels**, or **Chunky**.
 
+---
+
+### 7. In-App Auto-Updater Subsystem
+* Embedded background release polling queries the official GitHub Releases API (`/repos/AdityaPatra-dev/Manhua-extractor/releases/latest`) on startup and provides an on-demand check button in app settings.
+* Performs semantic version checking comparing local app version against remote releases.
+* Downloads release APKs with progress reporting and initiates the native Android `PackageInstaller` intent via `FileProvider`, allowing seamless in-app upgrades without re-visiting GitHub.
+
 </details>
 
 ---
@@ -273,10 +322,11 @@ flowchart TD
 
 Install directly on your phone in under 60 seconds:
 1. Go to the **[Releases Section](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)**.
-2. Download **`ManhuaExtractor-v1.0.7-release.apk`** (v1.0.7).
+2. Download **`ManhuaExtractor-v1.1.0-release.apk`** (v1.1.0).
 3. Open the APK on your Android device and tap **Install**.
 4. Grant Notification and Storage permissions when prompted.
 5. Tap **Start Download** — the embedded FastAPI server boots automatically!
+6. Future updates can be installed directly inside the app with a single tap using the **In-App Auto-Updater**.
 
 > [!TIP]
 > For screen-off background downloading, ensure you allow unrestricted battery usage in **App Info ➔ Battery ➔ Unrestricted**.
@@ -319,9 +369,11 @@ The terminal will display your smartphone Wi-Fi access links:
 
 ---
 
-### 🐳 Option 3: Docker & FlareSolverr Sidecar Setup
+### 🐳 Option 3: Docker Deployment (Docker Hub & GHCR)
 
-The official production image is published on Docker Hub as **[`adityapatra/manhua-extractor:latest`](https://hub.docker.com/r/adityapatra/manhua-extractor)**.
+Multi-architecture production images (`linux/amd64` and `linux/arm64`) are continuously built and published on:
+* **Docker Hub**: [`adityapatra/manhua-extractor:latest`](https://hub.docker.com/r/adityapatra/manhua-extractor)
+* **GitHub Container Registry (GHCR)**: [`ghcr.io/adityapatra-dev/manhua-extractor:latest`](https://github.com/AdityaPatra-dev/Manhua-extractor/pkgs/container/manhua-extractor)
 
 #### Quick Run with Docker CLI:
 ```bash
@@ -340,8 +392,6 @@ Run the extractor alongside FlareSolverr to automatically solve interactive Clou
 
 ```yaml
 # docker-compose.yml
-version: '3.8'
-
 services:
   manhua-extractor:
     image: adityapatra/manhua-extractor:latest
@@ -460,15 +510,15 @@ graph LR
 
 ## 🧪 Unit Test Suite
 
-The codebase is protected by **77 automated unit tests** covering all extractors, bin-packing estimation, ZIP64 streaming, Zip-Slip vulnerability rejection, and REST API endpoints:
+The codebase is protected by **91 automated unit tests** covering all extractors, search engines, bin-packing estimation, ZIP64 streaming, Zip-Slip vulnerability rejection, and REST API endpoints:
 
 ```bash
 # Run complete test suite
-python3 -m unittest discover -s tests -p "test_*.py"
+python3 -m unittest discover tests
 ```
 
 ```text
-Ran 77 tests in 3.795s
+Ran 91 tests in 3.873s
 OK
 ```
 
@@ -479,6 +529,7 @@ OK
 Universal Manhua Extractor includes a production-grade automated canary monitor that runs daily on GitHub Actions:
 
 - **Schedule**: Every day at `02:00 UTC` (`07:30 AM IST`) and on-demand via `workflow_dispatch`.
+- **Resilient Dual-Pass Verification**: Suspect scrapers undergo an automated 6-second cooldown followed by an isolated sequential verification pass (`concurrency=1`), completely eliminating false alarms from runner IP rate-limiting.
 - **Scope**: Rigorously tests all 35+ search and extractor sources across 3 phases:
   1. **Global Search**: Queries live titles, measures latency, and verifies returned series URLs.
   2. **Direct Link Parsing**: Crawls the series catalog and confirms chapter counts and selector integrity.
