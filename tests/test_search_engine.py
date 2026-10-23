@@ -160,7 +160,6 @@ class TestSearchEngine(unittest.TestCase):
         self.assertIn("topmanhua", fast_keys)
         self.assertIn("manhuaplus", fast_keys)
         self.assertIn("manhuatop", fast_keys)
-        self.assertIn("ravenscans", fast_keys)
 
         # Check TopManhua domain is topmanhua.net
         topmanhua_src = next(s for s in search_dispatcher.get_sources_for_tier("fast") if s["key"] == "topmanhua")

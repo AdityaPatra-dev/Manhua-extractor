@@ -25,7 +25,6 @@ TIER_1_SOURCES = [
     {"key": "vortexscans", "name": "Vortex Scans", "type": "vortexscans"},
     {"key": "roliascan", "name": "Rolia Scan", "type": "roliascan"},
     {"key": "manhuaplus", "name": "ManhuaPlus", "type": "manhuaplus", "domain": "manhuaplus.org"},
-    {"key": "ravenscans", "name": "Raven Scans", "type": "mangastream", "domain": "ravenscans.org"},
     {"key": "rizzcomics", "name": "Rizz Comics", "type": "mangastream", "domain": "rizzfables.com"},
     {"key": "thunderscans", "name": "Thunder Scans", "type": "mangastream", "domain": "en-thunderscans.com"},
     {"key": "kingofshojo", "name": "King of Shojo", "type": "mangastream", "domain": "kingofshojo.com"},
