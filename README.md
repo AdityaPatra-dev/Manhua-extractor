@@ -125,7 +125,7 @@ graph TD
 | <img src="docs/logos/zinmanga.png" width="24" height="24" alt="ZinManga" /> | **ZinManga** | [zinmanga.com](https://zinmanga.com) | **WP Madara** | Image proxy routing, encrypted chapter lists | `🟢 Verified` |
 | <img src="docs/logos/1stkiss.png" width="24" height="24" alt="1stKissManga" /> | **1stKissManga** | [1stkissmanga.io](https://1stkissmanga.io) | **WP Madara** | Dynamic DOM slicing, Ajax admin endpoints | `🟢 Verified` |
 | <img src="docs/logos/topmanhua.png" width="24" height="24" alt="TopManhua" /> | **TopManhua** | [topmanhua.net](https://topmanhua.net) | **WP Madara** | Custom CDN rewrite rules, aggressive ads | `🟢 Verified` |
-| <img src="docs/logos/topmanhua.png" width="24" height="24" alt="ManhuaTop" /> | **ManhuaTop** | [manhuatop.org](https://manhuatop.org) | **WP Madara** | WordPress Manga Ajax endpoints, responsive webtoons | `🟢 Verified` |
+| <img src="docs/logos/manhuatop.png" width="24" height="24" alt="ManhuaTop" /> | **ManhuaTop** | [manhuatop.org](https://manhuatop.org) | **WP Madara** | WordPress Manga Ajax endpoints, responsive webtoons | `🟢 Verified` |
 | <img src="docs/logos/mangaclash.png" width="24" height="24" alt="MangaClash" /> | **MangaClash** | [mangaclash.com](https://mangaclash.com) | **WP Madara** | Lazy-load intersection observers | `🟢 Verified` |
 | <img src="docs/logos/webtoonxyz.png" width="24" height="24" alt="WebtoonXYZ" /> | **WebtoonXYZ** | [webtoonxyz.com](https://webtoonxyz.com) | **WP Madara** | CDN image token validation, Ajax manifests | `🟢 Verified` |
 | <img src="docs/logos/mangabob.png" width="24" height="24" alt="MangaBob" /> | **MangaBob** | [mangabob.com](https://mangabob.com) | **WP Madara** | Chapter table sorting, dynamic image CDNs | `🟢 Verified` |
@@ -176,8 +176,8 @@ graph TD
 | <img src="docs/logos/vortexscans.png" width="24" height="24" alt="Vortex Scans" /> | **Vortex Scans** | [vortexscans.org](https://vortexscans.org) | **MangaStream** | Automated sequential panel stream, anti-hotlink CDN | `🟢 Verified` |
 | <img src="docs/logos/kaliscan.png" width="24" height="24" alt="Kali Scan" /> | **Kali Scan** | [kaliscan.com](https://kaliscan.com) | **MangaStream** | Tsuyoki responsive engine, direct image decryptors | `🟢 Verified` |
 | <img src="docs/logos/thunderscans.png" width="24" height="24" alt="Thunder Scans" /> | **Thunder Scans** | [en-thunderscans.com](https://en-thunderscans.com) | **MangaStream** | Themesia dynamic chapter router, encrypted tokens | `🟢 Verified` |
-| <img src="docs/logos/themesia.png" width="24" height="24" alt="Arena Scans" /> | **Arena Scans** | [arenascan.com](https://arenascan.com) | **MangaStream** | Themesia framework, dynamic chapter router, responsive WebP CDN | `🟢 Verified` |
-| <img src="docs/logos/themesia.png" width="24" height="24" alt="King of Shojo" /> | **King of Shojo** | [kingofshojo.com](https://kingofshojo.com) | **MangaStream** | Shojo / Otome manhwa specialist, Themesia framework | `🟢 Verified` |
+| <img src="docs/logos/arenascan.png" width="24" height="24" alt="Arena Scans" /> | **Arena Scans** | [arenascan.com](https://arenascan.com) | **MangaStream** | Themesia framework, dynamic chapter router, responsive WebP CDN | `🟢 Verified` |
+| <img src="docs/logos/kingofshojo.png" width="24" height="24" alt="King of Shojo" /> | **King of Shojo** | [kingofshojo.com](https://kingofshojo.com) | **MangaStream** | Shojo / Otome manhwa specialist, Themesia framework | `🟢 Verified` |
 | <img src="docs/logos/manganato.png" width="24" height="24" alt="Manganato" /> | **Manganato** | [manganato.com](https://manganato.com) | **Aggregator Engine** | Strict anti-hotlinking (Referer: manganato.com) | `🟢 Verified` |
 | <img src="docs/logos/chapmanganato.png" width="24" height="24" alt="ChapManganato" /> | **ChapManganato** | [chapmanganato.to](https://chapmanganato.to) | **Aggregator Engine** | Strict anti-hotlink CDN (*.cacaca.net) | `🟢 Verified` |
 | <img src="docs/logos/mangabuddy.png" width="24" height="24" alt="MangaBuddy" /> | **MangaBuddy** | [mangabuddy.com](https://mangabuddy.com) | **Aggregator Engine** | Dynamic image token hashes, multi-mirror failover | `🟢 Verified` |
@@ -196,8 +196,8 @@ graph TD
 | <img src="docs/logos/mangago.png" width="24" height="24" alt="MangaGo" /> | **MangaGo** | [mangago.me](https://mangago.me) | **Aggregator Engine** | Classic huge manga library, pagination crawler bypass | `🟢 Verified` |
 | <img src="docs/logos/mangatown.png" width="24" height="24" alt="MangaTown" /> | **MangaTown** | [mangatown.com](https://mangatown.com) | **Aggregator Engine** | Paginated panel extraction, cookie session simulator | `🟢 Verified` |
 | <img src="docs/logos/weebcentral.png" width="24" height="24" alt="WeebCentral" /> | **WeebCentral** | [weebcentral.com](https://weebcentral.com) | **Aggregator Engine** | Modern webtoon UI, high-speed CDN chunk streaming | `🟢 Verified` |
-| <img src="docs/logos/aggregator.png" width="24" height="24" alt="MangaGeko" /> | **MangaGeko** | [mgeko.cc](https://www.mgeko.cc) | **Aggregator Engine** | High-speed reader parser, clean chapter image manifests | `🟢 Verified` |
-| <img src="docs/logos/aggregator.png" width="24" height="24" alt="MangaRead.io" /> | **MangaRead.io** | [mangaread.io](https://mangaread.io) | **Aggregator Engine** | Fast manga mirror, clean HTML ribbon extraction | `🟢 Verified` |
+| <img src="docs/logos/mgeko.png" width="24" height="24" alt="MangaGeko" /> | **MangaGeko** | [mgeko.cc](https://www.mgeko.cc) | **Aggregator Engine** | High-speed reader parser, clean chapter image manifests | `🟢 Verified` |
+| <img src="docs/logos/mgread.png" width="24" height="24" alt="MangaRead.io" /> | **MangaRead.io** | [mangaread.io](https://mangaread.io) | **Aggregator Engine** | Fast manga mirror, clean HTML ribbon extraction | `🟢 Verified` |
 | <img src="docs/logos/readcomiconline.png" width="24" height="24" alt="ReadComicOnline" /> | **ReadComicOnline** | [readcomiconline.li](https://readcomiconline.li) | **Aggregator Engine** | Western comics & DC/Marvel, dynamic quality selector | `🟢 Verified` |
 | <img src="docs/logos/mangadistrict.png" width="24" height="24" alt="MangaDistrict" /> | **MangaDistrict** | [mangadistrict.com](https://mangadistrict.com) | **Aggregator Engine** | High-definition color webtoon aggregator, CDN spoofing | `🟢 Verified` |
 | <img src="docs/logos/manga18free.png" width="24" height="24" alt="Manga18Free" /> | **Manga18Free** | [manga18free.com](https://manga18free.com) | **Aggregator Engine** | Adult manhwa aggregator, age-verification bypass | `🟢 Verified` |
@@ -460,51 +460,54 @@ python manhua.py --update-library
 
 ## 🛡️ Anti-Bot & Protection Bypass Capabilities
 
-Universal Manhua Extractor incorporates a multi-layer bypass pipeline to defeat common scraping defenses:
+Universal Manhua Extractor incorporates a multi-tiered bypass pipeline designed specifically to defeat contemporary scraping barriers across mobile and desktop environments:
 
 ```mermaid
 graph LR
     subgraph Challenge["Scraper Defense"]
-        T["Cloudflare Turnstile"]
-        H["Anti-Hotlink CDN"]
-        D["Scrambled Canvases"]
-        L["Lazy-Loading Panels"]
-        R["429 Rate Limits"]
-        A["Promo & Credit Ads"]
+        T["Cloudflare Turnstile & DDoS-Guard"]
+        H["Anti-Hotlink CDN Shields"]
+        D["Scrambled Canvas Tiles"]
+        L["Lazy-Loading / Dynamic DOM"]
+        R["429 Rate Limits / IP Throttling"]
+        A["Promo & Aggregator Watermarks"]
     end
 
     subgraph Solution["Extractor Engine Solution"]
-        T -->|"curl_cffi Chrome 124 TLS Fingerprint + FlareSolverr"| ST["Clearance Pass"]
-        H -->|"Contextual Referer & Sec-Fetch Header Spoofing"| SH["Raw Byte Stream"]
-        D -->|"De-Scramble Coordinate Matrix Assembly"| SD["Unscrambled JPEG/WebP"]
-        L -->|"DOM AST Attribute Crawler (data-src / data-original)"| SL["Complete Page Array"]
-        R -->|"Asynchronous Worker Pool + Exponential Jitter Backoff"| SR["Zero-Ban Queue"]
-        A -->|"128-bit Composite pHash Hamming Distance Trimmer"| SA["Clean Reading Stream"]
+        T -->|"Android System WebView + FlareSolverr + Nodriver CDP"| ST["Clearance Pass & Cached Tokens"]
+        H -->|"Contextual Referer, Origin & Sec-Fetch Header Injection"| SH["Raw Byte Stream Direct to Disk"]
+        D -->|"Coordinate Matrix Tile Descrambling"| SD["Unscrambled Lossless JPEG/WebP"]
+        L -->|"AST Attribute Crawler (data-src / data-lazy / JSON States)"| SL["Sequential Panel Manifest"]
+        R -->|"Asynchronous Worker Pools + Dual-Pass Jitter Backoff"| SR["Zero-Ban Queue"]
+        A -->|"128-bit Composite pHash Hamming Distance Trimmer"| SA["Pristine Reading Strips"]
     end
 ```
 
 ### 🔐 Detailed Bypass Specifications
 
-1. **Cloudflare Turnstile & Challenge Checkboxes**:
-   * **Tier 1 (Native TLS Spoofing)**: Uses `curl_cffi` to mimic Chrome 124's exact TLS client hello, ALPN, cipher suites, and HTTP/2 settings, passing Cloudflare without running a heavy browser.
-   * **Tier 2 (FlareSolverr Sidecar)**: If an interactive checkbox or JS challenge appears, the request automatically routes to FlareSolverr, solves the challenge, and caches clearance cookies.
+1. **Cloudflare Turnstile & Interactive Challenge Solvers**:
+   * **On-Device Android (Native System WebView Resolver)**: On Android devices, the engine invokes `CloudflareResolver.kt` via Chaquopy IPC directly on the application thread. The native Android System WebView resolves the Turnstile challenge seamlessly, extracts session `cf_clearance` cookies, user-agent tokens, and solved HTML, and persists them into SQLite `library.db` so future requests bypass challenges instantaneously.
+   * **Docker & Server (FlareSolverr Sidecar Container)**: When running via Docker or on Linux servers, requests route to a companion FlareSolverr container (`http://flaresolverr:8191/v1`), solving interactive challenges headlessly and recycling clearance cookies.
+   * **Desktop Headless Fallbacks (Playwright & Nodriver Chrome CDP)**: In standalone desktop environments, the engine provides automatic fallbacks using headless Playwright or windowless off-screen Chrome automation (`--window-position=-10000,-10000`), ensuring Turnstile is cleared without popups interrupting the user.
+   * **Clearance Token Persistence**: Resolved clearance cookies and matched User-Agents are automatically cached by domain in SQLite, eliminating redundant challenge triggers across download batches.
 
 2. **Anti-Hotlinking & CDN Image Leech Shields**:
-   * Sites like Manganato, MangaBuddy, and ChapManganato restrict direct access to image servers (`*.cacaca.net`, `*.cdnpk.net`).
-   * The extractor dynamically injects host-specific `Referer`, `Origin`, and `Sec-Fetch-Site: same-site` headers on each individual panel stream.
+   * Aggregators and scanlators (e.g., Manganato, ChapManganato `*.cacaca.net`, MangaBuddy, WeebCentral) protect image servers against third-party leeches using strict HTTP header validation.
+   * The extractor dynamically injects host-specific `Referer`, `Origin`, and `Sec-Fetch-Site: same-site` request headers into each individual image stream, downloading raw bytes directly to disk with zero-RAM buffering.
 
 3. **Dynamic Astro, Next.js & React Hydration Extraction**:
-   * Modern scanlators (e.g. Asura Scans Astro v7/v8, Flame Comics Next.js) avoid server-rendered HTML for panels.
-   * Extracts JSON payloads directly from `<script id="__NEXT_DATA__">`, `window.__INITIAL_STATE__`, or Astro island components.
+   * Next-generation platforms (Asura Scans Astro v7/v8, Flame Comics Next.js, Manhwa18 Laravel Inertia, ComicLand Vite) dynamically hydrate reader state from client-side JSON rather than rendering static `<img>` tags in HTML.
+   * The extractor inspects and decodes `<script id="__NEXT_DATA__">`, `astro-island` components, `data-page` Inertia blobs, and tRPC batch manifests, directly extracting clean WebP CDN links and uncompressed panel dimensions.
 
 4. **Lazy-Loading & Viewport Obfuscation**:
-   * Scans attributes including `data-src`, `data-lazy-src`, `data-original`, `data-url`, and base64 SVG placeholders to assemble the full panel list in sequence.
+   * Scans attributes including `data-src`, `data-lazy-src`, `data-original`, `data-url`, and base64 SVG placeholders to assemble the full panel list in sequence without scrolling pauses.
 
-5. **Rate Limiting & IP Throttling**:
-   * Built-in asynchronous worker queues enforce domain-specific download pacing with randomized jitter backoff, avoiding `429 Too Many Requests` bans.
+5. **Rate Limiting & IP Throttling Protection**:
+   * Built-in asynchronous worker queues enforce domain-specific download pacing with randomized jitter backoff (`0.5s–0.9s`), avoiding `429 Too Many Requests` bans.
+   * Automated sentinel checks utilize a dual-pass verification pipeline with a 6-second cooldown to guarantee that temporary runner latency is never mistaken for a broken scraper.
 
 6. **Promotional & Ad Page Fingerprint Filter**:
-   * Automatically strips recurring scanlator aggregator ads, casino banners, and credit recruiting pages via 128-bit perceptual hashing.
+   * Strips recurring scanlator recruiting slides, casino banners, and aggregator watermark ribbons using 128-bit composite perceptual hashing (`dHash` + `aHash`) with Hamming distance thresholding ($\le 6$ bits difference).
 
 ---
 
