@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """
-Daily Scraper Sentinel & Health Check Script
+Daily Scraper Sentinel & Health Check Script (Resilient Multi-Pass Architecture)
 Tests every registered manga/manhua source for:
   1. Global Search functionality (querying terms and returning valid series URLs)
   2. Direct Link Parsing (inspecting series page, resolving chapter list)
   3. Chapter Image Extraction (extracting panel image URLs)
 
-Outputs a comprehensive JSON report used by the issue manager.
+Resilience Features:
+  - Realistic desktop browser headers on ClientSession to avoid bot triggers.
+  - Multi-query domain-aware fallback queries with jitter delay.
+  - Homepage crawl fallback if search query returns 0 hits (prevents false positives on niche catalogs).
+  - Two-pass verification: suspect sources are automatically cooled down and re-tested in an isolated, sequential pass.
+  - Precise error classification (Cloudflare Turnstile vs Selector Mismatch vs Rate Limit vs Domain Outage).
 """
 
 from __future__ import annotations
 
 import os
 import sys
+import re
 import json
 import time
+import random
 import argparse
 import asyncio
-from typing import List, Dict, Any, Optional
+import urllib.parse
+from typing import List, Dict, Any, Optional, Tuple
 
 # Ensure project root is in python path
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -35,6 +43,67 @@ from core.search.dispatcher import (
 )
 import extractors.dispatcher as extractor_dispatcher
 
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+}
+
+KNOWN_DOMAINS = {
+    "asura": "asuracomic.net",
+    "arenascan": "arenascan.com",
+    "flamecomics": "flamecomics.xyz",
+    "vortexscans": "vortexscans.org",
+    "roliascan": "roliascan.com",
+    "manhuaplus": "manhuaplus.org",
+    "rizzcomics": "rizzfables.com",
+    "thunderscans": "en-thunderscans.com",
+    "kingofshojo": "kingofshojo.com",
+    "topmanhua": "topmanhua.net",
+    "manhuatop": "manhuatop.org",
+    "mangaread": "www.mangaread.org",
+    "mangaeffect": "mangaeffect.com",
+    "manhwaden": "manhwaden.com",
+    "manhwanex": "manhwanex.com",
+    "zinmanga": "www.zinmanga.net",
+    "mangadex": "api.mangadex.org",
+    "comick": "api.comick.dev",
+    "weebcentral": "weebcentral.com",
+    "mangapill": "mangapill.com",
+    "mangakatana": "mangakatana.com",
+    "mangafox": "fanfox.net",
+    "mangahub": "mangahub.io",
+    "mangahere": "mangahere.cc",
+    "mangatown": "mangatown.com",
+    "mgeko": "mgeko.cc",
+    "mgread": "mangaread.io",
+    "toongod": "toongod.cc",
+    "hentai20": "hentai20.io",
+    "manga18fx": "manga18fx.com",
+    "manhwaclub": "manhwaclub.net",
+    "allporncomics": "allporncomics.co",
+    "comicland": "api.comicland.org",
+    "manhwa18": "manhwa18.net",
+    "toontop": "toontop.io",
+    "mangadass": "mangadass.com",
+    "manga18club": "manga18.club",
+}
+
+
+def get_source_domain(source: Dict[str, Any]) -> str:
+    """Resolve primary target domain for any source entry."""
+    if source.get("domain"):
+        return source["domain"]
+    key = source.get("key", "").lower()
+    return KNOWN_DOMAINS.get(key, "")
+
 
 def get_all_registered_sources() -> List[Dict[str, Any]]:
     """Aggregate all unique sources across all tiers."""
@@ -50,6 +119,25 @@ def get_all_registered_sources() -> List[Dict[str, Any]]:
     return sources
 
 
+def get_search_queries_for_source(source: Dict[str, Any], default_query: str) -> List[str]:
+    """Return tailored queries with fallback genres suitable for the source type."""
+    stype = (source.get("type") or "").lower()
+    key = (source.get("key") or "").lower()
+    adult_markers = ("18", "hentai", "porn", "toongod", "manhwa18")
+    is_adult = any(m in key or m in stype for m in adult_markers)
+
+    queries = [default_query]
+    if is_adult:
+        fallbacks = ["secret", "love", "room", "teacher", "step"]
+    else:
+        fallbacks = ["magic", "secret", "return", "level", "system"]
+
+    for fb in fallbacks:
+        if fb not in queries:
+            queries.append(fb)
+    return queries
+
+
 async def test_single_source(
     dispatcher: SearchDispatcher,
     source: Dict[str, Any],
@@ -59,14 +147,14 @@ async def test_single_source(
 ) -> Dict[str, Any]:
     """
     Run an end-to-end compliance test on a single source:
-    1. Search query
+    1. Global Search query
     2. Direct series inspection
     3. Chapter image extraction
     """
     key = source.get("key", "unknown")
     name = source.get("name", key)
     stype = source.get("type", "unknown")
-    domain = source.get("domain", "")
+    domain = get_source_domain(source)
 
     result: Dict[str, Any] = {
         "key": key,
@@ -87,75 +175,77 @@ async def test_single_source(
         "panels_found": 0,
         "overall_status": "UNKNOWN",
         "non_compliance_reason": None,
+        "failure_category": None,
     }
 
     t0 = time.time()
 
     # --- Phase 1: Global Search Test ---
-    hits = []
-    queries_to_try = [query]
-    for alt_q in ("magic", "secret", "apartment", "return"):
-        if alt_q != query:
-            queries_to_try.append(alt_q)
+    queries_to_try = get_search_queries_for_source(source, query)
+    series_candidates: List[str] = []
 
-    series_candidates = []
-    for q_try in queries_to_try:
+    for idx, q_try in enumerate(queries_to_try):
+        if idx > 0:
+            # Jitter pacing between queries to avoid anti-bot rate-limit bursts
+            await asyncio.sleep(0.5 + random.uniform(0.1, 0.4))
         try:
             cur_hits = await asyncio.wait_for(
                 dispatcher._query_single_source(source, q_try, session),
                 timeout=25.0
             )
             if cur_hits and isinstance(cur_hits, list):
-                valid_hits = [h for h in cur_hits if (h.get("series_url") or h.get("url")) and h.get("title")]
-                if valid_hits:
-                    cand_list = []
-                    for vh in valid_hits:
-                        u = vh.get("series_url") or vh.get("url")
-                        if u and u not in cand_list:
-                            cand_list.append(u)
-                    if cand_list:
-                        test_cand = cand_list[0]
-                        s_chk = await asyncio.to_thread(extractor_dispatcher.inspect_series, test_cand)
-                        if s_chk and any(c.get("url") and c.get("url").rstrip('/') != test_cand.rstrip('/') for c in s_chk.get("chapters", [])):
-                            hits = cur_hits
-                            query = q_try
-                            series_candidates = cand_list
-                            break
-                        elif not series_candidates:
-                            hits = cur_hits
-                            series_candidates = cand_list
+                valid_hits = [
+                    h for h in cur_hits
+                    if (h.get("series_url") or h.get("url")) and h.get("title")
+                ]
+                for vh in valid_hits:
+                    u = vh.get("series_url") or vh.get("url")
+                    if u and u not in series_candidates:
+                        series_candidates.append(u)
+                if series_candidates:
+                    result["search_status"] = "PASS"
+                    result["search_hits"] = len(series_candidates)
+                    result["sample_series_url"] = series_candidates[0]
+                    break
         except asyncio.TimeoutError:
             result["search_error"] = "Search request timed out after 25s (Network latency or anti-bot hang)"
         except Exception as e:
             result["search_error"] = f"Search exception: {type(e).__name__} - {str(e)}"
 
-    if series_candidates:
-        result["search_status"] = "PASS"
-        result["search_hits"] = len(series_candidates)
-        result["sample_series_url"] = series_candidates[0]
-    else:
+    if not series_candidates:
         result["search_status"] = "FAIL"
         if not result["search_error"]:
-            result["search_error"] = f"Search returned 0 results for queries {queries_to_try} (Selector changed, site structure updated, or blocked)"
+            result["search_error"] = f"Search returned 0 results for queries {queries_to_try}"
 
-    # Fallback series URL if search failed but domain is specified
+    # Fallback series URL from domain homepage if search returned 0
     if not series_candidates and domain:
-        # Try fetching domain homepage to extract an active series link
         try:
-            home_code, home_html, home_soup = await asyncio.to_thread(extractor_dispatcher.fetch_page, f"https://{domain}")
-            if home_html:
-                series_matches = re.findall(rf'href=[\"\'](https?://(?:www\.)?{re.escape(domain)}/(?:manga|series|comic|comics|webtoon)/[^/\"\'#?]+/?)[^\"\']*[\"\']', home_html, re.I)
+            home_code, home_html, _ = await asyncio.to_thread(extractor_dispatcher.fetch_page, f"https://{domain}")
+            lower_html = (home_html or "").lower()
+            if home_code in (403, 503) or any(m in lower_html for m in ("cf-turnstile", "challenges.cloudflare.com", "just a moment")):
+                result["search_error"] = f"HTTP {home_code}: Site protected by interactive Cloudflare Turnstile challenge"
+                result["failure_category"] = "BOT_CHALLENGE"
+            elif home_html:
+                series_matches = re.findall(
+                    rf'href=[\"\'](https?://(?:www\.)?{re.escape(domain)}/(?:manga|series|comic|comics|webtoon|manhwa)/[^/\"\'#?]+/?)[^\"\']*[\"\']',
+                    home_html, re.I
+                )
                 if not series_matches:
-                    series_matches = re.findall(r'href=[\"\'](/(?:manga|series|comic|comics|webtoon)/[^/\"\'#?]+/?)[^\"\']*[\"\']', home_html, re.I)
-                    if series_matches:
-                        series_matches = [urllib.parse.urljoin(f"https://{domain}", s) for s in series_matches]
+                    series_matches = re.findall(
+                        r'href=[\"\'](/(?:manga|series|comic|comics|webtoon|manhwa)/[^/\"\'#?]+/?)[^\"\']*[\"\']',
+                        home_html, re.I
+                    )
+                    series_matches = [urllib.parse.urljoin(f"https://{domain}", s) for s in series_matches]
                 for sm in series_matches:
                     if sm not in series_candidates:
                         series_candidates.append(sm)
                 if series_candidates:
                     result["sample_series_url"] = series_candidates[0]
-        except Exception:
-            pass
+                    result["search_status"] = "WARNING"
+                    result["search_error"] = "Query returned 0 results, but active series extracted from homepage"
+        except Exception as e:
+            result["search_error"] = f"Domain unreachable (https://{domain}): {e}"
+            result["failure_category"] = "DOMAIN_OUTAGE"
 
     # --- Phase 2: Direct Series Inspection Test ---
     series_data = None
@@ -207,13 +297,14 @@ async def test_single_source(
                 result["sample_chapter_url"] = ch_url
             else:
                 result["direct_parse_status"] = "FAIL"
-                result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 distinct chapters were parsed"
                 if status_code in (403, 503):
                     result["direct_parse_error"] = f"HTTP {status_code}: Cloudflare or anti-bot challenge active"
+                    result["failure_category"] = "BOT_CHALLENGE"
                 elif err:
                     result["direct_parse_error"] = f"Series inspector error: {err}"
                 else:
-                    result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 chapters were parsed (CSS selectors broken)"
+                    result["direct_parse_error"] = f"Series page loaded (HTTP {status_code}) but 0 chapters parsed (CSS selectors broken)"
+                    result["failure_category"] = "SELECTOR_MISMATCH"
         else:
             result["direct_parse_status"] = "FAIL"
             result["direct_parse_error"] = result.get("direct_parse_error") or "inspect_series returned empty or invalid response"
@@ -245,16 +336,19 @@ async def test_single_source(
                     result["image_extract_status"] = "FAIL"
                     if status_code in (403, 503):
                         result["image_extract_error"] = f"HTTP {status_code}: Anti-bot challenge on chapter page"
+                        result["failure_category"] = "BOT_CHALLENGE"
                     elif err:
                         result["image_extract_error"] = f"Chapter analysis error: {err}"
                     else:
-                        result["image_extract_error"] = f"Chapter page loaded (HTTP {status_code}) but 0 image panels were extracted"
+                        result["image_extract_error"] = f"Chapter page loaded (HTTP {status_code}) but 0 image panels extracted (Decryption/CDN selector issue)"
+                        result["failure_category"] = "SELECTOR_MISMATCH"
             else:
                 result["image_extract_status"] = "FAIL"
                 result["image_extract_error"] = "analyze_url returned empty or invalid response"
         except asyncio.TimeoutError:
             result["image_extract_status"] = "FAIL"
             result["image_extract_error"] = "Image extraction timed out after 35s (CDN or Cloudflare challenge hang)"
+            result["failure_category"] = "TIMEOUT"
         except Exception as e:
             result["image_extract_status"] = "FAIL"
             result["image_extract_error"] = f"Image extraction exception: {type(e).__name__} - {str(e)}"
@@ -275,14 +369,50 @@ async def test_single_source(
     if failures:
         result["overall_status"] = "FAIL"
         result["non_compliance_reason"] = " | ".join(failures)
+        if not result["failure_category"]:
+            if any("403" in f or "anti-bot" in f.lower() or "challenge" in f.lower() for f in failures):
+                result["failure_category"] = "BOT_CHALLENGE"
+            elif any("selector" in f.lower() or "0 distinct chapters" in f.lower() for f in failures):
+                result["failure_category"] = "SELECTOR_MISMATCH"
+            elif any("unreachable" in f.lower() or "connection" in f.lower() for f in failures):
+                result["failure_category"] = "DOMAIN_OUTAGE"
+            else:
+                result["failure_category"] = "SCRAPER_ERROR"
     else:
         result["overall_status"] = "PASS"
         result["non_compliance_reason"] = None
+        result["failure_category"] = None
 
     elapsed = round(time.time() - t0, 2)
     print(f"[{result['overall_status']}] {name} ({key}) - {elapsed}s" + (f" -> {result['non_compliance_reason']}" if failures else ""))
 
     return result
+
+
+async def run_test_batch(
+    dispatcher: SearchDispatcher,
+    sources: List[Dict[str, Any]],
+    query: str,
+    concurrency: int,
+    skip_images: bool = False
+) -> List[Dict[str, Any]]:
+    """Execute testing across a set of sources with bounded concurrency and authentic browser profile."""
+    conn = aiohttp.TCPConnector(ssl=False)
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def sem_worker(src: Dict[str, Any], sess: aiohttp.ClientSession):
+        async with semaphore:
+            return await test_single_source(
+                dispatcher,
+                src,
+                query,
+                sess,
+                test_image_extraction=not skip_images
+            )
+
+    async with aiohttp.ClientSession(connector=conn, headers=BROWSER_HEADERS) as session:
+        tasks = [sem_worker(s, session) for s in sources]
+        return await asyncio.gather(*tasks, return_exceptions=False)
 
 
 async def main_async(args: argparse.Namespace):
@@ -296,31 +426,62 @@ async def main_async(args: argparse.Namespace):
     else:
         sources_to_test = all_sources
 
-    print(f"=== Starting Scraper Health Check ===")
+    print(f"=== Starting Scraper Health Check (Pass 1) ===")
     print(f"Sources to test: {len(sources_to_test)}")
     print(f"Search query: '{args.query}'")
     print(f"Concurrency limit: {args.concurrency}")
     print("=" * 38)
 
     dispatcher = SearchDispatcher(concurrency_limit=args.concurrency, timeout_seconds=20.0)
-    conn = aiohttp.TCPConnector(ssl=False)
-    
-    semaphore = asyncio.Semaphore(args.concurrency)
 
-    async def sem_task(src: Dict[str, Any], sess: aiohttp.ClientSession):
-        async with semaphore:
-            return await test_single_source(
-                dispatcher,
-                src,
-                args.query,
-                sess,
-                test_image_extraction=not args.skip_images
-            )
+    # Pass 1: Standard batch run
+    results = await run_test_batch(
+        dispatcher,
+        sources_to_test,
+        args.query,
+        concurrency=args.concurrency,
+        skip_images=args.skip_images
+    )
 
-    results = []
-    async with aiohttp.ClientSession(connector=conn) as session:
-        tasks = [sem_task(s, session) for s in sources_to_test]
-        results = await asyncio.gather(*tasks, return_exceptions=False)
+    # Identify any failed sources from Pass 1
+    failed_keys = [r["key"] for r in results if r.get("overall_status") == "FAIL"]
+
+    # --- Resilient Pass 2: Isolated Sequential Verification ---
+    # Eliminates false positives caused by concurrent IP rate-limiting or temporary connection resets.
+    if failed_keys:
+        print("\n" + "=" * 38)
+        print(f"⚠️ [Sentinel] {len(failed_keys)} source(s) flagged during Pass 1: {failed_keys}")
+        print("⏳ [Sentinel] Cooling down for 6 seconds to clear any transient rate limits / IP throttling...")
+        await asyncio.sleep(6.0)
+        print("🔄 [Sentinel] Initiating Pass 2: Isolated sequential re-verification of suspect sources...")
+        print("=" * 38)
+
+        suspect_sources = [s for s in sources_to_test if s.get("key") in failed_keys]
+        retry_dispatcher = SearchDispatcher(concurrency_limit=1, timeout_seconds=25.0)
+
+        retry_results = await run_test_batch(
+            retry_dispatcher,
+            suspect_sources,
+            args.query,
+            concurrency=1,
+            skip_images=args.skip_images
+        )
+
+        retry_map = {r["key"]: r for r in retry_results}
+
+        # Merge results with dual-pass confirmation
+        for i, r in enumerate(results):
+            k = r.get("key")
+            if k in retry_map:
+                retried = retry_map[k]
+                if retried["overall_status"] == "PASS":
+                    print(f"✅ [RECOVERED] {r['name']} ({k}) passed isolated retry! (Pass 1 was transient rate limit/glitch)")
+                    retried["dual_pass_status"] = "RECOVERED_ON_RETRY"
+                    results[i] = retried
+                else:
+                    print(f"❌ [CONFIRMED FAILURE] {r['name']} ({k}) failed both Pass 1 and isolated Pass 2!")
+                    retried["dual_pass_status"] = "CONFIRMED_BROKEN"
+                    results[i] = retried
 
     passed_count = sum(1 for r in results if r["overall_status"] == "PASS")
     failed_count = sum(1 for r in results if r["overall_status"] == "FAIL")
@@ -328,6 +489,7 @@ async def main_async(args: argparse.Namespace):
     report = {
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
         "query_used": args.query,
+        "concurrency_used": args.concurrency,
         "total_tested": len(results),
         "passed_count": passed_count,
         "failed_count": failed_count,
@@ -348,10 +510,10 @@ async def main_async(args: argparse.Namespace):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Scraper Health Check Sentinel")
+    parser = argparse.ArgumentParser(description="Scraper Health Check Sentinel (Resilient)")
     parser.add_argument("--sources", default="all", help="Comma-separated list of source keys or 'all'")
     parser.add_argument("--query", default="hero", help="Search query to test")
-    parser.add_argument("--concurrency", type=int, default=4, help="Maximum concurrent requests")
+    parser.add_argument("--concurrency", type=int, default=2, help="Maximum concurrent requests (default: 2)")
     parser.add_argument("--skip-images", action="store_true", help="Skip chapter image extraction phase")
     parser.add_argument("--output", default=".github/reports/scraper_health.json", help="Path to output JSON report")
     args = parser.parse_args()

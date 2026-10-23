@@ -2,8 +2,8 @@
 """
 Automated Issue Manager for Scraper Health Sentinel
 Reads .github/reports/scraper_health.json and manages GitHub issues:
-  1. Opens a new issue if a scraper fails and no open issue exists for it.
-  2. Appends a daily comment if an issue is already open.
+  1. Opens a new issue if a scraper genuinely fails (verified across dual passes) and no open issue exists.
+  2. Appends a daily comment if an issue is already open and still failing.
   3. Automatically closes the issue when a broken scraper passes again.
 
 Uses the GitHub REST API with GH_TOKEN / GITHUB_TOKEN (Personal Access Token or Action Token).
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import re
 import json
 import urllib.request
 import urllib.parse
@@ -78,7 +79,13 @@ class GitHubClient:
         return self._request("PATCH", f"/issues/{issue_number}", payload)
 
 
-def format_issue_title(source_name: str, source_key: str) -> str:
+def format_issue_title(source_name: str, source_key: str, category: Optional[str] = None) -> str:
+    if category == "BOT_CHALLENGE":
+        return f"[Bot-Locked] {source_name} ({source_key})"
+    elif category == "DOMAIN_OUTAGE":
+        return f"[Site Down] {source_name} ({source_key})"
+    elif category == "SELECTOR_MISMATCH":
+        return f"[Selector Broken] {source_name} ({source_key})"
     return f"[Scraper Down] {source_name} ({source_key})"
 
 
@@ -87,6 +94,7 @@ def format_issue_body(result: Dict[str, Any]) -> str:
     key = result.get("key")
     domain = result.get("domain") or "N/A"
     stype = result.get("type") or "N/A"
+    category = result.get("failure_category") or "GENUINE_ERROR"
     sample_series = result.get("sample_series_url") or "None detected"
     sample_chapter = result.get("sample_chapter_url") or "None detected"
     timestamp = result.get("timestamp")
@@ -103,10 +111,28 @@ def format_issue_body(result: Dict[str, Any]) -> str:
     image_err = result.get("image_extract_error") or "None"
     panels_found = result.get("panels_found", 0)
 
+    remediation = []
+    if category == "BOT_CHALLENGE":
+        remediation.append(f"1. **Anti-Bot Challenge Detected**: Target domain `{domain}` is blocking automated requests with Cloudflare Turnstile / DDoS-Guard.")
+        remediation.append(f"2. In accordance with project policy for bot-locked domains, consider retiring `{key}` from active search tiers in `core/search/dispatcher.py`.")
+    elif category == "SELECTOR_MISMATCH":
+        remediation.append(f"1. **HTML Selector Mismatch**: The site loaded successfully (HTTP 200), but CSS selectors for titles, chapters, or panels did not match.")
+        remediation.append(f"2. Inspect the DOM structure of `{sample_series or domain}` and update selectors in `core/search/dispatcher.py` or `extractors/`.")
+    elif category == "DOMAIN_OUTAGE":
+        remediation.append(f"1. **Domain Unreachable**: The domain `{domain}` failed DNS resolution or returned a connection error.")
+        remediation.append(f"2. Check if the site has changed domains or permanently ceased operations.")
+    else:
+        remediation.append(f"1. Test locally using `python3 .github/scripts/check_scrapers.py --sources {key}`.")
+        remediation.append(f"2. Check if the site structure or endpoints have updated.")
+
+    remediation_str = "\n".join(remediation)
+
     return f"""### 🚨 Scraper Healthcheck Failure: {name}
 
 > **Reported by:** @AdityaPatra-dev (Automated Scraper Sentinel)  
-> **Timestamp:** `{timestamp}`
+> **Timestamp:** `{timestamp}`  
+> **Dual-Pass Verification:** ❌ Confirmed failed across initial batch + isolated sequential retry pass (transient IP rate-limiting ruled out).  
+> **Category:** `{category}`
 
 ---
 
@@ -145,19 +171,18 @@ def format_issue_body(result: Dict[str, Any]) -> str:
 > **Reason:** {result.get("non_compliance_reason") or "Unknown error"}
 
 ### Suggested Remediation Steps
-1. Verify if the target site updated its domain or moved behind Cloudflare Turnstile / anti-bot challenge.
-2. Check if CSS selectors in `core/search/dispatcher.py` or `extractors/` need updating for this site.
-3. Test locally with `python3 .github/scripts/check_scrapers.py --sources {key}`.
-4. Push a fix; the Sentinel will verify on the next daily run and automatically close this issue.
+{remediation_str}
 """
 
 
 def format_update_comment(result: Dict[str, Any]) -> str:
     timestamp = result.get("timestamp")
     reason = result.get("non_compliance_reason") or "Scraper is still non-compliant"
+    category = result.get("failure_category") or "GENUINE_ERROR"
     return f"""🔄 **Automated Sentinel Daily Update** (`{timestamp}`)
 
-The daily healthcheck ran again and this source is still failing compliance checks:
+The daily healthcheck ran again and this source failed both initial and isolated sequential retry passes:
+- **Category:** `{category}`
 - **Reason:** {reason}
 - **Search Status:** `{result.get('search_status')}` ({result.get('search_error') or 'OK'})
 - **Direct Parse Status:** `{result.get('direct_parse_status')}` ({result.get('direct_parse_error') or 'OK'})
@@ -199,13 +224,13 @@ def main():
     open_issues = client.get_open_issues()
     print(f"Found {len(open_issues)} existing open scraper issues.")
 
-    # Map existing open issue titles to issue objects
+    # Map existing open issue titles to issue objects by extracting the key inside parentheses
     open_issues_by_key = {}
     for issue in open_issues:
         title = issue.get("title", "")
-        # Title format: [Scraper Down] Name (key)
-        if "(" in title and title.endswith(")"):
-            extracted_key = title.rsplit("(", 1)[-1].rstrip(")").strip().lower()
+        m = re.search(r'\(([^)]+)\)$', title.strip())
+        if m:
+            extracted_key = m.group(1).strip().lower()
             open_issues_by_key[extracted_key] = issue
 
     created_count = 0
@@ -216,6 +241,7 @@ def main():
         key = r.get("key", "").lower()
         name = r.get("name", key)
         status = r.get("overall_status")
+        category = r.get("failure_category")
 
         existing_issue = open_issues_by_key.get(key)
 
@@ -228,8 +254,8 @@ def main():
                 print(f"[UPDATED] Added daily failure comment to Issue #{issue_num} ({name})")
                 updated_count += 1
             else:
-                # Create new issue
-                title = format_issue_title(name, key)
+                # Create new issue with verified failure category
+                title = format_issue_title(name, key, category)
                 body = format_issue_body(r)
                 labels = [ISSUE_LABEL, AUTO_LABEL]
                 created = client.create_issue(title, body, labels)
@@ -244,7 +270,7 @@ def main():
                 issue_num = existing_issue["number"]
                 close_comment = (
                     f"✅ **Auto-Resolved by Daily Sentinel** (`{r.get('timestamp')}`)\n\n"
-                    f"This scraper passed all compliance checks during today's run:\n"
+                    f"This scraper passed all compliance checks during today's healthcheck run:\n"
                     f"- Global Search: Passed ({r.get('search_hits')} hits)\n"
                     f"- Direct Link Parsing: Passed ({r.get('chapters_found')} chapters)\n"
                     f"- Image Extraction: Passed ({r.get('panels_found')} panels)\n\n"
@@ -261,4 +287,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

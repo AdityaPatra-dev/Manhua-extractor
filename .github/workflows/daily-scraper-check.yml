@@ -17,7 +17,7 @@ on:
       concurrency:
         description: 'Concurrency limit'
         required: false
-        default: '4'
+        default: '2'
 
 permissions:
   contents: read
@@ -49,7 +49,7 @@ jobs:
           python3 .github/scripts/check_scrapers.py \
             --sources "${{ inputs.sources || 'all' }}" \
             --query "${{ inputs.query || 'hero' }}" \
-            --concurrency "${{ inputs.concurrency || '4' }}"
+            --concurrency "${{ inputs.concurrency || '2' }}"
 
       - name: Process Results & Manage GitHub Issues
         env:
