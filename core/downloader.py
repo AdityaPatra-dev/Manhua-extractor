@@ -141,23 +141,27 @@ async def fetch_single_panel(
                     raw_bytes = await asyncio.to_thread(_sync_fetch)
 
                 if raw_bytes:
-                    optimized = optimize_panel_image(
-                        raw_bytes,
-                        max_width=max_width,
-                        jpeg_quality=jpeg_quality,
-                        image_format=image_format,
-                        webp_quality=webp_quality
-                    )
-                    if optimized:
-                        if staging_dir:
+                    def _process_and_stage():
+                        opt = optimize_panel_image(
+                            raw_bytes,
+                            max_width=max_width,
+                            jpeg_quality=jpeg_quality,
+                            image_format=image_format,
+                            webp_quality=webp_quality
+                        )
+                        if opt and staging_dir:
                             try:
                                 os.makedirs(staging_dir, exist_ok=True)
                                 ext = "webp" if (image_format or "JPEG").upper() == "WEBP" else "jpg"
                                 stage_file = os.path.join(staging_dir, f"panel_{index:04d}.{ext}")
                                 with open(stage_file, "wb") as f:
-                                    f.write(optimized)
+                                    f.write(opt)
                             except Exception:
                                 pass
+                        return opt
+
+                    optimized = await asyncio.to_thread(_process_and_stage)
+                    if optimized:
                         return index, optimized
             except Exception:
                 if attempt < retries - 1:
