@@ -123,47 +123,61 @@ class MadaraExtractor(BaseExtractor):
             base_series_url += '/'
 
         def _fetch_madara_ajax(endpoint: str, data: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Referer": base_series_url,
+                "X-Requested-With": "XMLHttpRequest"
+            }
             try:
-                import requests
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                    "Referer": base_series_url,
-                    "X-Requested-With": "XMLHttpRequest"
-                }
+                from database.db import get_clearance_cookie
+                domain = urlparse(base_series_url).netloc
+                cached = get_clearance_cookie(domain)
+                if cached:
+                    headers["Cookie"] = cached["cookie_string"]
+                    if cached.get("user_agent"):
+                        headers["User-Agent"] = cached["user_agent"]
+            except Exception:
+                pass
+
+            resp_text = None
+            try:
+                from curl_cffi import requests as cffi_requests
+                with cffi_requests.Session(impersonate="chrome124") as csess:
+                    r = csess.post(endpoint, data=data, headers=headers, timeout=15)
+                    if r.status_code == 200 and r.text:
+                        resp_text = r.text
+            except Exception:
+                pass
+
+            if not resp_text:
                 try:
-                    from database.db import get_clearance_cookie
-                    domain = urlparse(base_series_url).netloc
-                    cached = get_clearance_cookie(domain)
-                    if cached:
-                        headers["Cookie"] = cached["cookie_string"]
-                        if cached.get("user_agent"):
-                            headers["User-Agent"] = cached["user_agent"]
+                    import requests
+                    r = requests.post(endpoint, data=data, headers=headers, timeout=12)
+                    if r.status_code == 200 and r.text:
+                        resp_text = r.text
                 except Exception:
                     pass
 
-                resp = requests.post(endpoint, data=data, headers=headers, timeout=12)
-                if resp.status_code == 200 and resp.text:
-                    ajax_soup = BeautifulSoup(resp.text, "html.parser")
-                    ajax_chapters = super(MadaraExtractor, self).extract_chapter_list(ajax_soup, base_series_url, resp.text)
-                    if ajax_chapters:
-                        return ajax_chapters
-            except Exception:
-                pass
+            if resp_text:
+                ajax_soup = BeautifulSoup(resp_text, "html.parser")
+                ajax_chapters = super(MadaraExtractor, self).extract_chapter_list(ajax_soup, base_series_url, resp_text)
+                if ajax_chapters:
+                    return ajax_chapters
             return []
 
-        # 1. Try admin-ajax.php if manga_id is present
-        if manga_id:
-            admin_ajax_endpoint = urljoin(base_series_url, "/wp-admin/admin-ajax.php")
-            admin_chapters = _fetch_madara_ajax(admin_ajax_endpoint, {"action": "manga_get_chapters", "manga": manga_id})
-            if admin_chapters:
-                return admin_chapters
-
-        # 2. Try direct /ajax/chapters/ endpoint if dynamic container is present
+        # 1. Try direct /ajax/chapters/ endpoint first if dynamic container is present
         if has_ajax_holder:
             ajax_endpoint = base_series_url.rstrip('/') + "/ajax/chapters/"
             ajax_chapters = _fetch_madara_ajax(ajax_endpoint)
             if ajax_chapters:
                 return ajax_chapters
+
+        # 2. Try admin-ajax.php if manga_id is present
+        if manga_id:
+            admin_ajax_endpoint = urljoin(base_series_url, "/wp-admin/admin-ajax.php")
+            admin_chapters = _fetch_madara_ajax(admin_ajax_endpoint, {"action": "manga_get_chapters", "manga": manga_id})
+            if admin_chapters:
+                return admin_chapters
 
         # 3. Extract from initial DOM
         chapters = super().extract_chapter_list(soup, url, html)

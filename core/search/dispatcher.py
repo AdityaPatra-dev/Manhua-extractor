@@ -346,6 +346,41 @@ class SearchDispatcher:
                     "quality_tag": "1080p WebP",
                     "latency_ms": latency
                 })
+
+            # Fallback to Madara admin-ajax search if GET ?s= returned 0 results
+            if not results:
+                try:
+                    ajax_url = f"https://{domain}/wp-admin/admin-ajax.php"
+                    headers = {
+                        "User-Agent": DEFAULT_HEADERS["User-Agent"],
+                        "Referer": f"https://{domain}/",
+                        "X-Requested-With": "XMLHttpRequest"
+                    }
+                    data = {"action": "wp-manga-search-manga", "title": query}
+                    async with session.post(ajax_url, data=data, headers=headers, ssl=False, timeout=aiohttp.ClientTimeout(total=8.0)) as a_resp:
+                        if a_resp.status == 200:
+                            a_data = await a_resp.json(content_type=None)
+                            for item in a_data.get("data", [])[:6]:
+                                u = item.get("url") or ""
+                                t = item.get("title") or ""
+                                if u and t:
+                                    results.append({
+                                        "title": t,
+                                        "alt_titles": [],
+                                        "source_key": source_info["key"],
+                                        "source_name": source_info["name"],
+                                        "source_logo": f"/docs/logos/{source_info['key']}.png",
+                                        "series_url": u,
+                                        "url": u,
+                                        "cover_url": "",
+                                        "latest_chapter": "Chapter 1",
+                                        "latest_chapter_num": 1.0,
+                                        "quality_tag": "1080p WebP",
+                                        "latency_ms": int((time.time() - t0) * 1000)
+                                    })
+                except Exception:
+                    pass
+
             return results
         except Exception:
             return []
@@ -988,6 +1023,8 @@ class SearchDispatcher:
                     seen.add(series_url)
                     title_el = art.select_one("h2, h3, h4, .entry-title") or a
                     title = title_el.get_text(strip=True)
+                    if title.lower().startswith("anime") or "/anime-" in series_url:
+                        continue
                     img = art.select_one("img")
                     cover_url = (img.get("data-src") or img.get("src") or "") if img else ""
                     results.append({

@@ -250,13 +250,16 @@ async def test_single_source(
     # --- Phase 2: Direct Series Inspection Test ---
     series_data = None
     series_url_to_test = None
+    first_attempt_data = None
     if series_candidates:
-        for cand_url in series_candidates[:3]:
+        for cand_url in series_candidates[:5]:
             try:
                 s_data = await asyncio.wait_for(
                     asyncio.to_thread(extractor_dispatcher.inspect_series, cand_url),
                     timeout=25.0
                 )
+                if not first_attempt_data and s_data:
+                    first_attempt_data = (s_data, cand_url)
                 if s_data and s_data.get("chapters"):
                     real_ch = [
                         c for c in s_data["chapters"]
@@ -267,12 +270,12 @@ async def test_single_source(
                         series_url_to_test = cand_url
                         result["sample_series_url"] = cand_url
                         break
-                if not series_data and s_data:
-                    series_data = s_data
-                    series_url_to_test = cand_url
             except Exception as e:
                 if not result.get("direct_parse_error"):
                     result["direct_parse_error"] = str(e)
+
+        if not series_data and first_attempt_data:
+            series_data, series_url_to_test = first_attempt_data
 
         if series_data and isinstance(series_data, dict):
             status_code = series_data.get("status_code", 200)
