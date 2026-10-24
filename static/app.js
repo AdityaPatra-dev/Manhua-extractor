@@ -71,11 +71,13 @@ document.addEventListener("DOMContentLoaded", () => {
     btnUpdateLibrary.addEventListener("click", async () => {
       btnUpdateLibrary.textContent = "Checking...";
       btnUpdateLibrary.disabled = true;
+      triggerHaptic([10]);
       try {
         const res = await fetch("/api/library/update", { method: "POST" });
         const data = await res.json();
         if (data.success) {
-          showToast("Library update started in background! Monitor progress on Downloader tab.", "info");
+          showToast(data.message || "Checking library for updates... New chapters will appear in Download Queue.", "info");
+          fetchAndRenderQueue();
         } else {
           showToast("Error: " + data.error, "error");
         }
@@ -396,16 +398,20 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AndroidApp && typeof window.AndroidApp.notifyDownloadStarted === "function") {
           window.AndroidApp.notifyDownloadStarted();
         }
+        if (data.queued) {
+          showToast(data.message || `Added '${data.series_title || "Series"}' to Download Queue (#${data.queue_position || 'in queue'})`, "success");
+        } else {
+          showToast(data.message || "Download started!", "success");
+        }
         progressCard.classList.remove("hidden");
-        progressCard.scrollIntoView({ behavior: "smooth" });
         listenToProgress();
+        fetchAndRenderQueue();
       } else {
         showToast(`Error starting download: ${data.error}`, "error");
-        if (btnStartDownload) btnStartDownload.disabled = false;
-        if (btnDownloadSelected) btnDownloadSelected.disabled = false;
       }
     } catch (err) {
       showToast(`Failed to launch download: ${err.message}`, "error");
+    } finally {
       if (btnStartDownload) btnStartDownload.disabled = false;
       if (btnDownloadSelected) btnDownloadSelected.disabled = false;
     }
@@ -556,14 +562,20 @@ document.addEventListener("DOMContentLoaded", () => {
         if (window.AndroidApp && typeof window.AndroidApp.notifyDownloadStarted === "function") {
           window.AndroidApp.notifyDownloadStarted();
         }
+        if (data.queued) {
+          showToast(data.message || `Added '${data.series_title || "Series"}' to Download Queue (#${data.queue_position || 'in queue'})`, "success");
+        } else {
+          showToast(data.message || "Download started!", "success");
+        }
         progressCard.classList.remove("hidden");
         listenToProgress();
+        fetchAndRenderQueue();
       } else {
         showToast(`Error: ${data.error}`, "error");
-        btnStartDownload.disabled = false;
       }
     } catch (err) {
       showToast(`Failed to launch download: ${err.message}`, "error");
+    } finally {
       btnStartDownload.disabled = false;
     }
   });
@@ -711,6 +723,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (dCount) dCount.textContent = countTxt;
         grid.innerHTML = data.series.map((s) => {
           const title = cleanTitle(s.title);
+          const descSnippet = s.synopsis ? (s.synopsis.length > 55 ? s.synopsis.slice(0, 55) + '...' : s.synopsis) : (s.genres || 'Saved in local library');
           return `
           <div class="series-card" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
             <div class="series-cover-wrapper">
@@ -721,6 +734,14 @@ document.addEventListener("DOMContentLoaded", () => {
             </div>
             <div class="series-details">
               <h4 class="series-title" title="${escapeAttr(title)}">${escapeHtml(title)}</h4>
+              <div class="series-card-desc-row">
+                <p class="series-card-desc" title="${escapeAttr(s.synopsis || s.genres || 'Saved in local library')}">
+                  ${escapeHtml(descSnippet)}
+                </p>
+                <button class="btn-card-update" title="Check updates for ${escapeAttr(title)}" aria-label="Check updates" onclick="event.stopPropagation(); window.checkSpecificSeriesUpdate(${s.id}, this)">
+                  <span class="update-icon">🔄</span>
+                </button>
+              </div>
               <div class="series-card-actions">
                 ${s.resume_chapter_id ? `
                   <button class="btn btn-primary btn-card-resume" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Resume Ch. ${s.resume_chapter_num}">
@@ -810,6 +831,14 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         document.getElementById("modal-engine-badge").textContent = `Engine: ${s.engine || 'Auto'}`;
         document.getElementById("modal-synopsis").textContent = s.synopsis || "Tracked in local library database.";
+
+        const modalBtnCheckUpdate = document.getElementById("modal-btn-check-update");
+        if (modalBtnCheckUpdate) {
+          modalBtnCheckUpdate.onclick = (e) => {
+            e.stopPropagation();
+            window.checkSpecificSeriesUpdate(seriesId, modalBtnCheckUpdate);
+          };
+        }
 
         const metaParts = [];
         if (s.author) metaParts.push(`✍️ <strong>${escapeHtml(cleanTitle(s.author))}</strong>`);
@@ -960,6 +989,42 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (e) {
       showToast("Failed to load series: " + e.message, "error");
+    }
+  };
+
+  // --- Specific Series Update Checker ---
+  window.checkSpecificSeriesUpdate = async function(seriesId, btn) {
+    triggerHaptic([10]);
+    let iconEl = null;
+    if (btn) {
+      btn.disabled = true;
+      iconEl = btn.querySelector(".update-icon") || btn;
+      iconEl.classList.add("spinning");
+    }
+    showToast("Checking for latest chapters...", "info");
+    try {
+      const res = await fetch(`/api/library/${seriesId}/check-update`, { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        if (data.queued && data.new_chapters && data.new_chapters.length > 0) {
+          showToast(`Found ${data.new_chapters.length} new chapter(s) for "${data.series_title}"! Added to Download Queue.`, "success");
+          triggerHaptic([20, 40, 20]);
+          fetchAndRenderQueue();
+          const qBadge = document.getElementById("queue-badge-count");
+          if (qBadge) qBadge.classList.remove("hidden");
+        } else {
+          showToast(data.message || `"${data.series_title || "Series"}" is already up to date.`, "info");
+        }
+      } else {
+        showToast("Update check failed: " + (data.error || "Unknown error"), "error");
+      }
+    } catch (e) {
+      showToast("Network error checking update: " + e.message, "error");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        if (iconEl) iconEl.classList.remove("spinning");
+      }
     }
   };
 

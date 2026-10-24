@@ -730,9 +730,12 @@
         <div class="modal-series-info">
           <img id="modal-series-cover" src="" alt="Cover" class="modal-cover">
           <div class="modal-series-details-col" style="flex: 1 1 0%; min-width: 0; width: 100%; overflow: hidden;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
               <span id="modal-engine-badge" class="preview-badge">Engine</span>
-              <button id="modal-btn-delete-series" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); cursor: pointer;" title="Delete this series and downloaded files">🗑️ Delete Manhua</button>
+              <div style="display: flex; gap: 6px; align-items: center;">
+                <button id="modal-btn-check-update" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; display: flex; align-items: center; gap: 4px;" title="Check for latest chapters"><span class="update-icon">🔄</span> Check Updates</button>
+                <button id="modal-btn-delete-series" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); cursor: pointer;" title="Delete this series and downloaded files">🗑️ Delete Manhua</button>
+              </div>
             </div>
             <div id="modal-meta-tags" style="margin: 6px 0; font-size: 0.82rem; color: var(--text-muted); word-break: break-word;"></div>
             <div id="modal-source-url-box" style="margin: 8px 0; display: none; width: 100%; min-width: 0; overflow: hidden;"></div>
