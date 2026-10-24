@@ -571,3 +571,5 @@ Universal Manhua Extractor includes a production-grade automated canary monitor 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&height=120&section=footer" width="100%" alt="Footer Wave" />
 
 </div>
+
+<!-- verified contributor update -->
