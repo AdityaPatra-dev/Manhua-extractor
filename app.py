@@ -440,13 +440,46 @@ class DownloadQueueManager:
         self._worker_task: Optional[asyncio.Task] = None
 
     def enqueue(self, req: DownloadRequest) -> Dict[str, Any]:
-        job_id = f"job_{int(time.time() * 1000)}_{len(self.queue) + len(self.history) + 1}"
         urls = [u.strip() for u in req.chapter_urls if u.strip()] if req.chapter_urls else []
+        title_display = req.series_title or "Analyzing Series..."
+
+        # Deduplication against active job and queued jobs
+        active_urls = set()
+        if self.active_job and self.active_job.get("req") and self.active_job["req"].chapter_urls:
+            active_urls = {u.strip() for u in self.active_job["req"].chapter_urls if u.strip()}
+
+        queued_urls = set()
+        for j in self.queue:
+            if j.get("req") and j["req"].chapter_urls:
+                for u in j["req"].chapter_urls:
+                    if u.strip():
+                        queued_urls.add(u.strip())
+
+        all_in_flight = active_urls | queued_urls
+
+        if urls:
+            remaining_urls = [u for u in urls if u not in all_in_flight]
+            if not remaining_urls:
+                if self.active_job and any(u in active_urls for u in urls):
+                    return self.active_job
+                for j in self.queue:
+                    if any(u in (j.get("req").chapter_urls or []) for u in urls):
+                        return j
+                return self.active_job or (self.queue[0] if self.queue else {})
+            urls = remaining_urls
+            req.chapter_urls = urls
+        else:
+            if self.active_job and self.active_job.get("url") == req.url and self.active_job["status"] in ("downloading", "analyzing", "starting"):
+                return self.active_job
+            for j in self.queue:
+                if j.get("url") == req.url and j["status"] in ("queued", "downloading"):
+                    return j
+
+        job_id = f"job_{int(time.time() * 1000)}_{len(self.queue) + len(self.history) + 1}"
         target_count = len(urls) if urls else (req.count if req.mode in ("range", "single") else 999)
         if not urls and req.mode == "single":
             target_count = 1
 
-        title_display = req.series_title or "Analyzing Series..."
         job = {
             "id": job_id,
             "url": req.url,
@@ -646,7 +679,7 @@ async def execute_download_job(job: Dict[str, Any]):
             job["message"] = f"Analyzing chapter {chapters_processed + 1} of {target_count}..."
 
             # Analyze page
-            data = dispatcher.analyze_url(current_url)
+            data = await asyncio.to_thread(dispatcher.analyze_url, current_url)
             if not data.get("success") or not data.get("pages"):
                 job["message"] = f"Failed to extract panels from {current_url}"
                 download_progress["message"] = f"Failed to extract panels from {current_url}"
@@ -761,7 +794,7 @@ async def execute_download_job(job: Dict[str, Any]):
             if req.filter_promos:
                 known_sigs = get_all_promo_signatures()
                 if known_sigs:
-                    clean_panels, removed = filter_chapter_panels(panel_bytes, known_signatures=known_sigs)
+                    clean_panels, removed = await asyncio.to_thread(filter_chapter_panels, panel_bytes, known_signatures=known_sigs)
                     if removed > 0:
                         job["message"] = f"Removed {removed} promotional credit pages..."
                         download_progress["message"] = f"Removed {removed} promotional credit pages..."
@@ -777,10 +810,12 @@ async def execute_download_job(job: Dict[str, Any]):
                 download_progress["message"] = f"Upscaling {len(panel_bytes)} panels ({req.upscale_scale}x)..."
                 from core.upscaler import upscale_panel
                 upscaler_url = get_setting("ai_upscaler_url", "http://localhost:5000/upscale")
-                panel_bytes = [
-                    upscale_panel(b, scale=req.upscale_scale, engine=req.upscale_engine, endpoint=upscaler_url)
-                    for b in panel_bytes
-                ]
+                def _do_upscale():
+                    return [
+                        upscale_panel(b, scale=req.upscale_scale, engine=req.upscale_engine, endpoint=upscaler_url)
+                        for b in panel_bytes
+                    ]
+                panel_bytes = await asyncio.to_thread(_do_upscale)
 
             # Smart E-Ink / Kindle slicing
             if req.slice_eink:
@@ -788,7 +823,8 @@ async def execute_download_job(job: Dict[str, Any]):
                 job["message"] = f"Slicing webtoon ribbons into e-ink pages..."
                 download_progress["status"] = "slicing"
                 download_progress["message"] = f"Slicing webtoon ribbons into e-ink pages..."
-                panel_bytes = slice_chapter_panels(
+                panel_bytes = await asyncio.to_thread(
+                    slice_chapter_panels,
                     panel_bytes,
                     target_aspect_ratio=req.aspect_ratio,
                     jpeg_quality=req.quality
@@ -810,12 +846,13 @@ async def execute_download_job(job: Dict[str, Any]):
 
             if effective_format == "pdf":
                 output_file = os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.pdf")
-                compile_success = compile_pdf(panel_bytes, output_file)
+                compile_success = await asyncio.to_thread(compile_pdf, panel_bytes, output_file)
                 # Robust fallback: If PDF compilation failed or produced a 0-byte file, fall back to CBZ so panels are preserved
                 if not compile_success or not os.path.exists(output_file) or os.path.getsize(output_file) == 0:
                     print(f"[Compiler] PDF compilation failed for {output_file}, falling back to CBZ archive...", file=sys.stderr)
                     cbz_output = os.path.join(series_dir, f"{safe_slug}_Ch_{ch_str}.cbz")
-                    compile_success = compile_cbz(
+                    compile_success = await asyncio.to_thread(
+                        compile_cbz,
                         panel_bytes,
                         cbz_output,
                         series_title=series_title,
@@ -838,7 +875,8 @@ async def execute_download_job(job: Dict[str, Any]):
                             series_meta = get_series_by_id(series_id)
                     except Exception:
                         pass
-                compile_success = compile_cbz(
+                compile_success = await asyncio.to_thread(
+                    compile_cbz,
                     panel_bytes,
                     output_file,
                     series_title=series_title,
@@ -849,13 +887,14 @@ async def execute_download_job(job: Dict[str, Any]):
                 )
             else: # folder
                 output_file = os.path.join(series_dir, f"Ch_{ch_str}")
-                compile_success = save_raw_images(panel_bytes, output_file)
+                compile_success = await asyncio.to_thread(save_raw_images, panel_bytes, output_file)
                 effective_format = "folder"
 
             # Ensure local series cover is cached
             series_rec = get_series_by_id(series_id)
             if not series_rec or not series_rec.get("cover_path") or not os.path.exists(series_rec.get("cover_path") or ""):
-                save_series_cover_locally(
+                await asyncio.to_thread(
+                    save_series_cover_locally,
                     series_id=series_id,
                     series_dir=series_dir,
                     cover_url=effective_cover or (series_rec.get("cover_url") if series_rec else None),
@@ -947,7 +986,9 @@ async def execute_download_job(job: Dict[str, Any]):
         download_progress["status"] = "error"
         download_progress["message"] = f"Error: {str(e)}"
     finally:
-        download_progress["is_running"] = False
+        has_pending = any(j.get("status") == "queued" and not j.get("is_paused") for j in download_queue_manager.queue)
+        if not has_pending:
+            download_progress["is_running"] = False
         download_progress["is_paused"] = False
 
 async def run_download_job(req: DownloadRequest):
@@ -962,12 +1003,20 @@ async def run_download_job(req: DownloadRequest):
 @app.post("/api/download")
 async def start_download(req: DownloadRequest):
     job = download_queue_manager.enqueue(req)
-    is_active = (download_queue_manager.active_job and download_queue_manager.active_job["id"] == job["id"])
+    is_active = bool(download_queue_manager.active_job and download_queue_manager.active_job.get("id") == job.get("id"))
+    queue_pos = 0
+    if not is_active:
+        for idx, j in enumerate(download_queue_manager.queue):
+            if j.get("id") == job.get("id"):
+                queue_pos = idx + 1
+                break
     return {
         "success": True,
-        "job_id": job["id"],
+        "job_id": job.get("id"),
+        "series_title": job.get("series_title"),
         "queued": not is_active,
-        "message": "Download task started." if is_active else f"'{job['series_title']}' added to download queue."
+        "queue_position": queue_pos,
+        "message": f"Download task started for '{job.get('series_title')}'." if is_active else f"'{job.get('series_title')}' added to download queue (position #{queue_pos})."
     }
 
 @app.get("/api/queue")
@@ -1342,31 +1391,32 @@ async def remove_chapter(chapter_id: int):
     ok = delete_chapter(chapter_id)
     return {"success": ok, "chapter_id": chapter_id}
 
+@app.post("/api/library/{series_id}/check-update")
+async def check_single_manhua_update(series_id: int):
+    """Check for new chapters for a specific manhua and automatically queue them."""
+    from core.updater import check_and_enqueue_series_update
+    result = await check_and_enqueue_series_update(
+        series_id=series_id,
+        queue_manager=download_queue_manager
+    )
+    return result
+
 @app.post("/api/library/update")
 async def trigger_library_update(background_tasks: BackgroundTasks):
-    global download_progress
-    if download_progress["is_running"]:
-        return JSONResponse({"success": False, "error": "A download or update job is already active."}, status_code=400)
+    from core.updater import run_library_update
 
     async def update_task():
-        global download_progress
-        download_progress["is_running"] = True
-        download_progress["status"] = "checking_updates"
-        download_progress["message"] = "Checking library series for new chapters..."
         try:
-            def cb(msg):
-                download_progress["message"] = msg
-            res = await run_library_update(progress_cb=cb)
-            download_progress["status"] = "completed"
-            download_progress["message"] = f"Library update finished: {res['total_new_chapters']} new chapter(s) downloaded."
+            res = await run_library_update(queue_manager=download_queue_manager)
+            print(f"[LibraryUpdate] Library update check complete: {res.get('total_new_chapters', 0)} new chapters queued across {res.get('updated_series_count', 0)} series.", file=sys.stderr)
         except Exception as e:
-            download_progress["status"] = "error"
-            download_progress["message"] = f"Update failed: {str(e)}"
-        finally:
-            download_progress["is_running"] = False
+            print(f"[LibraryUpdate] Error during library update: {e}", file=sys.stderr)
 
     background_tasks.add_task(update_task)
-    return {"success": True, "message": "Library update launched in background."}
+    return {
+        "success": True,
+        "message": "Checking library series for updates... Any newly available chapters will be added to the Download Queue."
+    }
 
 # --- Settings & Webhook Endpoints ---
 
@@ -1408,7 +1458,7 @@ async def get_chapter_pages_info(chapter_id: int):
                 next_id = all_chaps[i + 1]["id"]
             break
 
-    total_pages = get_chapter_page_count(chap["file_path"], chap["file_format"])
+    total_pages = await asyncio.to_thread(get_chapter_page_count, chap["file_path"], chap["file_format"])
     page_urls = [f"/api/chapter/{chapter_id}/page/{idx}" for idx in range(total_pages)]
 
     return {
@@ -1425,7 +1475,7 @@ async def get_chapter_pages_info(chapter_id: int):
     }
 
 @app.get("/api/chapter/{chapter_id}/page/{page_index}")
-async def serve_chapter_page(chapter_id: int, page_index: int):
+def serve_chapter_page(chapter_id: int, page_index: int):
     chap = get_chapter_by_id(chapter_id)
     if not chap or not chap.get("file_path"):
         return JSONResponse({"error": "Chapter not found"}, status_code=404)
