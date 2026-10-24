@@ -10,7 +10,7 @@
 
 <!-- Live Status Badges -->
 [![Release](https://img.shields.io/github/v/release/AdityaPatra-dev/Manhua-extractor?color=7c3aed&label=Latest%20Release&logo=github&style=for-the-badge)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
-[![Android APK](https://img.shields.io/badge/Android-APK%20v1.1.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
+[![Android APK](https://img.shields.io/badge/Android-APK%20v1.2.0-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)
 [![Docker Hub](https://img.shields.io/badge/Docker%20Hub-adityapatra%2Fmanhua--extractor-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://hub.docker.com/r/adityapatra/manhua-extractor)
 [![GHCR](https://img.shields.io/badge/GHCR-adityapatra--dev%2Fmanhua--extractor-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/pkgs/container/manhua-extractor)
 [![Scraper Sentinel](https://img.shields.io/github/actions/workflow/status/AdityaPatra-dev/Manhua-extractor/daily-scraper-check.yml?branch=main&label=Scraper%20Sentinel&style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/AdityaPatra-dev/Manhua-extractor/actions/workflows/daily-scraper-check.yml)
@@ -322,7 +322,7 @@ flowchart TD
 
 Install directly on your phone in under 60 seconds:
 1. Go to the **[Releases Section](https://github.com/AdityaPatra-dev/Manhua-extractor/releases)**.
-2. Download **`ManhuaExtractor-v1.1.0-release.apk`** (v1.1.0).
+2. Download **`ManhuaExtractor-v1.2.0-release.apk`** (v1.2.0).
 3. Open the APK on your Android device and tap **Install**.
 4. Grant Notification and Storage permissions when prompted.
 5. Tap **Start Download** — the embedded FastAPI server boots automatically!

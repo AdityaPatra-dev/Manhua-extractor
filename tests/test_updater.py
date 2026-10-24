@@ -42,11 +42,11 @@ class TestUpdater(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status = 200
         mock_payload = {
-            "tag_name": "v1.2.0",
-            "name": "Release v1.2.0",
+            "tag_name": "v1.3.0",
+            "name": "Release v1.3.0",
             "body": "Awesome new features",
-            "published_at": "2026-10-23T00:00:00Z",
-            "html_url": "https://github.com/AdityaPatra-dev/Manhua-extractor/releases/tag/v1.2.0",
+            "published_at": "2026-10-25T00:00:00Z",
+            "html_url": "https://github.com/AdityaPatra-dev/Manhua-extractor/releases/tag/v1.3.0",
             "assets": [
                 {
                     "name": "app-release.apk",
@@ -65,7 +65,7 @@ class TestUpdater(unittest.TestCase):
 
         info = get_latest_release(force=True)
         self.assertEqual(info["status"], "success")
-        self.assertEqual(info["latest_version"], "1.2.0")
+        self.assertEqual(info["latest_version"], "1.3.0")
         self.assertTrue(info["has_update"])
         self.assertEqual(info["apk_url"], "https://github.com/downloads/app-release.apk")
         self.assertEqual(info["apk_name"], "app-release.apk")
@@ -74,7 +74,7 @@ class TestUpdater(unittest.TestCase):
     def test_simulate_mode(self):
         info = get_latest_release(simulate=True)
         self.assertEqual(info["status"], "success")
-        self.assertEqual(info["latest_version"], "1.2.0")
+        self.assertEqual(info["latest_version"], "1.3.0")
         self.assertTrue(info["has_update"])
         self.assertTrue(info["simulated"])
 
