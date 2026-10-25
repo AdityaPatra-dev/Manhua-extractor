@@ -313,7 +313,7 @@ def create_backup_batch_file(
 
     manifest = {
         "format_version": "1.1",
-        "app_version": "1.2.3",
+        "app_version": "1.2.4",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "batch": {
             "is_batched": total_batches > 1,

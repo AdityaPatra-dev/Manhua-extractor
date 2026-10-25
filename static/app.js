@@ -718,16 +718,82 @@ document.addEventListener("DOMContentLoaded", () => {
   let dragGhost = null;
   let dragHoverTarget = null;
   let dragTouchStart = null;
+  let longPressTimer = null;
+  let lastDragPointer = null;
+  let autoScrollRaf = null;
+  let autoScrollSpeed = 0;
   let suppressClickUntil = 0;
   let pendingGroupCreation = { sourceId: null, targetId: null };
 
+  const LONG_PRESS_DURATION = 350; // 350ms deliberate hold to pick up card
+
+  function clearLongPress() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
+  function startAutoScroll(speed) {
+    autoScrollSpeed = speed;
+    if (!autoScrollRaf) {
+      function scrollStep() {
+        if (!dragActive || autoScrollSpeed === 0) {
+          autoScrollRaf = null;
+          return;
+        }
+        window.scrollBy(0, autoScrollSpeed);
+        if (lastDragPointer) {
+          updateDragPosition(lastDragPointer.x, lastDragPointer.y);
+        }
+        autoScrollRaf = requestAnimationFrame(scrollStep);
+      }
+      autoScrollRaf = requestAnimationFrame(scrollStep);
+    }
+  }
+
+  function stopAutoScroll() {
+    autoScrollSpeed = 0;
+    if (autoScrollRaf) {
+      cancelAnimationFrame(autoScrollRaf);
+      autoScrollRaf = null;
+    }
+  }
+
+  function checkAutoScroll(clientY) {
+    if (!dragActive) {
+      stopAutoScroll();
+      return;
+    }
+    const edgeZone = 120;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+
+    if (clientY < edgeZone) {
+      // Near top edge of screen: smoothly scroll up
+      const ratio = Math.max(0, Math.min(1, (edgeZone - clientY) / edgeZone));
+      const speed = -Math.round(4 + ratio * 16);
+      startAutoScroll(speed);
+    } else if (clientY > vh - edgeZone) {
+      // Near bottom edge of screen: smoothly scroll down
+      const dist = clientY - (vh - edgeZone);
+      const ratio = Math.max(0, Math.min(1, dist / edgeZone));
+      const speed = Math.round(4 + ratio * 16);
+      startAutoScroll(speed);
+    } else {
+      stopAutoScroll();
+    }
+  }
+
   function endAndCleanupDrag() {
+    clearLongPress();
+    stopAutoScroll();
     dragActive = false;
     dragSourceId = null;
     dragSourceCard = null;
     dragHoverTarget = null;
     dragTouchStart = null;
     dragGhost = null;
+    lastDragPointer = null;
 
     document.querySelectorAll(".drag-ghost").forEach(el => el.remove());
     document.querySelectorAll(".is-dragging").forEach(el => el.classList.remove("is-dragging"));
@@ -980,8 +1046,9 @@ document.addEventListener("DOMContentLoaded", () => {
     dragActive = true;
     dragSourceId = seriesId;
     dragSourceCard = card;
+    suppressClickUntil = Date.now() + 800;
 
-    triggerHaptic([30]);
+    triggerHaptic([40]);
 
     card.classList.add("is-dragging");
 
@@ -995,15 +1062,20 @@ document.addEventListener("DOMContentLoaded", () => {
     dragGhost.style.top = clientY + "px";
     document.body.appendChild(dragGhost);
 
+    lastDragPointer = { x: clientX, y: clientY };
+    updateDragPosition(clientX, clientY);
+    checkAutoScroll(clientY);
+
     setTimeout(() => {
       if (dragGhost && dragGhost.parentNode) {
         endAndCleanupDrag();
       }
-    }, 8000);
+    }, 12000);
   }
 
   function updateDragPosition(clientX, clientY) {
     if (!dragActive || !dragGhost) return;
+    lastDragPointer = { x: clientX, y: clientY };
 
     dragGhost.style.left = clientX + "px";
     dragGhost.style.top = clientY + "px";
@@ -1032,7 +1104,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    suppressClickUntil = Date.now() + 500;
+    suppressClickUntil = Date.now() + 600;
     const target = dragHoverTarget;
     const sourceId = dragSourceId;
 
@@ -1062,31 +1134,38 @@ document.addEventListener("DOMContentLoaded", () => {
       const sId = parseInt(card.dataset.seriesId, 10);
       if (!sId) return;
 
-      // Mobile Touch Start: entire card is draggable
+      // Mobile Touch Start: Start deliberate long-press timer (350ms)
       card.addEventListener("touchstart", (e) => {
         if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
         if (e.touches.length !== 1) return;
 
+        clearLongPress();
         const t = e.touches[0];
-        dragTouchStart = {
-          card,
-          sId,
-          startX: t.clientX,
-          startY: t.clientY
-        };
+        const startX = t.clientX;
+        const startY = t.clientY;
+
+        dragTouchStart = { card, sId, startX, startY };
+
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          spawnDragGhost(card, sId, startX, startY);
+        }, LONG_PRESS_DURATION);
       }, { passive: true });
 
-      // Desktop Mouse Down: entire card is draggable
+      // Desktop Mouse Down: Start deliberate hold timer
       card.addEventListener("mousedown", (e) => {
         if (e.button !== 0) return;
         if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
 
-        dragTouchStart = {
-          card,
-          sId,
-          startX: e.clientX,
-          startY: e.clientY
-        };
+        clearLongPress();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        dragTouchStart = { card, sId, startX, startY };
+
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          spawnDragGhost(card, sId, startX, startY);
+        }, 300);
       });
     });
 
@@ -1099,26 +1178,28 @@ document.addEventListener("DOMContentLoaded", () => {
         const t = e.touches[0];
 
         if (dragActive) {
+          // Actively dragging card: prevent native scroll & update drag position + autoscroll
           e.preventDefault();
           updateDragPosition(t.clientX, t.clientY);
+          checkAutoScroll(t.clientY);
           return;
         }
 
-        if (dragTouchStart) {
-          const dx = t.clientX - dragTouchStart.startX;
-          const dy = t.clientY - dragTouchStart.startY;
-          const dist = Math.hypot(dx, dy);
-
-          // Moving more than 4px in any direction initiates immediate fluid drag!
-          if (dist > 4) {
-            e.preventDefault();
-            spawnDragGhost(dragTouchStart.card, dragTouchStart.sId, t.clientX, t.clientY);
+        // If long press is still pending and user moves more than 8px:
+        // User is scrolling the library! Cancel long-press so native scroll happens 100% smoothly!
+        if (longPressTimer && dragTouchStart) {
+          const dist = Math.hypot(t.clientX - dragTouchStart.startX, t.clientY - dragTouchStart.startY);
+          if (dist > 8) {
+            clearLongPress();
+            dragTouchStart = null;
           }
         }
       }, { passive: false });
 
       // Window Touch End
       window.addEventListener("touchend", (e) => {
+        clearLongPress();
+        stopAutoScroll();
         if (dragActive) {
           e.preventDefault();
           performDrop();
@@ -1129,6 +1210,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Window Touch Cancel
       window.addEventListener("touchcancel", () => {
+        clearLongPress();
+        stopAutoScroll();
         endAndCleanupDrag();
       });
 
@@ -1137,12 +1220,14 @@ document.addEventListener("DOMContentLoaded", () => {
         if (dragActive) {
           e.preventDefault();
           updateDragPosition(e.clientX, e.clientY);
+          checkAutoScroll(e.clientY);
           return;
         }
 
-        if (dragTouchStart && e.buttons === 1) {
+        if (longPressTimer && dragTouchStart && e.buttons === 1) {
           const dist = Math.hypot(e.clientX - dragTouchStart.startX, e.clientY - dragTouchStart.startY);
-          if (dist > 4) {
+          if (dist > 12) {
+            clearLongPress();
             spawnDragGhost(dragTouchStart.card, dragTouchStart.sId, e.clientX, e.clientY);
           }
         }
@@ -1150,6 +1235,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Window Mouse Up
       window.addEventListener("mouseup", (e) => {
+        clearLongPress();
+        stopAutoScroll();
         if (dragActive) {
           performDrop();
         } else {
@@ -1157,15 +1244,30 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
 
-      window.addEventListener("blur", endAndCleanupDrag);
-      document.addEventListener("visibilitychange", () => {
-        if (document.hidden) endAndCleanupDrag();
+      window.addEventListener("blur", () => {
+        clearLongPress();
+        stopAutoScroll();
+        endAndCleanupDrag();
       });
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          clearLongPress();
+          stopAutoScroll();
+          endAndCleanupDrag();
+        }
+      });
+
       window.addEventListener("scroll", () => {
-        if (!dragActive) endAndCleanupDrag();
+        if (!dragActive) {
+          clearLongPress();
+        }
       }, { passive: true });
+
       document.addEventListener("click", () => {
-        if (!dragActive) endAndCleanupDrag();
+        if (!dragActive) {
+          clearLongPress();
+        }
       });
     }
   }
@@ -3363,7 +3465,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let isPulling = false;
 
   tabLibrary?.addEventListener("touchstart", (e) => {
-    if (dragActive || dragTouchStart || e.target.closest(".series-card, .folder-card, .drag-ghost, #folder-modal, #create-group-modal")) {
+    if (dragActive || longPressTimer || dragTouchStart || e.target.closest(".series-card, .folder-card, .drag-ghost, #folder-modal, #create-group-modal")) {
       isPulling = false;
       return;
     }
@@ -3374,7 +3476,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }, { passive: true });
 
   tabLibrary?.addEventListener("touchmove", (e) => {
-    if (dragActive || dragTouchStart || e.target.closest(".series-card, .folder-card, .drag-ghost")) {
+    if (dragActive || longPressTimer || dragTouchStart || e.target.closest(".series-card, .folder-card, .drag-ghost")) {
       isPulling = false;
       pullIndicator?.classList.add("hidden");
       return;
