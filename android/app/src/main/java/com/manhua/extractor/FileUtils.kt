@@ -25,6 +25,9 @@ object FileUtils {
 
     private const val TAG = "FileUtils"
 
+    @Volatile
+    var isWaitingForUnknownAppPermission = false
+
     fun getBackupDirectory(context: Context): File {
         val downloadDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: File(context.filesDir, "downloads")
@@ -321,6 +324,7 @@ object FileUtils {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!context.packageManager.canRequestPackageInstalls()) {
+                isWaitingForUnknownAppPermission = true
                 val settingsIntent = Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:${context.packageName}")
@@ -394,6 +398,16 @@ class AndroidWebAppInterface(private val context: Context) {
         val updateFile = File(context.cacheDir, "updates/update.apk")
         if (updateFile.exists() && updateFile.length() > 0L) {
             FileUtils.installApk(context, updateFile)
+        }
+    }
+
+    @JavascriptInterface
+    fun deleteDownloadedUpdate(): Boolean {
+        return try {
+            val updateFile = File(context.cacheDir, "updates/update.apk")
+            if (updateFile.exists()) updateFile.delete() else true
+        } catch (_: Exception) {
+            false
         }
     }
 

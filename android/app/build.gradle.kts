@@ -12,8 +12,8 @@ android {
         applicationId = "com.manhua.extractor"
         minSdk = 26
         targetSdk = 34
-        versionCode = 11
-        versionName = "1.2.0"
+        versionCode = 12
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -40,10 +40,19 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("release.keystore")
+            storePassword = "manhuaextractor"
+            keyAlias = "manhua-extractor"
+            keyPassword = "manhuaextractor"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -51,6 +60,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 

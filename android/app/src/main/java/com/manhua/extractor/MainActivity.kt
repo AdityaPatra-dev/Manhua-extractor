@@ -357,10 +357,13 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         try {
-            val updateFile = java.io.File(cacheDir, "updates/update.apk")
-            if (updateFile.exists() && updateFile.length() > 0L) {
+            if (FileUtils.isWaitingForUnknownAppPermission) {
+                FileUtils.isWaitingForUnknownAppPermission = false
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
-                    webView.evaluateJavascript("if (window.onUpdateReadyToInstall) { window.onUpdateReadyToInstall(); }", null)
+                    val updateFile = java.io.File(cacheDir, "updates/update.apk")
+                    if (updateFile.exists() && updateFile.length() > 0L) {
+                        webView.evaluateJavascript("if (window.onUpdateReadyToInstall) { window.onUpdateReadyToInstall(); }", null)
+                    }
                 }
             }
         } catch (_: Exception) {

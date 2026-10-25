@@ -3289,12 +3289,17 @@ document.addEventListener("DOMContentLoaded", () => {
     modal.classList.remove("hidden");
   }
 
-  document.getElementById("update-modal-close")?.addEventListener("click", () => {
+  const dismissUpdateModal = () => {
     document.getElementById("app-update-modal")?.classList.add("hidden");
-  });
-  document.getElementById("btn-update-cancel")?.addEventListener("click", () => {
-    document.getElementById("app-update-modal")?.classList.add("hidden");
-  });
+    const progressBar = document.getElementById("update-modal-progress-bar");
+    if (progressBar) progressBar.style.width = "0%";
+    if (window.AndroidApp && typeof window.AndroidApp.deleteDownloadedUpdate === "function") {
+      window.AndroidApp.deleteDownloadedUpdate();
+    }
+  };
+
+  document.getElementById("update-modal-close")?.addEventListener("click", dismissUpdateModal);
+  document.getElementById("btn-update-cancel")?.addEventListener("click", dismissUpdateModal);
   document.getElementById("btn-banner-dismiss")?.addEventListener("click", () => {
     document.getElementById("app-update-banner")?.classList.add("hidden");
   });
@@ -3379,10 +3384,7 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.innerHTML = "<span>🚀</span> Install Update";
     }
     if (progressStatus) {
-      progressStatus.textContent = "Permission granted! Launching package installer...";
-    }
-    if (window.AndroidApp && typeof window.AndroidApp.installDownloadedApk === "function") {
-      window.AndroidApp.installDownloadedApk();
+      progressStatus.textContent = "Permission granted! Tap 'Install Update' to continue.";
     }
   };
 
