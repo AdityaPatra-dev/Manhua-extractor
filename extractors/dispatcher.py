@@ -13,6 +13,7 @@ from .comick import ComicKExtractor
 from .comicland import ComicLandExtractor
 from .hiperdex import HiperdexExtractor
 from .mangadex import MangaDexExtractor
+from .hitomi import HitomiExtractor
 from .manhwa18 import Manhwa18Extractor
 from .modern_ssr import ModernSSRExtractor
 from .madara import MadaraExtractor
@@ -45,6 +46,7 @@ class ExtractorDispatcher:
             Manhwa18Extractor(),
             ComicKExtractor(),
             MangaDexExtractor(),
+            HitomiExtractor(),
             ModernSSRExtractor(),
             MadaraExtractor(),
             MangaStreamExtractor(),
@@ -284,6 +286,8 @@ class ExtractorDispatcher:
 
         # If url is a chapter reader page, attempt to fetch the parent series page to get the full catalog
         is_chapter_page = bool(re.search(r'[-_](?:chapter|ch|c)[-_/\d]|/(?:chapters?|ch|c)[-_/\d]', url, re.I))
+        if matched_engine.engine_id == "hitomi":
+            is_chapter_page = False
         series_url = url
         if is_chapter_page:
             candidate_parent = None

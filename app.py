@@ -1219,9 +1219,12 @@ async def proxy_cover_image(url: str, referer: Optional[str] = None):
 
     try:
         import requests
+        ref = referer or url
+        if "gold-usergeneratedcontent.net" in url:
+            ref = "https://hitomi.la/"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-            "Referer": referer or url,
+            "Referer": ref,
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
         }
         resp = requests.get(url, headers=headers, timeout=12)

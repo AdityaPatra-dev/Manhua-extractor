@@ -78,6 +78,9 @@ async def fetch_single_panel(
                 headers["Cookie"] = cached_cf["cookie_string"]
             if cached_cf.get("user_agent"):
                 headers["User-Agent"] = cached_cf["user_agent"]
+        if "gold-usergeneratedcontent.net" in img_domain or "gold-usergeneratedcontent.net" in url:
+            headers = dict(headers)
+            headers["Referer"] = "https://hitomi.la/"
     except Exception:
         pass
 

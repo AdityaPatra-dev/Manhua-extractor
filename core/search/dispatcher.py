@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import re
 import time
+import json
+import struct
+import hashlib
 import asyncio
 import urllib.parse
 from typing import List, Dict, Any, Optional, AsyncIterator, Tuple
@@ -16,9 +19,17 @@ DEFAULT_HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
 }
 
+# Cached Hitomi B-Tree Search Index metadata
+_HITOMI_INDEX_CACHE: Dict[str, Any] = {
+    "version": "",
+    "timestamp": 0.0,
+    "root_node": None
+}
+
 # Key curated platforms for search tiers
 TIER_1_SOURCES = [
     # Top Scanlators & Custom Engines
+    {"key": "hitomi", "name": "Hitomi.la", "type": "hitomi"},
     {"key": "asura", "name": "Asura Scans", "type": "asura"},
     {"key": "arenascan", "name": "Arena Scans", "type": "mangastream", "domain": "arenascan.com"},
     {"key": "flamecomics", "name": "Flame Comics", "type": "flamecomics", "domain": "flamecomics.xyz"},
@@ -1458,11 +1469,210 @@ class SearchDispatcher:
         except Exception:
             return []
 
+    # --- Engine Adapter: Hitomi.la REST & Binary B-Tree Search ---
+    async def search_hitomi(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        headers = {
+            "User-Agent": DEFAULT_HEADERS["User-Agent"],
+            "Referer": "https://hitomi.la/",
+            "Accept": "*/*"
+        }
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        now = time.time()
+
+        try:
+            clean_q = query.strip().lower()
+            gallery_ids: List[int] = []
+
+            # 1. Direct colon field search (e.g. artist:shindol, series:naruto, tag:romance)
+            if ":" in clean_q:
+                prefix, term = clean_q.split(":", 1)
+                prefix = prefix.strip()
+                term = term.strip().replace(" ", "%20")
+                nozomi_url = f"https://ltn.gold-usergeneratedcontent.net/n/{prefix}/{term}-all.nozomi"
+                try:
+                    async with session.get(nozomi_url, headers=headers, timeout=timeout) as resp:
+                        if resp.status == 200:
+                            data = await resp.read()
+                            count = len(data) // 4
+                            if count > 0:
+                                gallery_ids = list(struct.unpack(f">{min(count, 50)}I", data[:min(count, 50) * 4]))
+                except Exception:
+                    pass
+
+            # 2. General title / keyword query via B-tree galleriesindex
+            if not gallery_ids:
+                version = _HITOMI_INDEX_CACHE.get("version", "")
+                if not version or (now - _HITOMI_INDEX_CACHE.get("timestamp", 0)) > 3600:
+                    try:
+                        async with session.get("https://ltn.gold-usergeneratedcontent.net/galleriesindex/version", headers=headers, timeout=timeout) as resp:
+                            if resp.status == 200:
+                                version = (await resp.text()).strip()
+                                _HITOMI_INDEX_CACHE["version"] = version
+                                _HITOMI_INDEX_CACHE["timestamp"] = now
+                                _HITOMI_INDEX_CACHE["root_node"] = None
+                    except Exception:
+                        version = _HITOMI_INDEX_CACHE.get("version") or "1792922077"
+
+                if not version:
+                    version = "1792922077"
+
+                index_url = f"https://ltn.gold-usergeneratedcontent.net/galleriesindex/galleries.{version}.index"
+                data_url = f"https://ltn.gold-usergeneratedcontent.net/galleriesindex/galleries.{version}.data"
+
+                async def get_node_at_address(address: int):
+                    if address == 0 and _HITOMI_INDEX_CACHE.get("root_node"):
+                        return _HITOMI_INDEX_CACHE["root_node"]
+                    try:
+                        async with session.get(index_url, headers={**headers, "Range": f"bytes={address}-{address+463}"}, timeout=timeout) as resp:
+                            if resp.status not in (200, 206):
+                                return None
+                            data = await resp.read()
+                            if len(data) < 4:
+                                return None
+                            pos = 0
+                            num_keys = struct.unpack_from(">i", data, pos)[0]
+                            pos += 4
+                            keys = []
+                            for _ in range(num_keys):
+                                k_len = struct.unpack_from(">i", data, pos)[0]
+                                pos += 4
+                                keys.append(data[pos:pos+k_len])
+                                pos += k_len
+                            num_datas = struct.unpack_from(">i", data, pos)[0]
+                            pos += 4
+                            datas = []
+                            for _ in range(num_datas):
+                                offset = struct.unpack_from(">Q", data, pos)[0]
+                                length = struct.unpack_from(">i", data, pos+8)[0]
+                                pos += 12
+                                datas.append((offset, length))
+                            subnodes = []
+                            for _ in range(17):
+                                subnodes.append(struct.unpack_from(">Q", data, pos)[0])
+                                pos += 8
+                            parsed_node = {"keys": keys, "datas": datas, "subnodes": subnodes}
+                            if address == 0:
+                                _HITOMI_INDEX_CACHE["root_node"] = parsed_node
+                            return parsed_node
+                    except Exception:
+                        return None
+
+                async def b_search_term(term_str: str) -> Optional[Tuple[int, int]]:
+                    node = await get_node_at_address(0)
+                    key = hashlib.sha256(term_str.lower().strip().encode("utf-8")).digest()[:4]
+                    while node:
+                        where = 0
+                        found = False
+                        for i, k in enumerate(node["keys"]):
+                            if key == k:
+                                found = True
+                                where = i
+                                break
+                            elif key < k:
+                                where = i
+                                break
+                            else:
+                                where = i + 1
+                        if found:
+                            return node["datas"][where]
+                        if all(a == 0 for a in node["subnodes"]):
+                            return None
+                        sub_addr = node["subnodes"][where]
+                        if sub_addr == 0:
+                            return None
+                        node = await get_node_at_address(sub_addr)
+                    return None
+
+                words = [w for w in re.split(r'[\s\-_]+', clean_q) if w and len(w) >= 2]
+                if not words:
+                    words = [clean_q]
+
+                term_id_sets: List[List[int]] = []
+                for w in words[:3]:
+                    data_range = await b_search_term(w)
+                    if data_range:
+                        offset, length = data_range
+                        try:
+                            async with session.get(data_url, headers={**headers, "Range": f"bytes={offset}-{offset+length-1}"}, timeout=timeout) as resp:
+                                if resp.status in (200, 206):
+                                    dcontent = await resp.read()
+                                    if len(dcontent) >= 4:
+                                        num_ids = struct.unpack_from(">i", dcontent, 0)[0]
+                                        t_ids = list(struct.unpack_from(f">{min(num_ids, 200)}i", dcontent, 4))
+                                        term_id_sets.append(t_ids)
+                        except Exception:
+                            pass
+
+                if term_id_sets:
+                    if len(term_id_sets) > 1:
+                        common = set(term_id_sets[0])
+                        for s in term_id_sets[1:]:
+                            common &= set(s)
+                        if common:
+                            gallery_ids = sorted(list(common), reverse=True)
+                        else:
+                            gallery_ids = term_id_sets[0]
+                    else:
+                        gallery_ids = term_id_sets[0]
+
+            if not gallery_ids:
+                return []
+
+            top_ids = gallery_ids[:8]
+
+            async def fetch_meta(gid: int) -> Optional[Dict[str, Any]]:
+                try:
+                    js_url = f"https://ltn.gold-usergeneratedcontent.net/galleries/{gid}.js"
+                    async with session.get(js_url, headers=headers, timeout=timeout) as resp:
+                        if resp.status != 200:
+                            return None
+                        text = await resp.text()
+                    m = re.search(r'var\s+galleryinfo\s*=\s*(\{.*\})', text, re.DOTALL)
+                    if not m:
+                        return None
+                    info = json.loads(m.group(1))
+                    title = info.get("title") or info.get("japanese_title") or f"Gallery {gid}"
+                    alt_title = info.get("japanese_title")
+                    alt_titles = [alt_title] if alt_title and alt_title != title else []
+                    files = info.get("files", [])
+                    cover_url = ""
+                    if files and files[0].get("hash"):
+                        fh = files[0]["hash"]
+                        cover_url = f"https://atn.gold-usergeneratedcontent.net/webpbigtn/{fh[-1]}/{fh[-3:-1]}/{fh}.webp"
+
+                    file_count = len(files)
+                    latest_ch = f"Complete ({file_count}P)" if file_count > 0 else "Complete Work"
+
+                    return {
+                        "title": title,
+                        "alt_titles": alt_titles,
+                        "source_key": "hitomi",
+                        "source_name": "Hitomi.la",
+                        "source_logo": "/docs/logos/hitomi.png",
+                        "series_url": f"https://hitomi.la/reader/{gid}.html",
+                        "cover_url": cover_url,
+                        "latest_chapter": latest_ch,
+                        "latest_chapter_num": 1.0,
+                        "quality_tag": "HD WebP",
+                        "latency_ms": int((time.time() - t0) * 1000)
+                    }
+                except Exception:
+                    return None
+
+            raw_results = await asyncio.gather(*(fetch_meta(gid) for gid in top_ids))
+            return [r for r in raw_results if r is not None]
+
+        except Exception:
+            return []
+
     # --- Dispatcher Worker for Single Source ---
     async def _query_single_source(self, source: Dict[str, Any], query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
         async with self.semaphore:
             stype = source.get("type")
-            if stype == "asura":
+            if stype in ("hitomi", "api_hitomi"):
+                return await self.search_hitomi(query, session)
+            elif stype == "asura":
                 return await self.search_asura(query, session)
             elif stype == "roliascan":
                 return await self.search_roliascan(query, session)
