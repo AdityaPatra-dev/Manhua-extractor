@@ -14,7 +14,14 @@ from database.db import (
     get_or_create_series,
     add_or_update_chapter,
     update_series_cover,
-    get_series_by_id
+    get_series_by_id,
+    get_all_folders_with_items,
+    get_folder_by_name,
+    create_folder,
+    update_folder_metadata,
+    add_series_to_folder,
+    get_series_sources,
+    add_or_update_series_source
 )
 
 DEFAULT_BATCH_SIZE_BYTES = 1450 * 1024 * 1024  # 1.45 GB soft ceiling
@@ -81,10 +88,14 @@ def estimate_backup_batches(
                     total_chapters_count += 1
                     total_size_bytes += size
                     all_downloaded_items.append({
+                        "_db_path": db_path,
                         "series_id": s_id,
                         "series_title": s["title"],
                         "series_slug": s.get("slug") or sanitize_filename(s["title"]),
                         "series_author": s.get("author"),
+                        "series_artist": s.get("artist"),
+                        "series_alt_titles": s.get("alt_titles"),
+                        "series_synopsis": s.get("synopsis"),
                         "series_status": s.get("status", "Ongoing"),
                         "series_cover_path": s.get("cover_path"),
                         "series_cover_url": s.get("cover_url"),
@@ -102,8 +113,27 @@ def estimate_backup_batches(
                     })
 
     if not all_downloaded_items:
+        if all_series:
+            batches = [{
+                "batch_index": 1,
+                "total_batches": 1,
+                "batch_label": "Complete Library (Metadata)",
+                "chapter_count": 0,
+                "uncompressed_bytes": 0,
+                "uncompressed_formatted": "0 B",
+                "formatted_size": "0 B",
+                "items": []
+            }]
+            return {
+                "total_series": len(all_series),
+                "total_chapters": 0,
+                "total_size_bytes": 0,
+                "total_size_formatted": "0 B",
+                "batch_count": 1,
+                "batches": batches
+            }
         return {
-            "total_series": len(all_series),
+            "total_series": 0,
             "total_chapters": 0,
             "total_size_bytes": 0,
             "total_size_formatted": "0 B",
@@ -168,37 +198,103 @@ def create_backup_batch_file(
     batch_items: List[Dict[str, Any]],
     output_zip_path: str,
     include_files: bool = True,
-    progress_callback: Optional[Callable[[int, int, str], None]] = None
+    progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    db_path: str = DEFAULT_DB_PATH
 ) -> Dict[str, Any]:
     """
     Creates a standalone, self-contained backup ZIP archive for a specific batch.
-    Includes manifest.json, series definitions, covers, and chapter archives.
+    Includes manifest.json, series definitions, covers, chapters, and library folders/groups.
     """
     os.makedirs(os.path.dirname(os.path.abspath(output_zip_path)), exist_ok=True)
     temp_zip_path = f"{output_zip_path}.tmp_{os.getpid()}"
+
+    effective_db = db_path
+    if batch_items and batch_items[0].get("_db_path"):
+        effective_db = batch_items[0]["_db_path"]
+
+    all_series_db = get_all_series(db_path=effective_db)
+    series_db_map = {s["id"]: s for s in all_series_db}
+
+    # Fetch all folders and map which series belongs to which folder
+    all_folders_db = get_all_folders_with_items(db_path=effective_db)
+    series_to_folder_map: Dict[int, Dict[str, Any]] = {}
+    manifest_folders: List[Dict[str, Any]] = []
+
+    for f in all_folders_db:
+        f_member_slugs = []
+        f_member_titles = []
+        for sid in f.get("series_ids", []):
+            series_to_folder_map[sid] = f
+            s_obj = series_db_map.get(sid)
+            if s_obj:
+                if s_obj.get("slug"):
+                    f_member_slugs.append(s_obj["slug"])
+                if s_obj.get("title"):
+                    f_member_titles.append(s_obj["title"])
+
+        manifest_folders.append({
+            "name": f["name"],
+            "description": f.get("description", ""),
+            "color": f.get("color", "#4f46e5"),
+            "sort_order": f.get("sort_order", 0),
+            "series_slugs": f_member_slugs,
+            "series_titles": f_member_titles
+        })
 
     # Group items by series to construct clean manifest
     series_map: Dict[int, Dict[str, Any]] = {}
     total_items = len(batch_items)
 
+    # First, if total_batches == 1 (or in batch 1), register all saved series in library
+    # so metadata and folder structures are preserved even for series with 0 downloaded chapters in this batch
+    if total_batches == 1 or batch_index == 1:
+        for s in all_series_db:
+            s_id = s["id"]
+            safe_s_title = sanitize_filename(s["title"])
+            folder_info = series_to_folder_map.get(s_id)
+            series_map[s_id] = {
+                "id": s_id,
+                "title": s["title"],
+                "slug": s.get("slug") or safe_s_title.lower(),
+                "alt_titles": s.get("alt_titles"),
+                "author": s.get("author"),
+                "artist": s.get("artist"),
+                "status": s.get("status", "Ongoing"),
+                "synopsis": s.get("synopsis"),
+                "engine": s.get("engine"),
+                "cover_url": s.get("cover_url"),
+                "cover_path_local": s.get("cover_path"),
+                "cover_relative_path": f"files/{safe_s_title}/cover.jpg" if (s.get("cover_path") and os.path.exists(s.get("cover_path"))) else None,
+                "folder_name": folder_info["name"] if folder_info else None,
+                "sources": get_series_sources(s_id, db_path=effective_db),
+                "chapters": []
+            }
+
+    # Add chapter items from batch_items
     for it in batch_items:
         s_id = it["series_id"]
+        safe_s_title = sanitize_filename(it["series_title"])
         if s_id not in series_map:
-            safe_s_title = sanitize_filename(it["series_title"])
+            folder_info = series_to_folder_map.get(s_id)
+            s_db = series_db_map.get(s_id, {})
             series_map[s_id] = {
                 "id": s_id,
                 "title": it["series_title"],
                 "slug": it["series_slug"],
+                "alt_titles": s_db.get("alt_titles"),
                 "author": it.get("series_author"),
+                "artist": s_db.get("artist"),
                 "status": it.get("series_status", "Ongoing"),
+                "synopsis": s_db.get("synopsis"),
                 "engine": it.get("series_engine"),
                 "cover_url": it.get("series_cover_url"),
                 "cover_path_local": it.get("series_cover_path"),
                 "cover_relative_path": f"files/{safe_s_title}/cover.jpg" if (it.get("series_cover_path") and os.path.exists(it.get("series_cover_path"))) else None,
+                "folder_name": folder_info["name"] if folder_info else None,
+                "sources": get_series_sources(s_id, db_path=effective_db),
                 "chapters": []
             }
-        
-        safe_s_title = sanitize_filename(it["series_title"])
+
         filename = os.path.basename(it["file_path"].rstrip('/\\'))
         rel_path = f"files/{safe_s_title}/{filename}"
 
@@ -216,8 +312,8 @@ def create_backup_batch_file(
         })
 
     manifest = {
-        "format_version": "1.0",
-        "app_version": "1.2.2",
+        "format_version": "1.1",
+        "app_version": "1.2.3",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "batch": {
             "is_batched": total_batches > 1,
@@ -228,8 +324,9 @@ def create_backup_batch_file(
         "stats": {
             "series_count": len(series_map),
             "chapter_count": total_items,
-            "uncompressed_bytes": sum(it["file_size"] for it in batch_items)
+            "uncompressed_bytes": sum(it.get("file_size", 0) for it in batch_items)
         },
+        "folders": manifest_folders,
         "series": []
     }
 
@@ -367,6 +464,8 @@ def restore_backup_archive(
     skipped_duplicate_count = 0
     synced_series_count = 0
 
+    created_series_map: Dict[str, int] = {}
+
     try:
         # Extract files safely into staging
         with zipfile.ZipFile(zip_path, 'r', allowZip64=True) as zf:
@@ -392,11 +491,47 @@ def restore_backup_archive(
                 alt_titles=s.get("alt_titles"),
                 author=s.get("author"),
                 status=s.get("status", "Ongoing"),
+                synopsis=s.get("synopsis"),
                 cover_url=s.get("cover_url"),
                 engine=s.get("engine"),
                 db_path=db_path
             )
+            created_series_map[s_slug.lower()] = series_id
+            created_series_map[s_title.strip().lower()] = series_id
             synced_series_count += 1
+
+            # Backfill rich metadata if present in backup and missing in local db
+            if s.get("synopsis") or s.get("alt_titles") or s.get("artist"):
+                try:
+                    conn = get_connection(db_path)
+                    with conn:
+                        if s.get("synopsis"):
+                            conn.execute("UPDATE series SET synopsis = ? WHERE id = ? AND (synopsis IS NULL OR synopsis = '')", (s["synopsis"], series_id))
+                        if s.get("alt_titles"):
+                            conn.execute("UPDATE series SET alt_titles = ? WHERE id = ? AND (alt_titles IS NULL OR alt_titles = '')", (s["alt_titles"], series_id))
+                        if s.get("artist"):
+                            conn.execute("UPDATE series SET artist = ? WHERE id = ? AND (artist IS NULL OR artist = '')", (s["artist"], series_id))
+                    conn.close()
+                except Exception:
+                    pass
+
+            # Restore external hosting sources if present
+            if s.get("sources") and isinstance(s["sources"], list):
+                for src in s["sources"]:
+                    try:
+                        add_or_update_series_source(
+                            series_id=series_id,
+                            source_key=src.get("source_key", "external"),
+                            source_name=src.get("source_name", "External Source"),
+                            source_url=src.get("source_url", ""),
+                            total_chapters=src.get("total_chapters", 0),
+                            latest_chapter_num=src.get("latest_chapter_num", 0.0),
+                            quality_tag=src.get("quality_tag", "Standard"),
+                            latency_ms=src.get("latency_ms", 0),
+                            db_path=db_path
+                        )
+                    except Exception:
+                        pass
 
             # Restore cover image if present
             cover_rel = s.get("cover_relative_path")
@@ -471,6 +606,77 @@ def restore_backup_archive(
 
                 imported_chapters_count += 1
 
+        # Restore Library Folders / Groups (Backward compatible: skips cleanly if no folders in manifest)
+        manifest_folders = manifest.get("folders", [])
+        folders_synced = 0
+        if manifest_folders and isinstance(manifest_folders, list):
+            for f_data in manifest_folders:
+                f_name = f_data.get("name")
+                if not f_name or not str(f_name).strip():
+                    continue
+                f_name = str(f_name).strip()
+                f_desc = f_data.get("description", "")
+                f_color = f_data.get("color", "#4f46e5")
+
+                existing = get_folder_by_name(f_name, db_path=db_path)
+                if existing:
+                    folder_id = existing["id"]
+                    if f_desc and not existing.get("description"):
+                        update_folder_metadata(folder_id, name=f_name, description=f_desc, color=f_color or existing.get("color"), db_path=db_path)
+                else:
+                    folder_id = create_folder(name=f_name, description=f_desc, color=f_color, db_path=db_path)
+                folders_synced += 1
+
+                # Gather all member series IDs
+                member_series_ids = set()
+                for sl in f_data.get("series_slugs", []):
+                    sl_clean = str(sl).strip().lower()
+                    if sl_clean in created_series_map:
+                        member_series_ids.add(created_series_map[sl_clean])
+                    else:
+                        try:
+                            conn = get_connection(db_path)
+                            row = conn.execute("SELECT id FROM series WHERE LOWER(slug) = ?", (sl_clean,)).fetchone()
+                            conn.close()
+                            if row:
+                                member_series_ids.add(row["id"])
+                        except Exception:
+                            pass
+
+                for ti in f_data.get("series_titles", []):
+                    ti_clean = str(ti).strip().lower()
+                    if ti_clean in created_series_map:
+                        member_series_ids.add(created_series_map[ti_clean])
+                    else:
+                        try:
+                            conn = get_connection(db_path)
+                            row = conn.execute("SELECT id FROM series WHERE LOWER(TRIM(title)) = ?", (ti_clean,)).fetchone()
+                            conn.close()
+                            if row:
+                                member_series_ids.add(row["id"])
+                        except Exception:
+                            pass
+
+                for m_id in member_series_ids:
+                    add_series_to_folder(folder_id, m_id, db_path=db_path)
+
+        # Handle individual series `folder_name` field if present
+        for s in series_list:
+            f_name = s.get("folder_name")
+            if f_name and str(f_name).strip():
+                f_name = str(f_name).strip()
+                s_slug = (s.get("slug") or "").strip().lower()
+                s_title = (s.get("title") or "").strip().lower()
+                s_id = created_series_map.get(s_slug) or created_series_map.get(s_title)
+                if s_id:
+                    existing = get_folder_by_name(f_name, db_path=db_path)
+                    if not existing:
+                        folder_id = create_folder(name=f_name, description="", db_path=db_path)
+                        folders_synced += 1
+                    else:
+                        folder_id = existing["id"]
+                    add_series_to_folder(folder_id, s_id, db_path=db_path)
+
     finally:
         # Always clean up temporary staging import directory
         if os.path.exists(staging_import_dir):
@@ -482,5 +688,6 @@ def restore_backup_archive(
         "series_synced": synced_series_count,
         "chapters_imported": imported_chapters_count,
         "chapters_skipped_duplicate": skipped_duplicate_count,
+        "folders_synced": folders_synced,
         "uncompressed_bytes": uncompressed_bytes
     }

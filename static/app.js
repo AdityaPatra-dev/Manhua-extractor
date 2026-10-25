@@ -708,67 +708,614 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // --- Library Tab ---
   let libraryDataCache = [];
+  let libraryFoldersCache = [];
+  let currentSearchQuery = "";
+
+  // Drag and drop state
+  let dragActive = false;
+  let dragSourceId = null;
+  let dragSourceCard = null;
+  let dragGhost = null;
+  let dragHoverTarget = null;
+  let dragTouchStart = null;
+  let suppressClickUntil = 0;
+  let pendingGroupCreation = { sourceId: null, targetId: null };
+
+  function endAndCleanupDrag() {
+    dragActive = false;
+    dragSourceId = null;
+    dragSourceCard = null;
+    dragHoverTarget = null;
+    dragTouchStart = null;
+    dragGhost = null;
+
+    document.querySelectorAll(".drag-ghost").forEach(el => el.remove());
+    document.querySelectorAll(".is-dragging").forEach(el => el.classList.remove("is-dragging"));
+    document.querySelectorAll(".drag-hover").forEach(el => el.classList.remove("drag-hover"));
+    document.querySelectorAll(".card-drag-handle.is-grabbing").forEach(el => el.classList.remove("is-grabbing"));
+  }
+
+  function renderFolderCardHtml(f) {
+    const safeName = escapeHtml(f.name || "Untitled Group");
+    const previewSlots = [0, 1, 2, 3];
+    return `
+      <div class="folder-card" data-folder-id="${f.id}" onclick="openFolderModal(${f.id})">
+        <div class="folder-cover-wrapper">
+          <div class="folder-cover-grid">
+            ${previewSlots.map(idx => {
+              if (f.preview_covers && f.preview_covers[idx]) {
+                if (idx === 3 && f.item_count > 4) {
+                  return `
+                    <div style="position: relative; width: 100%; height: 100%; border-radius: 4px; overflow: hidden;">
+                      <img class="folder-sub-thumb" src="${f.preview_covers[idx]}" alt="Cover" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
+                      <div style="position: absolute; inset: 0; background: rgba(15, 23, 42, 0.8); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8rem; color: #818cf8; backdrop-filter: blur(2px);">
+                        +${f.item_count - 3}
+                      </div>
+                    </div>
+                  `;
+                }
+                return `<img class="folder-sub-thumb" src="${f.preview_covers[idx]}" alt="Cover" loading="lazy" onerror="this.src='/static/placeholder.jpg'">`;
+              } else {
+                return `<div class="folder-empty-slot"></div>`;
+              }
+            }).join("")}
+          </div>
+          <div class="folder-badge-overlay">
+            <span class="folder-badge-count">📁 ${f.item_count || 0}</span>
+          </div>
+        </div>
+        <div class="series-details">
+          <h4 class="series-title" title="${escapeAttr(f.name)}">${safeName}</h4>
+          <div class="series-card-desc-row">
+            <p class="series-card-desc" style="color: var(--text-muted);">${f.item_count} ${f.item_count === 1 ? 'manga' : 'mangas'}</p>
+          </div>
+          ${f.description ? `
+            <p class="folder-card-note" title="${escapeAttr(f.description)}">${escapeHtml(f.description)}</p>
+          ` : `
+            <p class="folder-card-note" style="opacity: 0.5;">No note added</p>
+          `}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderSeriesCardHtml(s, showFolderBadge = false, isInsideFolder = false, folderId = null) {
+    const title = cleanTitle(s.title);
+    const descSnippet = s.synopsis ? (s.synopsis.length > 55 ? s.synopsis.slice(0, 55) + '...' : s.synopsis) : (s.genres || 'Saved in local library');
+    return `
+      <div class="series-card" data-series-id="${s.id}" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
+        <div class="series-cover-wrapper">
+          <img class="series-cover" src="/api/series/${s.id}/cover" alt="${escapeAttr(title)}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
+          <div class="series-badge-overlay">
+            <span class="series-badge-count">📥 ${s.downloaded_chapters || 0} Ch</span>
+          </div>
+        </div>
+        <div class="series-details">
+          <h4 class="series-title" title="${escapeAttr(title)}">${escapeHtml(title)}</h4>
+          <div class="series-card-desc-row">
+            <p class="series-card-desc" title="${escapeAttr(s.synopsis || s.genres || 'Saved in local library')}">
+              ${escapeHtml(descSnippet)}
+            </p>
+            <button class="btn-card-update" title="Check updates for ${escapeAttr(title)}" aria-label="Check updates" onclick="event.stopPropagation(); window.checkSpecificSeriesUpdate(${s.id}, this)">
+              <span class="update-icon">🔄</span>
+            </button>
+          </div>
+          ${showFolderBadge && s.folder_name ? `
+            <div style="margin: 2px 0;">
+              <span class="series-in-folder-badge" onclick="event.stopPropagation(); openFolderModal(${s.folder_id})">📁 In: ${escapeHtml(s.folder_name)}</span>
+            </div>
+          ` : ''}
+          <div class="series-card-actions">
+            ${s.resume_chapter_id ? `
+              <button class="btn btn-primary btn-card-resume" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Resume Ch. ${s.resume_chapter_num}">
+                ▶ Ch. ${s.resume_chapter_num} (Resume)
+              </button>
+            ` : ''}
+            <div class="series-card-btn-row">
+              <button class="btn btn-secondary btn-card-chapters" onclick="event.stopPropagation(); openSeriesModal(${s.id})">
+                📖 Chapters
+              </button>
+              ${isInsideFolder ? `
+                <button class="btn btn-secondary btn-sm" title="Remove from Group" onclick="event.stopPropagation(); removeSeriesFromGroup(${folderId}, ${s.id})">
+                  ↩ Out
+                </button>
+              ` : `
+                <button class="btn btn-secondary btn-card-delete" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(title)}')">🗑️</button>
+              `}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderLibraryGrid(filterQuery = "") {
+    endAndCleanupDrag();
+    const grid = document.getElementById("library-grid");
+    if (!grid) return;
+    const q = (filterQuery || "").toLowerCase().trim();
+
+    if (!q) {
+      // Normal display: Show folders + standalone series
+      const foldersHtml = (libraryFoldersCache || []).map(f => renderFolderCardHtml(f)).join("");
+      const standaloneSeries = (libraryDataCache || []).filter(s => !s.folder_id);
+      const seriesHtml = standaloneSeries.map(s => renderSeriesCardHtml(s, false, false)).join("");
+
+      if (!foldersHtml && !seriesHtml) {
+        grid.innerHTML = '<p class="empty-state">No downloaded series in the database yet. Download a chapter to start building your library!</p>';
+      } else {
+        grid.innerHTML = foldersHtml + seriesHtml;
+      }
+    } else {
+      // Unified Search: Match folders AND series
+      const matchingFolders = (libraryFoldersCache || []).filter(f => (f.name || "").toLowerCase().includes(q));
+      const matchingSeries = (libraryDataCache || []).filter(s => {
+        const titleMatch = (s.title || "").toLowerCase().includes(q);
+        const synMatch = (s.synopsis || "").toLowerCase().includes(q);
+        const folderMatch = (s.folder_name || "").toLowerCase().includes(q);
+        return titleMatch || synMatch || folderMatch;
+      });
+
+      const foldersHtml = matchingFolders.map(f => renderFolderCardHtml(f)).join("");
+      const seriesHtml = matchingSeries.map(s => renderSeriesCardHtml(s, true, false)).join("");
+
+      if (!foldersHtml && !seriesHtml) {
+        grid.innerHTML = `<p class="empty-state">No series or groups match "${escapeHtml(filterQuery)}".</p>`;
+      } else {
+        grid.innerHTML = foldersHtml + seriesHtml;
+      }
+    }
+
+    // Attach drag & drop listeners
+    initLibraryDragAndDrop();
+  }
+
+  function promptCreateGroup(sourceId, targetId) {
+    pendingGroupCreation = { sourceId, targetId };
+    const modal = document.getElementById("create-group-modal");
+    const input = document.getElementById("create-group-name-input");
+    const noteInput = document.getElementById("create-group-note-input");
+    if (!modal || !input) return;
+
+    const targetSeries = (libraryDataCache || []).find(s => s.id === targetId);
+    let defaultName = "New Group";
+    if (targetSeries && targetSeries.engine === "hitomi") {
+      defaultName = "Hitomi Works";
+    }
+    input.value = defaultName;
+    if (noteInput) noteInput.value = "";
+    modal.classList.remove("hidden");
+    input.focus();
+    input.select();
+  }
+
+  window.addSeriesToGroup = async function(folderId, seriesId) {
+    try {
+      const res = await fetch(`/api/library/folders/${folderId}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ series_id: seriesId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerHaptic([40]);
+        showToast("Added to group", "success");
+        await loadLibrary();
+      } else {
+        showToast("Failed to add to group: " + (data.error || ""), "error");
+      }
+    } catch (e) {
+      showToast("Error adding to group: " + e.message, "error");
+    } finally {
+      endAndCleanupDrag();
+    }
+  };
+
+  window.removeSeriesFromGroup = async function(folderId, seriesId) {
+    try {
+      const res = await fetch(`/api/library/folders/${folderId}/items/${seriesId}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Removed from group", "success");
+        await loadLibrary();
+        const folderModal = document.getElementById("folder-modal");
+        if (folderModal && !folderModal.classList.contains("hidden") && activeOpenedFolderId) {
+          openFolderModal(activeOpenedFolderId);
+        }
+      }
+    } catch (e) {
+      showToast("Error removing from group: " + e.message, "error");
+    } finally {
+      endAndCleanupDrag();
+    }
+  };
+
+  let activeOpenedFolderId = null;
+  window.openFolderModal = async function(folderId) {
+    const modal = document.getElementById("folder-modal");
+    if (!modal) return;
+    activeOpenedFolderId = folderId;
+
+    try {
+      const res = await fetch(`/api/library/folders/${folderId}`);
+      const data = await res.json();
+      if (!data.success || !data.folder) {
+        modal.classList.add("hidden");
+        return;
+      }
+
+      const f = data.folder;
+      const titleInput = document.getElementById("folder-modal-title");
+      if (titleInput) titleInput.value = f.name;
+
+      const noteInput = document.getElementById("folder-modal-note");
+      if (noteInput) noteInput.value = f.description || "";
+
+      const countEl = document.getElementById("folder-modal-count");
+      if (countEl) countEl.textContent = `${f.item_count} Items`;
+
+      const grid = document.getElementById("folder-series-grid");
+      if (grid) {
+        if (!f.series || f.series.length === 0) {
+          grid.innerHTML = '<p class="empty-state">No manga in this group.</p>';
+        } else {
+          grid.innerHTML = f.series.map(s => renderSeriesCardHtml(s, false, true, folderId)).join("");
+        }
+      }
+
+      modal.classList.remove("hidden");
+    } catch (e) {
+      showToast("Error loading group: " + e.message, "error");
+    }
+  };
+
+  function spawnDragGhost(card, seriesId, clientX, clientY) {
+    endAndCleanupDrag();
+
+    const pullIndicator = document.getElementById("library-pull-indicator");
+    if (pullIndicator) pullIndicator.classList.add("hidden");
+
+    dragActive = true;
+    dragSourceId = seriesId;
+    dragSourceCard = card;
+
+    triggerHaptic([30]);
+
+    card.classList.add("is-dragging");
+
+    const coverImg = card.querySelector(".series-cover");
+    dragGhost = document.createElement("div");
+    dragGhost.className = "drag-ghost";
+    if (coverImg && coverImg.src) {
+      dragGhost.innerHTML = `<img src="${coverImg.src}" alt="dragging">`;
+    }
+    dragGhost.style.left = clientX + "px";
+    dragGhost.style.top = clientY + "px";
+    document.body.appendChild(dragGhost);
+
+    setTimeout(() => {
+      if (dragGhost && dragGhost.parentNode) {
+        endAndCleanupDrag();
+      }
+    }, 8000);
+  }
+
+  function updateDragPosition(clientX, clientY) {
+    if (!dragActive || !dragGhost) return;
+
+    dragGhost.style.left = clientX + "px";
+    dragGhost.style.top = clientY + "px";
+
+    dragGhost.style.display = "none";
+    const under = document.elementFromPoint(clientX, clientY);
+    dragGhost.style.display = "block";
+
+    const target = under?.closest(".series-card, .folder-card");
+
+    document.querySelectorAll(".drag-hover").forEach(el => {
+      if (el !== target) el.classList.remove("drag-hover");
+    });
+
+    if (target && target !== dragSourceCard) {
+      target.classList.add("drag-hover");
+      dragHoverTarget = target;
+    } else {
+      dragHoverTarget = null;
+    }
+  }
+
+  async function performDrop() {
+    if (!dragActive) {
+      endAndCleanupDrag();
+      return;
+    }
+
+    suppressClickUntil = Date.now() + 500;
+    const target = dragHoverTarget;
+    const sourceId = dragSourceId;
+
+    endAndCleanupDrag();
+
+    if (target && sourceId) {
+      if (target.classList.contains("folder-card")) {
+        const fId = parseInt(target.dataset.folderId, 10);
+        if (fId) {
+          await addSeriesToGroup(fId, sourceId);
+        }
+      } else if (target.classList.contains("series-card")) {
+        const targetId = parseInt(target.dataset.seriesId, 10);
+        if (targetId && targetId !== sourceId) {
+          promptCreateGroup(sourceId, targetId);
+        }
+      }
+    }
+  }
+
+  let dragEventsBound = false;
+  function initLibraryDragAndDrop() {
+    endAndCleanupDrag();
+    const seriesCards = document.querySelectorAll(".library-grid > .series-card");
+
+    seriesCards.forEach(card => {
+      const sId = parseInt(card.dataset.seriesId, 10);
+      if (!sId) return;
+
+      // Mobile Touch Start: entire card is draggable
+      card.addEventListener("touchstart", (e) => {
+        if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
+        if (e.touches.length !== 1) return;
+
+        const t = e.touches[0];
+        dragTouchStart = {
+          card,
+          sId,
+          startX: t.clientX,
+          startY: t.clientY
+        };
+      }, { passive: true });
+
+      // Desktop Mouse Down: entire card is draggable
+      card.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
+
+        dragTouchStart = {
+          card,
+          sId,
+          startX: e.clientX,
+          startY: e.clientY
+        };
+      });
+    });
+
+    if (!dragEventsBound) {
+      dragEventsBound = true;
+
+      // Window Touch Move
+      window.addEventListener("touchmove", (e) => {
+        if (e.touches.length === 0) return;
+        const t = e.touches[0];
+
+        if (dragActive) {
+          e.preventDefault();
+          updateDragPosition(t.clientX, t.clientY);
+          return;
+        }
+
+        if (dragTouchStart) {
+          const dx = t.clientX - dragTouchStart.startX;
+          const dy = t.clientY - dragTouchStart.startY;
+          const dist = Math.hypot(dx, dy);
+
+          // Moving more than 4px in any direction initiates immediate fluid drag!
+          if (dist > 4) {
+            e.preventDefault();
+            spawnDragGhost(dragTouchStart.card, dragTouchStart.sId, t.clientX, t.clientY);
+          }
+        }
+      }, { passive: false });
+
+      // Window Touch End
+      window.addEventListener("touchend", (e) => {
+        if (dragActive) {
+          e.preventDefault();
+          performDrop();
+        } else {
+          endAndCleanupDrag();
+        }
+      }, { passive: false });
+
+      // Window Touch Cancel
+      window.addEventListener("touchcancel", () => {
+        endAndCleanupDrag();
+      });
+
+      // Window Mouse Move
+      window.addEventListener("mousemove", (e) => {
+        if (dragActive) {
+          e.preventDefault();
+          updateDragPosition(e.clientX, e.clientY);
+          return;
+        }
+
+        if (dragTouchStart && e.buttons === 1) {
+          const dist = Math.hypot(e.clientX - dragTouchStart.startX, e.clientY - dragTouchStart.startY);
+          if (dist > 4) {
+            spawnDragGhost(dragTouchStart.card, dragTouchStart.sId, e.clientX, e.clientY);
+          }
+        }
+      });
+
+      // Window Mouse Up
+      window.addEventListener("mouseup", (e) => {
+        if (dragActive) {
+          performDrop();
+        } else {
+          endAndCleanupDrag();
+        }
+      });
+
+      window.addEventListener("blur", endAndCleanupDrag);
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) endAndCleanupDrag();
+      });
+      window.addEventListener("scroll", () => {
+        if (!dragActive) endAndCleanupDrag();
+      }, { passive: true });
+      document.addEventListener("click", () => {
+        if (!dragActive) endAndCleanupDrag();
+      });
+    }
+  }
+
   async function loadLibrary() {
+    endAndCleanupDrag();
     const grid = document.getElementById("library-grid");
     try {
       const res = await fetch("/api/library");
       const data = await res.json();
 
-      if (data.success && data.series && data.series.length > 0) {
+      if (data.success) {
         libraryDataCache = data.series || [];
-        const countTxt = String(data.series.length);
+        libraryFoldersCache = data.folders || [];
+
+        const totalCount = libraryDataCache.length;
+        const countTxt = String(totalCount);
         const lCount = document.getElementById("library-count");
         if (lCount) lCount.textContent = countTxt;
         const dCount = document.getElementById("drawer-library-count");
         if (dCount) dCount.textContent = countTxt;
-        grid.innerHTML = data.series.map((s) => {
-          const title = cleanTitle(s.title);
-          const descSnippet = s.synopsis ? (s.synopsis.length > 55 ? s.synopsis.slice(0, 55) + '...' : s.synopsis) : (s.genres || 'Saved in local library');
-          return `
-          <div class="series-card" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
-            <div class="series-cover-wrapper">
-              <img class="series-cover" src="/api/series/${s.id}/cover" alt="${escapeAttr(title)}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
-              <div class="series-badge-overlay">
-                <span class="series-badge-count">📥 ${s.downloaded_chapters || 0} Ch</span>
-              </div>
-            </div>
-            <div class="series-details">
-              <h4 class="series-title" title="${escapeAttr(title)}">${escapeHtml(title)}</h4>
-              <div class="series-card-desc-row">
-                <p class="series-card-desc" title="${escapeAttr(s.synopsis || s.genres || 'Saved in local library')}">
-                  ${escapeHtml(descSnippet)}
-                </p>
-                <button class="btn-card-update" title="Check updates for ${escapeAttr(title)}" aria-label="Check updates" onclick="event.stopPropagation(); window.checkSpecificSeriesUpdate(${s.id}, this)">
-                  <span class="update-icon">🔄</span>
-                </button>
-              </div>
-              <div class="series-card-actions">
-                ${s.resume_chapter_id ? `
-                  <button class="btn btn-primary btn-card-resume" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Resume Ch. ${s.resume_chapter_num}">
-                    ▶ Ch. ${s.resume_chapter_num} (Resume)
-                  </button>
-                ` : ''}
-                <div class="series-card-btn-row">
-                  <button class="btn btn-secondary btn-card-chapters" onclick="event.stopPropagation(); openSeriesModal(${s.id})">
-                    📖 Chapters
-                  </button>
-                  <button class="btn btn-secondary btn-card-delete" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(title)}')">🗑️</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        `}).join("");
+
+        renderLibraryGrid(currentSearchQuery);
       } else {
-        const lCount = document.getElementById("library-count");
-        if (lCount) lCount.textContent = "0";
-        const dCount = document.getElementById("drawer-library-count");
-        if (dCount) dCount.textContent = "0";
-        grid.innerHTML = '<p class="empty-state">No downloaded series in the database yet. Download a chapter to start building your library!</p>';
+        grid.innerHTML = `<p class="empty-state">Failed to load library: ${escapeHtml(data.error || 'Unknown error')}</p>`;
       }
     } catch (err) {
       grid.innerHTML = `<p class="empty-state">Error loading library: ${err.message}</p>`;
     }
   }
+
+  // Bind Folder Modal & Create Group Events
+  const folderModal = document.getElementById("folder-modal");
+  const folderModalClose = document.getElementById("folder-modal-close");
+  const folderModalTitle = document.getElementById("folder-modal-title");
+  const folderModalNote = document.getElementById("folder-modal-note");
+  const folderBtnDissolve = document.getElementById("folder-btn-dissolve");
+
+  folderModalClose?.addEventListener("click", () => {
+    folderModal?.classList.add("hidden");
+    activeOpenedFolderId = null;
+  });
+
+  const saveFolderMetadata = async () => {
+    if (!activeOpenedFolderId) return;
+    const newName = (folderModalTitle ? folderModalTitle.value.trim() : "") || "Group";
+    const newNote = folderModalNote ? folderModalNote.value.trim() : "";
+    try {
+      await fetch(`/api/library/folders/${activeOpenedFolderId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName, description: newNote })
+      });
+      showToast("Group details saved", "success");
+      loadLibrary();
+    } catch (e) {
+      showToast("Error updating group: " + e.message, "error");
+    }
+  };
+
+  folderModalTitle?.addEventListener("change", saveFolderMetadata);
+  folderModalNote?.addEventListener("change", saveFolderMetadata);
+
+  folderBtnDissolve?.addEventListener("click", async () => {
+    if (!activeOpenedFolderId) return;
+    if (!confirm("Unbundle this group? All series will return to your main library.")) return;
+    try {
+      const res = await fetch(`/api/library/folders/${activeOpenedFolderId}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast("Group unbundled", "success");
+        folderModal?.classList.add("hidden");
+        activeOpenedFolderId = null;
+        loadLibrary();
+      }
+    } catch (e) {
+      showToast("Error dissolving group: " + e.message, "error");
+    }
+  });
+
+  const createGroupModal = document.getElementById("create-group-modal");
+  const createGroupClose = document.getElementById("create-group-close");
+  const btnCancelCreateGroup = document.getElementById("btn-cancel-create-group");
+  const btnConfirmCreateGroup = document.getElementById("btn-confirm-create-group");
+  const createGroupNameInput = document.getElementById("create-group-name-input");
+  const createGroupNoteInput = document.getElementById("create-group-note-input");
+
+  function closeCreateGroupModal() {
+    createGroupModal?.classList.add("hidden");
+    pendingGroupCreation = { sourceId: null, targetId: null };
+  }
+
+  createGroupClose?.addEventListener("click", closeCreateGroupModal);
+  btnCancelCreateGroup?.addEventListener("click", closeCreateGroupModal);
+
+  btnConfirmCreateGroup?.addEventListener("click", async () => {
+    const name = (createGroupNameInput.value || "").trim() || "New Group";
+    const note = (createGroupNoteInput ? createGroupNoteInput.value : "").trim();
+    if (!pendingGroupCreation.sourceId || !pendingGroupCreation.targetId) {
+      closeCreateGroupModal();
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/library/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name,
+          description: note,
+          series_ids: [pendingGroupCreation.targetId, pendingGroupCreation.sourceId]
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        triggerHaptic([40]);
+        showToast(`Created group "${name}"`, "success");
+        closeCreateGroupModal();
+        await loadLibrary();
+      } else {
+        showToast("Failed to create group: " + (data.error || ""), "error");
+      }
+    } catch (e) {
+      showToast("Error creating group: " + e.message, "error");
+    }
+  });
+
+  createGroupNameInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      btnConfirmCreateGroup?.click();
+    } else if (e.key === "Escape") {
+      closeCreateGroupModal();
+    }
+  });
+
+  createGroupNoteInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      btnConfirmCreateGroup?.click();
+    } else if (e.key === "Escape") {
+      closeCreateGroupModal();
+    }
+  });
+
+  const librarySearchInput = document.getElementById("library-search");
+  librarySearchInput?.addEventListener("input", (e) => {
+    currentSearchQuery = e.target.value;
+    renderLibraryGrid(currentSearchQuery);
+  });
 
   // --- Series Details Modal ---
   const seriesModal = document.getElementById("series-modal");
@@ -777,6 +1324,50 @@ document.addEventListener("DOMContentLoaded", () => {
   modalClose.addEventListener("click", () => {
     seriesModal.classList.add("hidden");
   });
+
+  window.showSeriesGroupPicker = async function(seriesId, currentFolderId) {
+    const folders = libraryFoldersCache || [];
+    let options = [];
+    if (currentFolderId) {
+      options.push("0: Remove from current group (Top-level)");
+    }
+    folders.forEach((f, idx) => {
+      options.push(`${idx + 1}: Move to "${f.name}"`);
+    });
+    options.push(`${folders.length + 1}: + Create New Group...`);
+
+    const choice = prompt("Select group action:\n" + options.join("\n"));
+    if (choice === null) return;
+    const num = parseInt(choice.trim());
+    if (isNaN(num)) return;
+
+    if (currentFolderId && num === 0) {
+      await removeSeriesFromGroup(currentFolderId, seriesId);
+      openSeriesModal(seriesId);
+    } else if (num >= 1 && num <= folders.length) {
+      const targetFolder = folders[num - 1];
+      await addSeriesToGroup(targetFolder.id, seriesId);
+      openSeriesModal(seriesId);
+    } else if (num === folders.length + 1) {
+      const newName = prompt("Enter new group name:");
+      if (!newName || !newName.trim()) return;
+      try {
+        const res = await fetch("/api/library/folders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: newName.trim(), series_ids: [seriesId] })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`Created group "${newName}"`, "success");
+          await loadLibrary();
+          openSeriesModal(seriesId);
+        }
+      } catch (err) {
+        showToast("Error creating group: " + err.message, "error");
+      }
+    }
+  };
 
   window.deleteSeriesPrompt = async function(seriesId, title) {
     if (!confirm(`Are you sure you want to delete "${title}" and all its downloaded chapters? This will remove the files from disk.`)) {
@@ -817,6 +1408,10 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   window.openSeriesModal = async function(seriesId) {
+    if (Date.now() < suppressClickUntil) {
+      return;
+    }
+    endAndCleanupDrag();
     try {
       const res = await fetch(`/api/library/${seriesId}`);
       const data = await res.json();
@@ -837,6 +1432,20 @@ document.addEventListener("DOMContentLoaded", () => {
           modalBtnCheckUpdate.onclick = (e) => {
             e.stopPropagation();
             window.checkSpecificSeriesUpdate(seriesId, modalBtnCheckUpdate);
+          };
+        }
+
+        const modalBtnGroup = document.getElementById("modal-btn-group");
+        const modalGroupLabel = document.getElementById("modal-group-label");
+        const matchedInCache = (libraryDataCache || []).find(it => it.id === seriesId);
+        const currentGroup = matchedInCache?.folder_name;
+        if (modalGroupLabel) {
+          modalGroupLabel.textContent = currentGroup ? `Group: ${currentGroup}` : "Add to Group";
+        }
+        if (modalBtnGroup) {
+          modalBtnGroup.onclick = (e) => {
+            e.stopPropagation();
+            showSeriesGroupPicker(seriesId, matchedInCache?.folder_id);
           };
         }
 
@@ -2746,13 +3355,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // --- Pull-to-Refresh on Library Tab ---
+  // --- Pull-to-Refresh on Library Tab (Local Reload Only, No Update Crawl) ---
   const tabLibrary = document.getElementById("tab-library");
   const pullIndicator = document.getElementById("library-pull-indicator");
+  const pullText = document.getElementById("library-pull-text");
   let pullStartY = 0;
   let isPulling = false;
 
   tabLibrary?.addEventListener("touchstart", (e) => {
+    if (dragActive || dragTouchStart || e.target.closest(".series-card, .folder-card, .drag-ghost, #folder-modal, #create-group-modal")) {
+      isPulling = false;
+      return;
+    }
     if (window.scrollY <= 5 && e.touches.length === 1) {
       pullStartY = e.touches[0].clientY;
       isPulling = true;
@@ -2760,21 +3374,36 @@ document.addEventListener("DOMContentLoaded", () => {
   }, { passive: true });
 
   tabLibrary?.addEventListener("touchmove", (e) => {
+    if (dragActive || dragTouchStart || e.target.closest(".series-card, .folder-card, .drag-ghost")) {
+      isPulling = false;
+      pullIndicator?.classList.add("hidden");
+      return;
+    }
     if (!isPulling) return;
     const currentY = e.touches[0].clientY;
     const deltaY = currentY - pullStartY;
     if (deltaY > 50 && window.scrollY <= 5) {
       pullIndicator?.classList.remove("hidden");
+      if (pullText) pullText.textContent = deltaY > 100 ? "Release to reload" : "Pull down to reload";
     }
   }, { passive: true });
 
   tabLibrary?.addEventListener("touchend", () => {
-    if (!isPulling) return;
+    if (dragActive || !isPulling) {
+      isPulling = false;
+      pullIndicator?.classList.add("hidden");
+      return;
+    }
     isPulling = false;
     if (pullIndicator && !pullIndicator.classList.contains("hidden")) {
       triggerHaptic([25]);
-      btnUpdateLibrary?.click();
-      setTimeout(() => pullIndicator.classList.add("hidden"), 1500);
+      if (pullText) pullText.textContent = "Reloading library...";
+      loadLibrary().finally(() => {
+        setTimeout(() => {
+          pullIndicator.classList.add("hidden");
+          if (pullText) pullText.textContent = "Pull down to reload";
+        }, 400);
+      });
     }
   });
 

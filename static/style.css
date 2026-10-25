@@ -548,7 +548,7 @@ input:focus, select:focus {
 .series-cover-wrapper {
   position: relative;
   width: 100%;
-  aspect-ratio: 2 / 3;
+  aspect-ratio: 4 / 4.5;
   overflow: hidden;
   background: var(--bg-secondary);
 }
@@ -557,6 +557,7 @@ input:focus, select:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: top center;
   display: block;
   transition: transform 0.3s ease;
 }
@@ -1546,7 +1547,7 @@ input:focus, select:focus {
   }
 
   .series-cover-wrapper {
-    aspect-ratio: 2 / 3 !important;
+    aspect-ratio: 4 / 4.5 !important;
   }
 
   .series-details {
@@ -2847,6 +2848,289 @@ body.theme-amoled .modal-card {
 .btn-banner-close:hover {
   color: #f1f5f9;
 }
+
+/* ==========================================================================
+   ANDROID-STYLE FOLDER & GROUP SYSTEM (2x2 PREVIEWS & DRAG/DROP)
+   ========================================================================== */
+
+.folder-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  touch-action: pan-y;
+}
+
+.folder-card .series-details {
+  padding: 10px 12px !important;
+}
+
+.folder-card .series-title {
+  font-size: 0.88rem !important;
+  margin-bottom: 3px !important;
+  line-height: 1.25 !important;
+}
+
+.folder-card .series-card-desc-row {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.folder-card .series-card-desc {
+  font-size: 0.78rem !important;
+  margin: 0 !important;
+  line-height: 1.25 !important;
+}
+
+.folder-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+}
+
+.folder-cover-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: rgba(15, 23, 42, 0.8);
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.folder-cover-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(30, 41, 59, 0.5);
+  box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+}
+
+.folder-sub-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #0f172a;
+}
+
+.folder-empty-slot {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.folder-card-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 5px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
+
+.folder-badge-overlay {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.folder-badge-count {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #818cf8;
+}
+
+/* Drag and Drop Visual Highlights */
+.series-card.is-dragging {
+  opacity: 0.35 !important;
+  transform: scale(0.95);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.series-card.drag-hover,
+.folder-card.drag-hover {
+  box-shadow: 0 0 0 3px #10b981, 0 12px 28px rgba(16, 185, 129, 0.25) !important;
+  transform: scale(1.05) !important;
+  transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.12s ease !important;
+}
+
+.card-drag-handle {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
+  cursor: grab;
+  touch-action: none !important;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+
+.card-drag-handle:active,
+.card-drag-handle.is-grabbing {
+  cursor: grabbing;
+  transform: scale(1.18);
+  background: rgba(99, 102, 241, 0.95);
+  border-color: #818cf8;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.45);
+}
+
+.drag-ghost {
+  position: fixed;
+  pointer-events: none !important;
+  z-index: 9999999;
+  width: 116px;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.65), 0 0 0 2.5px #6366f1;
+  opacity: 0.94;
+  transform: translate(-50%, -50%) scale(1.05);
+  transition: none;
+  will-change: left, top;
+}
+
+.drag-ghost img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+/* Folder Modal Overlay */
+.folder-modal-card {
+  max-width: 900px;
+  width: 94%;
+  max-height: 88vh;
+  border-radius: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.folder-header-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.folder-icon-large {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.folder-title-input {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  outline: none;
+  flex: 1;
+  min-width: 100px;
+  transition: all 0.2s;
+}
+
+.folder-title-input:hover,
+.folder-title-input:focus {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.folder-item-pill {
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.folder-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.folder-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.folder-inner-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+/* In-Folder Badge for Search Results */
+.series-in-folder-badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
 
 
 

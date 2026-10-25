@@ -159,28 +159,53 @@ class HitomiExtractor(BaseExtractor):
         artists = [a.get("artist") for a in (ginfo.get("artists") or []) if a and a.get("artist")]
         if artists:
             info["author"] = ", ".join(artists)
+            info["artist"] = ", ".join(artists)
+
+        # Groups / Circles
+        groups = [g.get("group") for g in (ginfo.get("groups") or []) if g and g.get("group")]
+        if groups and not info.get("author"):
+            info["author"] = ", ".join(groups)
 
         # Tags and characters
         tags = [t.get("tag") for t in (ginfo.get("tags") or []) if t and t.get("tag")]
         characters = [c.get("character") for c in (ginfo.get("characters") or []) if c and c.get("character")]
         parodies = [p.get("parody") for p in (ginfo.get("parodys") or []) if p and p.get("parody")]
 
+        if tags:
+            info["genres"] = ", ".join(tags)
+            info["tags"] = ", ".join(tags)
+
         desc_lines = []
+        if ginfo.get("japanese_title") and ginfo.get("japanese_title") != title:
+            desc_lines.append(f"Japanese: {ginfo.get('japanese_title')}")
+            info["alt_titles"] = ginfo.get("japanese_title")
         if ginfo.get("type"):
             desc_lines.append(f"Type: {ginfo.get('type').title()}")
         if ginfo.get("language"):
             desc_lines.append(f"Language: {ginfo.get('language').title()}")
         if artists:
             desc_lines.append(f"Artist(s): {', '.join(artists)}")
+        if groups:
+            desc_lines.append(f"Group: {', '.join(groups)}")
         if parodies:
             desc_lines.append(f"Series/Parody: {', '.join(parodies)}")
         if characters:
             desc_lines.append(f"Character(s): {', '.join(characters)}")
         if tags:
             desc_lines.append(f"Tags: {', '.join(tags)}")
+        if ginfo.get("date"):
+            desc_lines.append(f"Published: {ginfo.get('date')}")
+        desc_lines.append(f"Hitomi ID: {gid}")
 
-        info["description"] = "\n".join(desc_lines)
+        full_synopsis = "\n".join(desc_lines)
+        info["synopsis"] = full_synopsis
+        info["description"] = full_synopsis
+        info["status"] = "Completed"
         return info
+
+    def extract_chapter_number(self, url: str, title: Optional[str] = None) -> float:
+        """Every Hitomi gallery is a complete standalone work (1 chapter)."""
+        return 1.0
 
     def extract_chapter_list(self, soup: BeautifulSoup, url: str, html: str) -> List[Dict[str, Any]]:
         gid = self.extract_gallery_id(url)
@@ -189,7 +214,7 @@ class HitomiExtractor(BaseExtractor):
 
         ginfo = self.fetch_gallery_info(gid)
         file_count = len(ginfo.get("files", [])) if ginfo else 0
-        disp_title = f"Complete ({file_count} Pages)" if file_count > 0 else "Complete Work"
+        disp_title = f"Complete Work ({file_count} Pages)" if file_count > 0 else "Complete Work"
 
         return [
             {

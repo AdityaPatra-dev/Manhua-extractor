@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("app_updater")
 
-CURRENT_APP_VERSION = "1.2.2"
+CURRENT_APP_VERSION = "1.2.3"
 GITHUB_REPO = "AdityaPatra-dev/Manhua-extractor"
 CACHE_TTL = 1800  # 30 minutes
 
@@ -46,7 +46,26 @@ def get_latest_release(force: bool = False, simulate: bool = False, prefer_debug
     global _cached_result, _last_fetch_time
 
     now = time.time()
-    if not force and not simulate and not prefer_debug and _cached_result and (now - _last_fetch_time < CACHE_TTL):
+    if simulate:
+        return {
+            "status": "success",
+            "current_version": CURRENT_APP_VERSION,
+            "latest_version": "1.3.0",
+            "tag_name": "v1.3.0",
+            "has_update": True,
+            "release_name": "Release v1.3.0 (Simulated)",
+            "release_notes": "Simulated update for testing.",
+            "published_at": "",
+            "html_url": f"https://github.com/{GITHUB_REPO}/releases",
+            "apk_url": f"https://github.com/{GITHUB_REPO}/releases/download/v1.3.0/app-release.apk",
+            "apk_name": "app-release.apk",
+            "apk_size": 35000000,
+            "apk_debug_url": f"https://github.com/{GITHUB_REPO}/releases/download/v1.3.0/app-debug.apk",
+            "checked_at": int(now),
+            "simulated": True,
+        }
+
+    if not force and not prefer_debug and _cached_result and (now - _last_fetch_time < CACHE_TTL):
         return _cached_result
 
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"

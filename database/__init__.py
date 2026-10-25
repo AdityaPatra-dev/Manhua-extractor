@@ -18,7 +18,16 @@ from .db import (
     delete_promo_signature,
     update_series_trackers,
     update_series_rich_metadata,
-    get_downloaded_chapters_map
+    get_downloaded_chapters_map,
+    create_folder,
+    update_folder_metadata,
+    rename_folder,
+    delete_folder,
+    add_series_to_folder,
+    remove_series_from_folder,
+    get_all_folders_with_items,
+    get_folder_by_id,
+    get_folder_by_name
 )
 
 

@@ -39,7 +39,14 @@ from database.db import (
     get_cached_search,
     set_cached_search,
     add_or_update_series_source,
-    get_series_sources
+    get_series_sources,
+    create_folder,
+    rename_folder,
+    delete_folder,
+    add_series_to_folder,
+    remove_series_from_folder,
+    get_all_folders_with_items,
+    get_folder_by_id
 )
 from core.search import search_dispatcher, cluster_search_results
 from extractors.dispatcher import dispatcher
@@ -195,6 +202,20 @@ class MarkPromoRequest(BaseModel):
 
 class VerifyTrackerRequest(BaseModel):
     token: str
+
+class CreateFolderRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    color: Optional[str] = "#4f46e5"
+    series_ids: Optional[List[int]] = []
+
+class RenameFolderRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class AddFolderItemRequest(BaseModel):
+    series_id: int
+
 
 
 # --- Endpoints ---
@@ -693,21 +714,28 @@ async def execute_download_job(job: Dict[str, Any]):
                 break
 
             raw_title = req.series_title or data.get("series_title") or "Unknown Series"
-            clean_series_title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', raw_title, flags=re.I).strip(' -:|—')
-            clean_series_title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_series_title, flags=re.I).strip(' -:|—')
-            series_title = clean_series_title if clean_series_title else raw_title
+            is_hitomi = (data.get("engine_id") == "hitomi") or ("hitomi.la" in current_url) or (str(data.get("series_slug") or "").lower().startswith("hitomi"))
+
+            if not is_hitomi:
+                clean_series_title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', raw_title, flags=re.I).strip(' -:|—')
+                clean_series_title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_series_title, flags=re.I).strip(' -:|—')
+                series_title = clean_series_title if clean_series_title else raw_title
+            else:
+                series_title = raw_title
 
             series_slug = data.get("series_slug")
-            if series_slug:
+            if series_slug and not is_hitomi:
                 series_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', str(series_slug), flags=re.I)
-            if not series_slug or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', str(series_slug), re.I):
+            if not series_slug or (not is_hitomi and re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', str(series_slug), re.I)):
                 if series_title and series_title != "Unknown Series":
                     series_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', series_title.lower()).strip('_')
                 else:
                     series_slug = series_slug or "unknown_series"
 
             extracted_ch_num = data.get("chapter_num")
-            if extracted_ch_num is not None and extracted_ch_num > 0:
+            if is_hitomi:
+                chapter_num = 1.0
+            elif extracted_ch_num is not None and extracted_ch_num > 0:
                 chapter_num = extracted_ch_num
             elif downloaded_chapter_nums:
                 chapter_num = max(downloaded_chapter_nums) + 1.0
@@ -722,10 +750,24 @@ async def execute_download_job(job: Dict[str, Any]):
             series_id = get_or_create_series(
                 slug=series_slug,
                 title=series_title,
+                author=data.get("series_author"),
+                status=data.get("series_status") or "Ongoing",
+                synopsis=data.get("series_synopsis"),
                 cover_url=effective_cover,
                 source_url=current_url,
                 engine=data.get("engine_id")
             )
+
+            # Also update rich metadata in case series already existed
+            if data.get("series_synopsis") or data.get("series_author") or data.get("series_artist"):
+                update_series_rich_metadata(series_id, {
+                    "author": data.get("series_author"),
+                    "artist": data.get("series_artist"),
+                    "synopsis": data.get("series_synopsis"),
+                    "genres": data.get("series_genres"),
+                    "tags": data.get("series_tags"),
+                    "status": data.get("series_status") or "Ongoing"
+                })
 
             # Ensure canonical series title from database is used for directory & metadata
             canonical = get_series_by_id(series_id)
@@ -808,11 +850,13 @@ async def execute_download_job(job: Dict[str, Any]):
                 job["message"] = f"Upscaling {len(panel_bytes)} panels ({req.upscale_scale}x)..."
                 download_progress["status"] = "upscaling"
                 download_progress["message"] = f"Upscaling {len(panel_bytes)} panels ({req.upscale_scale}x)..."
-                from core.upscaler import upscale_panel
+                from core.upscaler import upscale_panel, is_upscaler_api_available
                 upscaler_url = get_setting("ai_upscaler_url", "http://localhost:5000/upscale")
+                api_online = is_upscaler_api_available(upscaler_url)
+                effective_url = upscaler_url if api_online else None
                 def _do_upscale():
                     return [
-                        upscale_panel(b, scale=req.upscale_scale, engine=req.upscale_engine, endpoint=upscaler_url)
+                        upscale_panel(b, scale=req.upscale_scale, engine=req.upscale_engine, endpoint=effective_url)
                         for b in panel_bytes
                     ]
                 panel_bytes = await asyncio.to_thread(_do_upscale)
@@ -1119,7 +1163,67 @@ async def get_progress_stream(request: Request):
 @app.get("/api/library")
 async def list_library():
     series_list = get_all_series()
-    return {"success": True, "series": series_list}
+    folders = get_all_folders_with_items()
+
+    folder_map = {}
+    for f in folders:
+        for s_id in f.get("series_ids", []):
+            folder_map[s_id] = {"folder_id": f["id"], "folder_name": f["name"]}
+
+    for s in series_list:
+        if s["id"] in folder_map:
+            s["folder_id"] = folder_map[s["id"]]["folder_id"]
+            s["folder_name"] = folder_map[s["id"]]["folder_name"]
+        else:
+            s["folder_id"] = None
+            s["folder_name"] = None
+
+    return {
+        "success": True,
+        "series": series_list,
+        "folders": folders
+    }
+
+@app.get("/api/library/folders")
+async def list_library_folders():
+    folders = get_all_folders_with_items()
+    return {"success": True, "folders": folders}
+
+@app.post("/api/library/folders")
+async def create_new_folder(req: CreateFolderRequest):
+    folder_id = create_folder(name=req.name, description=req.description, color=req.color, series_ids=req.series_ids)
+    folder = get_folder_by_id(folder_id)
+    return {"success": True, "folder": folder}
+
+@app.get("/api/library/folders/{folder_id}")
+async def get_folder_details(folder_id: int):
+    folder = get_folder_by_id(folder_id)
+    if not folder:
+        return JSONResponse({"success": False, "error": "Folder not found"}, status_code=404)
+    return {"success": True, "folder": folder}
+
+@app.patch("/api/library/folders/{folder_id}")
+async def update_folder_name(folder_id: int, req: RenameFolderRequest):
+    from database.db import update_folder_metadata
+    ok = update_folder_metadata(folder_id, name=req.name, description=req.description)
+    if not ok:
+        return JSONResponse({"success": False, "error": "Folder not found or invalid data"}, status_code=400)
+    return {"success": True, "message": "Folder updated"}
+
+@app.delete("/api/library/folders/{folder_id}")
+async def delete_existing_folder(folder_id: int):
+    ok = delete_folder(folder_id)
+    return {"success": ok}
+
+@app.post("/api/library/folders/{folder_id}/items")
+async def add_item_to_folder(folder_id: int, req: AddFolderItemRequest):
+    ok = add_series_to_folder(folder_id, req.series_id)
+    return {"success": ok}
+
+@app.delete("/api/library/folders/{folder_id}/items/{series_id}")
+async def remove_item_from_folder(folder_id: int, series_id: int):
+    ok = remove_series_from_folder(folder_id, series_id)
+    return {"success": ok}
 
 @app.get("/api/library/{series_id}")
 async def get_series_detail(series_id: int):
@@ -2059,11 +2163,13 @@ async def import_backup(file: UploadFile = File(...)):
             backup_state["error"] = result.get("error")
             return JSONResponse({"success": False, "error": result.get("error")}, status_code=400)
 
+        folders_synced = result.get("folders_synced", 0)
+        folders_msg = f", {folders_synced} groups synced" if folders_synced else ""
         backup_state["status"] = "completed"
         backup_state["percent"] = 100.0
         backup_state["message"] = (
             f"Successfully restored {result['batch_label']}: "
-            f"{result['chapters_imported']} chapters imported, {result['series_synced']} series synced."
+            f"{result['chapters_imported']} chapters imported, {result['series_synced']} series synced{folders_msg}."
         )
         backup_state["last_result"] = result
 
@@ -2074,6 +2180,7 @@ async def import_backup(file: UploadFile = File(...)):
             "series_synced": result.get("series_synced"),
             "chapters_imported": result.get("chapters_imported"),
             "chapters_skipped_duplicate": result.get("chapters_skipped_duplicate"),
+            "folders_synced": folders_synced,
             "storage_freed_or_used": f"+{format_bytes(result.get('uncompressed_bytes', 0))}"
         }
 

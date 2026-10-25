@@ -10,7 +10,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="/static/style.css?v=1.2.2">
+  <link rel="stylesheet" href="/static/style.css?v=1.2.3">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
@@ -373,7 +373,7 @@
       <!-- Touch Pull-to-Refresh Indicator -->
       <div id="library-pull-indicator" class="library-pull-indicator hidden">
         <span class="pull-icon">🔄</span>
-        <span id="library-pull-text">Pull down to check updates</span>
+        <span id="library-pull-text">Pull down to reload</span>
       </div>
       <div class="library-header">
         <h2>Your Saved Library</h2>
@@ -435,7 +435,7 @@
       <div class="card" id="app-updater-card">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
           <h2>🚀 App Version & Updates</h2>
-          <span id="updater-version-badge" class="badge" style="background: rgba(99, 102, 241, 0.2); color: var(--accent); padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.85rem; border: 1px solid rgba(99, 102, 241, 0.3);">v1.2.2</span>
+          <span id="updater-version-badge" class="badge" style="background: rgba(99, 102, 241, 0.2); color: var(--accent); padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.85rem; border: 1px solid rgba(99, 102, 241, 0.3);">v1.2.3</span>
         </div>
         <p class="card-desc">Check GitHub releases for the latest APK updates, new scraper fixes, and performance improvements.</p>
         
@@ -719,6 +719,51 @@
     </main>
   </div>
 
+  <!-- Android-Style Folder / Group Sheet Modal -->
+  <div id="folder-modal" class="modal-backdrop hidden">
+    <div class="modal-card folder-modal-card">
+      <div class="modal-header folder-modal-header">
+        <div class="folder-header-title-wrap" style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="folder-icon-large">📁</span>
+            <input type="text" id="folder-modal-title" class="folder-title-input" value="Group Name" placeholder="Group Name" title="Tap to rename group">
+            <span id="folder-modal-count" class="folder-item-pill">0 Items</span>
+          </div>
+          <input type="text" id="folder-modal-note" class="folder-note-input" placeholder="Add a note or description for this group..." style="width: 100%; box-sizing: border-box; margin-top: 6px; font-size: 0.85rem; padding: 6px 10px; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 6px; color: var(--text-main);">
+        </div>
+        <div class="folder-header-actions">
+          <button id="folder-btn-dissolve" class="btn btn-secondary btn-sm" title="Dissolve folder (returns all series to main library without deleting files)">Unbundle</button>
+          <button id="folder-modal-close" class="btn-close">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body folder-modal-body">
+        <div id="folder-series-grid" class="library-grid folder-inner-grid">
+          <!-- Member series cards rendered here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Group Name Prompt Modal -->
+  <div id="create-group-modal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 380px;">
+      <div class="modal-header">
+        <h3>Create New Group</h3>
+        <button id="create-group-close" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1rem 0;">
+        <label for="create-group-name-input" style="font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 6px;">Group Name:</label>
+        <input type="text" id="create-group-name-input" class="search-input" placeholder="e.g. Action Manhua, Hitomi Works..." style="width: 100%; box-sizing: border-box; margin-bottom: 0.75rem;">
+        <label for="create-group-note-input" style="font-size: 0.85rem; color: var(--text-muted); display: block; margin-bottom: 6px;">Note / Description (Optional):</label>
+        <input type="text" id="create-group-note-input" class="search-input" placeholder="e.g. Favorite ongoing series, weekend reads..." style="width: 100%; box-sizing: border-box; margin-bottom: 1rem;">
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+          <button id="btn-cancel-create-group" class="btn btn-secondary">Cancel</button>
+          <button id="btn-confirm-create-group" class="btn btn-primary">Create Group</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Series Detail Modal -->
   <div id="series-modal" class="modal-backdrop hidden">
     <div class="modal-card">
@@ -732,7 +777,8 @@
           <div class="modal-series-details-col" style="flex: 1 1 0%; min-width: 0; width: 100%; overflow: hidden;">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
               <span id="modal-engine-badge" class="preview-badge">Engine</span>
-              <div style="display: flex; gap: 6px; align-items: center;">
+              <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                <button id="modal-btn-group" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; display: flex; align-items: center; gap: 4px;" title="Move or assign this series to a group">📁 <span id="modal-group-label">Group</span></button>
                 <button id="modal-btn-check-update" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; display: flex; align-items: center; gap: 4px;" title="Check for latest chapters"><span class="update-icon">🔄</span> Check Updates</button>
                 <button id="modal-btn-delete-series" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.78rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); cursor: pointer;" title="Delete this series and downloaded files">🗑️ Delete Manhua</button>
               </div>
@@ -920,7 +966,7 @@
         <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 14px; margin-bottom: 1rem;">
           <div>
             <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Current</div>
-            <div id="update-modal-current-version" style="font-size: 1.1rem; font-weight: 700; color: var(--text-muted);">v1.2.2</div>
+            <div id="update-modal-current-version" style="font-size: 1.1rem; font-weight: 700; color: var(--text-muted);">v1.2.3</div>
           </div>
           <div style="font-size: 1.2rem; color: var(--accent);">➔</div>
           <div>
@@ -964,7 +1010,7 @@
 
   <div id="toast-container" class="toast-container"></div>
 
-  <script src="/static/app.js?v=1.2.2"></script>
+  <script src="/static/app.js?v=1.2.3"></script>
 </body>
 </html>
 

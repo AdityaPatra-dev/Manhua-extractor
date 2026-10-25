@@ -133,6 +133,28 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS library_folders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                sort_order INTEGER DEFAULT 0,
+                color TEXT DEFAULT '#4f46e5',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS folder_items (
+                folder_id INTEGER NOT NULL REFERENCES library_folders(id) ON DELETE CASCADE,
+                series_id INTEGER NOT NULL REFERENCES series(id) ON DELETE CASCADE,
+                sort_order INTEGER DEFAULT 0,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (folder_id, series_id)
+            )
+        """)
+
         # Migration columns for series table
         try:
             conn.execute("ALTER TABLE series ADD COLUMN anilist_id INTEGER")
@@ -140,6 +162,10 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             pass
         try:
             conn.execute("ALTER TABLE series ADD COLUMN mal_id INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE library_folders ADD COLUMN description TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
         try:
@@ -198,9 +224,67 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
 
     conn.close()
     try:
+        fix_legacy_hitomi_series(db_path)
+    except Exception:
+        pass
+    try:
         consolidate_duplicate_series(db_path)
     except Exception:
         pass
+
+def fix_legacy_hitomi_series(db_path: str = DEFAULT_DB_PATH) -> None:
+    """Repair any legacy Hitomi series records that were merged under slug='hitomi'."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            hitomi_series = conn.execute("SELECT id, title, slug, source_url FROM series WHERE slug = 'hitomi' OR engine = 'hitomi'").fetchall()
+            for s in hitomi_series:
+                s_id = s["id"]
+                chaps = conn.execute("SELECT id, title, source_url, file_path, chapter_num FROM chapters WHERE series_id = ? ORDER BY id ASC", (s_id,)).fetchall()
+                if len(chaps) <= 1 and s["slug"] != "hitomi":
+                    continue
+                from extractors.hitomi import HitomiExtractor
+                for idx, ch in enumerate(chaps):
+                    c_url = ch["source_url"] or ""
+                    gid = HitomiExtractor.extract_gallery_id(c_url)
+                    if not gid and ch["file_path"]:
+                        m = re.search(r'[-_](\d{5,9})\.(?:cbz|pdf)$', ch["file_path"])
+                        if m:
+                            gid = int(m.group(1))
+                    if not gid:
+                        gid = HitomiExtractor.extract_gallery_id(s["source_url"] or "")
+
+                    if gid:
+                        target_slug = f"hitomi-{gid}"
+                        if idx == 0:
+                            ginfo = HitomiExtractor.fetch_gallery_info(gid)
+                            t = (ginfo.get("title") or ginfo.get("japanese_title")) if ginfo else s["title"]
+                            conn.execute("UPDATE series SET slug = ?, title = ? WHERE id = ?", (target_slug, t or s["title"], s_id))
+                        else:
+                            ginfo = HitomiExtractor.fetch_gallery_info(gid)
+                            t = (ginfo.get("title") or ginfo.get("japanese_title")) if ginfo else (ch["title"] or f"Hitomi Gallery {gid}")
+                            cov = HitomiExtractor.build_thumbnail_url(ginfo["files"][0]["hash"]) if (ginfo and ginfo.get("files")) else None
+                            desc = ""
+                            arts = []
+                            if ginfo:
+                                d_lines = []
+                                if ginfo.get("type"): d_lines.append(f"Type: {ginfo.get('type').title()}")
+                                if ginfo.get("language"): d_lines.append(f"Language: {ginfo.get('language').title()}")
+                                arts = [a.get("artist") for a in (ginfo.get("artists") or []) if a and a.get("artist")]
+                                if arts: d_lines.append(f"Artist(s): {', '.join(arts)}")
+                                tgs = [t.get("tag") for t in (ginfo.get("tags") or []) if t and t.get("tag")]
+                                if tgs: d_lines.append(f"Tags: {', '.join(tgs)}")
+                                desc = "\n".join(d_lines)
+                            cur = conn.execute("""
+                                INSERT INTO series (slug, title, author, status, synopsis, cover_url, source_url, engine)
+                                VALUES (?, ?, ?, 'Completed', ?, ?, ?, 'hitomi')
+                            """, (target_slug, t, ", ".join(arts) if arts else None, desc, cov, c_url or f"https://hitomi.la/reader/{gid}.html"))
+                            new_s_id = cur.lastrowid
+                            conn.execute("UPDATE chapters SET series_id = ?, chapter_num = 1.0 WHERE id = ?", (new_s_id, ch["id"]))
+    except Exception:
+        pass
+    finally:
+        conn.close()
 
 # --- Series Operations ---
 
@@ -218,20 +302,24 @@ def get_or_create_series(
 ) -> int:
     conn = get_connection(db_path)
     clean_title = (title or "").strip()
-    # Strip any trailing chapter or episode indicators from the title
-    clean_title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', clean_title, flags=re.I).strip(' -:|—')
-    clean_title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_title, flags=re.I).strip(' -:|—')
+    is_hitomi = (engine == "hitomi") or (slug and str(slug).lower().startswith("hitomi"))
+
+    # Strip any trailing chapter or episode indicators from the title (except for Hitomi where works are standalone)
+    if not is_hitomi:
+        clean_title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', clean_title, flags=re.I).strip(' -:|—')
+        clean_title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_title, flags=re.I).strip(' -:|—')
     if not clean_title:
         clean_title = (title or "").strip()
 
     clean_slug = (slug or "").strip().lower()
-    # Strip chapter numbering suffix from slug (e.g. island-of-stars-and-chains-1 -> island-of-stars-and-chains)
-    clean_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', clean_slug, flags=re.I)
+    if not is_hitomi:
+        # Strip chapter numbering suffix from slug (e.g. island-of-stars-and-chains-1 -> island-of-stars-and-chains)
+        clean_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', clean_slug, flags=re.I)
 
-    # If slug looks like a chapter number or unknown, derive from clean_title if available
-    is_chapter_slug = bool(clean_slug and (clean_slug.startswith("ch") or clean_slug.isdigit() or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', clean_slug, re.I)))
-    if (is_chapter_slug or not clean_slug or clean_slug == "unknown-series") and clean_title and clean_title.lower() != "unknown series":
-        clean_slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
+        # If slug looks like a chapter number or unknown, derive from clean_title if available
+        is_chapter_slug = bool(clean_slug and (clean_slug.startswith("ch") or clean_slug.isdigit() or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', clean_slug, re.I)))
+        if (is_chapter_slug or not clean_slug or clean_slug == "unknown-series") and clean_title and clean_title.lower() != "unknown series":
+            clean_slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
 
     try:
         with conn:
@@ -240,36 +328,43 @@ def get_or_create_series(
             if clean_slug and clean_slug != "unknown-series":
                 row = conn.execute("SELECT id, title FROM series WHERE slug = ?", (clean_slug,)).fetchone()
 
-            # 2. Match by exact/case-insensitive title
-            if not row and clean_title and clean_title.lower() != "unknown series":
-                row = conn.execute("SELECT id, title FROM series WHERE lower(trim(title)) = lower(trim(?))", (clean_title,)).fetchone()
+            # For Hitomi, galleries are unique per slug (hitomi-<id>) or source_url - do NOT merge with other series!
+            if not is_hitomi:
+                # 2. Match by exact/case-insensitive title
+                if not row and clean_title and clean_title.lower() != "unknown series":
+                    row = conn.execute("SELECT id, title FROM series WHERE lower(trim(title)) = lower(trim(?))", (clean_title,)).fetchone()
 
-            # 3. Match by normalized title slug
-            if not row and clean_title and clean_title.lower() != "unknown series":
-                title_slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
-                if title_slug:
-                    row = conn.execute("SELECT id, title FROM series WHERE slug = ?", (title_slug,)).fetchone()
+                # 3. Match by normalized title slug
+                if not row and clean_title and clean_title.lower() != "unknown series":
+                    title_slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
+                    if title_slug:
+                        row = conn.execute("SELECT id, title FROM series WHERE slug = ?", (title_slug,)).fetchone()
 
-            # 4. Match using is_same_series across existing series to prevent duplicate cards
-            if not row and clean_title and clean_title.lower() != "unknown series":
-                all_s = conn.execute("SELECT id, title, slug FROM series").fetchall()
-                from core.search.clustering import is_same_series
-                for s_item in all_s:
-                    if is_same_series(clean_title, s_item["title"]):
-                        row = s_item
-                        break
+                # 4. Match using is_same_series across existing series to prevent duplicate cards
+                if not row and clean_title and clean_title.lower() != "unknown series":
+                    all_s = conn.execute("SELECT id, title, slug FROM series WHERE engine != 'hitomi'").fetchall()
+                    from core.search.clustering import is_same_series
+                    for s_item in all_s:
+                        if is_same_series(clean_title, s_item["title"]):
+                            row = s_item
+                            break
+            elif not row and source_url:
+                # For Hitomi, if slug didn't match, check if exact source_url was registered
+                row = conn.execute("SELECT id, title FROM series WHERE source_url = ?", (source_url,)).fetchone()
 
             if row:
                 series_id = row["id"]
                 conn.execute("""
                     UPDATE series 
                     SET title = coalesce(nullif(?, ''), title),
+                        author = coalesce(?, author),
+                        synopsis = coalesce(?, synopsis),
                         cover_url = coalesce(?, cover_url),
                         source_url = coalesce(?, source_url),
                         engine = coalesce(?, engine),
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                """, (clean_title or title, cover_url, source_url, engine, series_id))
+                """, (clean_title or title, author, synopsis, cover_url, source_url, engine, series_id))
                 return series_id
 
             cursor = conn.execute("""
@@ -291,13 +386,19 @@ def consolidate_duplicate_series(db_path: str = DEFAULT_DB_PATH) -> int:
     merged_count = 0
     try:
         with conn:
-            all_series = conn.execute("SELECT id, slug, title, cover_path, cover_url, source_url FROM series ORDER BY id ASC").fetchall()
+            all_series = conn.execute("SELECT id, slug, title, cover_path, cover_url, source_url, engine FROM series ORDER BY id ASC").fetchall()
             canonical_map: Dict[int, int] = {}
 
             for i, s1 in enumerate(all_series):
                 s1_id = s1["id"]
                 if s1_id in canonical_map:
                     continue
+                s1_engine = s1["engine"] or ""
+                s1_is_hitomi = (s1_engine == "hitomi") or (s1["slug"] and s1["slug"].lower().startswith("hitomi"))
+                if s1_is_hitomi:
+                    # Hitomi galleries are unique standalone works, never consolidate across different gallery IDs
+                    continue
+
                 t1 = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', s1["title"], flags=re.I).strip(' -:|—')
                 t1 = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', t1, flags=re.I).strip(' -:|—')
                 if not t1:
@@ -310,6 +411,11 @@ def consolidate_duplicate_series(db_path: str = DEFAULT_DB_PATH) -> int:
                     s2_id = s2["id"]
                     if s2_id in canonical_map:
                         continue
+                    s2_engine = s2["engine"] or ""
+                    s2_is_hitomi = (s2_engine == "hitomi") or (s2["slug"] and s2["slug"].lower().startswith("hitomi"))
+                    if s2_is_hitomi:
+                        continue
+
                     t2 = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', s2["title"], flags=re.I).strip(' -:|—')
                     t2 = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', t2, flags=re.I).strip(' -:|—')
                     if not t2:
@@ -332,14 +438,16 @@ def consolidate_duplicate_series(db_path: str = DEFAULT_DB_PATH) -> int:
                 conn.execute("DELETE FROM series WHERE id = ?", (dup_id,))
                 merged_count += 1
 
-            # Clean up titles and slugs for canonical series
+            # Clean up titles and slugs for canonical series (exempt Hitomi)
             for s in all_series:
                 if s["id"] not in canonical_map:
-                    clean_t = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', s["title"], flags=re.I).strip(' -:|—')
-                    clean_t = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_t, flags=re.I).strip(' -:|—')
-                    clean_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', s["slug"], flags=re.I)
-                    if clean_t and (clean_t != s["title"] or clean_slug != s["slug"]):
-                        conn.execute("UPDATE series SET title = ?, slug = coalesce(nullif(?, ''), slug) WHERE id = ?", (clean_t, clean_slug, s["id"]))
+                    s_engine = s["engine"] or ""
+                    if s_engine != "hitomi" and not (s["slug"] and s["slug"].lower().startswith("hitomi")):
+                        clean_t = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', s["title"], flags=re.I).strip(' -:|—')
+                        clean_t = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_t, flags=re.I).strip(' -:|—')
+                        clean_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', s["slug"], flags=re.I)
+                        if clean_t and (clean_t != s["title"] or clean_slug != s["slug"]):
+                            conn.execute("UPDATE series SET title = ?, slug = coalesce(nullif(?, ''), slug) WHERE id = ?", (clean_t, clean_slug, s["id"]))
     finally:
         conn.close()
     return merged_count
@@ -444,6 +552,9 @@ def delete_series(series_id: int, db_path: str = DEFAULT_DB_PATH) -> bool:
     conn = get_connection(db_path)
     with conn:
         conn.execute("DELETE FROM chapters WHERE series_id = ?", (series_id,))
+        conn.execute("DELETE FROM folder_items WHERE series_id = ?", (series_id,))
+        # Dissolve any folders that have become empty
+        conn.execute("DELETE FROM library_folders WHERE id NOT IN (SELECT DISTINCT folder_id FROM folder_items)")
         cursor = conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
     conn.close()
     return cursor.rowcount > 0
@@ -826,6 +937,236 @@ def get_clearance_cookie(domain: str, db_path: str = DEFAULT_DB_PATH) -> Optiona
         return None
     finally:
         conn.close()
+
+
+# --- Library Folders & Android-Style Grouping Operations ---
+
+def create_folder(
+    name: str,
+    description: Optional[str] = "",
+    color: Optional[str] = None,
+    series_ids: Optional[List[int]] = None,
+    db_path: str = DEFAULT_DB_PATH
+) -> int:
+    """Create a new library folder, optionally initializing it with series IDs."""
+    clean_name = (name or "").strip() or "New Folder"
+    clean_desc = (description or "").strip()
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            cursor = conn.execute("""
+                INSERT INTO library_folders (name, description, color, sort_order)
+                VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM library_folders))
+            """, (clean_name, clean_desc, color or "#4f46e5"))
+            folder_id = cursor.lastrowid
+
+            if series_ids:
+                for idx, s_id in enumerate(series_ids):
+                    # In Android launcher behavior, an item moves to the new folder
+                    conn.execute("DELETE FROM folder_items WHERE series_id = ?", (s_id,))
+                    conn.execute("""
+                        INSERT INTO folder_items (folder_id, series_id, sort_order)
+                        VALUES (?, ?, ?)
+                    """, (folder_id, s_id, idx))
+            return folder_id
+    finally:
+        conn.close()
+
+
+def update_folder_metadata(
+    folder_id: int,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    color: Optional[str] = None,
+    db_path: str = DEFAULT_DB_PATH
+) -> bool:
+    """Update name, description/note, or color of a library folder."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            updates = []
+            params = []
+            if name is not None:
+                updates.append("name = ?")
+                params.append((name or "").strip() or "New Folder")
+            if description is not None:
+                updates.append("description = ?")
+                params.append((description or "").strip())
+            if color is not None:
+                updates.append("color = ?")
+                params.append(color)
+            if not updates:
+                return True
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            params.append(folder_id)
+            query = f"UPDATE library_folders SET {', '.join(updates)} WHERE id = ?"
+            cur = conn.execute(query, tuple(params))
+            return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def rename_folder(folder_id: int, new_name: str, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """Rename a library folder."""
+    return update_folder_metadata(folder_id, name=new_name, db_path=db_path)
+
+
+def delete_folder(folder_id: int, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    Dissolve a library folder without deleting any member series or their downloaded files.
+    All series return to the top-level library grid.
+    """
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            conn.execute("DELETE FROM folder_items WHERE folder_id = ?", (folder_id,))
+            cur = conn.execute("DELETE FROM library_folders WHERE id = ?", (folder_id,))
+            return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def add_series_to_folder(folder_id: int, series_id: int, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """Add a series into a folder (moving it from any previous folder)."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            # Ensure folder exists
+            f = conn.execute("SELECT id FROM library_folders WHERE id = ?", (folder_id,)).fetchone()
+            if not f:
+                return False
+            # Remove from old folder if any
+            conn.execute("DELETE FROM folder_items WHERE series_id = ?", (series_id,))
+            conn.execute("""
+                INSERT INTO folder_items (folder_id, series_id, sort_order)
+                VALUES (?, ?, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM folder_items WHERE folder_id = ?))
+            """, (folder_id, series_id, folder_id))
+            conn.execute("UPDATE library_folders SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (folder_id,))
+            return True
+    finally:
+        conn.close()
+
+
+def remove_series_from_folder(
+    folder_id: int,
+    series_id: int,
+    auto_delete_empty: bool = True,
+    db_path: str = DEFAULT_DB_PATH
+) -> bool:
+    """Remove a series from a folder back to the root library grid."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            cur = conn.execute("DELETE FROM folder_items WHERE folder_id = ? AND series_id = ?", (folder_id, series_id))
+            if cur.rowcount > 0:
+                conn.execute("UPDATE library_folders SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (folder_id,))
+                if auto_delete_empty:
+                    remaining = conn.execute("SELECT COUNT(*) as c FROM folder_items WHERE folder_id = ?", (folder_id,)).fetchone()["c"]
+                    if remaining == 0:
+                        conn.execute("DELETE FROM library_folders WHERE id = ?", (folder_id,))
+                return True
+            return False
+    finally:
+        conn.close()
+
+
+def get_all_folders_with_items(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
+    """Retrieve all folders along with their member series IDs and up to 4 cover URLs for 2x2 preview."""
+    conn = get_connection(db_path)
+    try:
+        folders = conn.execute("""
+            SELECT id, name, description, sort_order, color, created_at, updated_at
+            FROM library_folders
+            ORDER BY sort_order ASC, updated_at DESC
+        """).fetchall()
+
+        result = []
+        for f in folders:
+            f_id = f["id"]
+            items = conn.execute("""
+                SELECT s.id, s.title, s.slug, s.cover_url, s.cover_path, fi.sort_order
+                FROM folder_items fi
+                JOIN series s ON fi.series_id = s.id
+                WHERE fi.folder_id = ?
+                ORDER BY fi.sort_order ASC, s.id ASC
+            """, (f_id,)).fetchall()
+
+            series_ids = [item["id"] for item in items]
+            preview_covers = []
+            for item in items[:4]:
+                preview_covers.append(f"/api/series/{item['id']}/cover")
+
+            desc = ""
+            if "description" in f.keys() and f["description"]:
+                desc = f["description"]
+
+            result.append({
+                "id": f["id"],
+                "name": f["name"],
+                "description": desc,
+                "sort_order": f["sort_order"],
+                "color": f["color"],
+                "created_at": f["created_at"],
+                "updated_at": f["updated_at"],
+                "item_count": len(series_ids),
+                "series_ids": series_ids,
+                "preview_covers": preview_covers
+            })
+        return result
+    finally:
+        conn.close()
+
+
+def get_folder_by_id(folder_id: int, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
+    """Retrieve full details of a folder and all its member series."""
+    conn = get_connection(db_path)
+    try:
+        f = conn.execute("SELECT * FROM library_folders WHERE id = ?", (folder_id,)).fetchone()
+        if not f:
+            return None
+        items = conn.execute("""
+            SELECT s.id, s.title, s.slug, s.author, s.synopsis, s.cover_url, s.engine,
+                   fi.sort_order,
+                   (SELECT COUNT(*) FROM chapters c WHERE c.series_id = s.id AND c.status = 'completed') as downloaded_chapters
+            FROM folder_items fi
+            JOIN series s ON fi.series_id = s.id
+            WHERE fi.folder_id = ?
+            ORDER BY fi.sort_order ASC, s.id ASC
+        """, (folder_id,)).fetchall()
+
+        series_list = [dict(it) for it in items]
+        desc = ""
+        if "description" in f.keys() and f["description"]:
+            desc = f["description"]
+
+        return {
+            "id": f["id"],
+            "name": f["name"],
+            "description": desc,
+            "sort_order": f["sort_order"],
+            "color": f["color"],
+            "created_at": f["created_at"],
+            "updated_at": f["updated_at"],
+            "item_count": len(series_list),
+            "series": series_list
+        }
+    finally:
+        conn.close()
+
+
+def get_folder_by_name(name: str, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
+    """Retrieve folder metadata by case-insensitive name."""
+    if not name or not str(name).strip():
+        return None
+    conn = get_connection(db_path)
+    try:
+        f = conn.execute("SELECT * FROM library_folders WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))", (name.strip(),)).fetchone()
+        if not f:
+            return None
+        return dict(f)
+    finally:
+        conn.close()
+
 
 
 

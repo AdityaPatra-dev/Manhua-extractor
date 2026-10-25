@@ -67,13 +67,18 @@ class TestHitomiExtractor(unittest.TestCase):
         self.assertEqual(info["title"], "Sample Hitomi Gallery")
         self.assertEqual(info["slug"], "hitomi-4280659")
         self.assertEqual(info["author"], "FamousArtist")
-        self.assertIn("Type: Doujinshi", info["description"])
-        self.assertIn("Tags: comedy, school", info["description"])
+        self.assertEqual(info["status"], "Completed")
+        self.assertIn("Type: Doujinshi", info["synopsis"])
+        self.assertIn("Tags: comedy, school", info["synopsis"])
+        self.assertIn("Hitomi ID: 4280659", info["synopsis"])
+
+        # Chapter number should always be 1.0 for Hitomi works
+        self.assertEqual(self.extractor.extract_chapter_number(url), 1.0)
 
         chapters = self.extractor.extract_chapter_list(soup, url, "")
         self.assertEqual(len(chapters), 1)
         self.assertEqual(chapters[0]["chapter_num"], 1.0)
-        self.assertEqual(chapters[0]["title"], "Complete (2 Pages)")
+        self.assertEqual(chapters[0]["title"], "Complete Work (2 Pages)")
         self.assertEqual(chapters[0]["url"], "https://hitomi.la/reader/4280659.html")
 
         pages = self.extractor.extract_pages(soup, url, "")
@@ -88,6 +93,40 @@ class TestHitomiExtractor(unittest.TestCase):
 
         tier1_keys = [s["key"] for s in TIER_1_SOURCES]
         self.assertIn("hitomi", tier1_keys)
+
+    def test_hitomi_database_card_separation(self):
+        import tempfile, os
+        from database.db import init_db, get_or_create_series, get_series_by_id
+
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+            db_p = f.name
+        try:
+            init_db(db_p)
+            s1_id = get_or_create_series(
+                slug="hitomi-1001",
+                title="Hitomi Doujinshi 1",
+                engine="hitomi",
+                synopsis="Type: Doujinshi\nArtist(s): Artist One",
+                db_path=db_p
+            )
+            s2_id = get_or_create_series(
+                slug="hitomi-1002",
+                title="Hitomi Doujinshi 2",
+                engine="hitomi",
+                synopsis="Type: Manga\nArtist(s): Artist Two",
+                db_path=db_p
+            )
+            # Must create distinct cards
+            self.assertNotEqual(s1_id, s2_id)
+            s1 = get_series_by_id(s1_id, db_path=db_p)
+            s2 = get_series_by_id(s2_id, db_path=db_p)
+            self.assertEqual(s1["slug"], "hitomi-1001")
+            self.assertEqual(s2["slug"], "hitomi-1002")
+            self.assertIn("Artist One", s1["synopsis"])
+            self.assertIn("Artist Two", s2["synopsis"])
+        finally:
+            if os.path.exists(db_p):
+                os.remove(db_p)
 
 
 if __name__ == "__main__":

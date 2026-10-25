@@ -176,6 +176,118 @@ class TestBackupAndSyncEngine(unittest.TestCase):
             self.assertTrue(os.path.exists(c["file_path"]))
             self.assertTrue(c["file_path"].startswith(phone_b_downloads))
 
+    def test_export_and_restore_with_folders_and_notes(self):
+        from database.db import create_folder, get_all_folders_with_items, get_folder_by_name
+        # 1. Setup Source Library with Folders and Notes
+        s1 = get_or_create_series("nano-machine", "Nano Machine", synopsis="A martial artist gets injected with nanobots.", db_path=self.db_path)
+        s2 = get_or_create_series("legend-of-the-northern-blade", "Northern Blade", author="Hae-Min", db_path=self.db_path)
+        f1 = self._create_mock_chapter_file("Nano_Machine", "ch1.cbz", 2048)
+        add_or_update_chapter(s1, 1.0, title="Chapter 1", file_path=f1, file_size=2048, status="completed", db_path=self.db_path)
+
+        folder_id = create_folder(
+            name="Murim Top Tier",
+            description="Best martial arts cultivation manhwa",
+            color="#ec4899",
+            series_ids=[s1, s2],
+            db_path=self.db_path
+        )
+
+        # 2. Export Backup
+        est = estimate_backup_batches(db_path=self.db_path)
+        self.assertGreaterEqual(est["batch_count"], 1)
+
+        out_zip = os.path.join(self.temp_dir, "v11_folder_backup.zip")
+        create_backup_batch_file(
+            batch_index=1,
+            total_batches=1,
+            batch_items=est["batches"][0]["items"],
+            output_zip_path=out_zip,
+            db_path=self.db_path
+        )
+
+        # 3. Inspect Archive Manifest
+        inspection = inspect_backup_archive(out_zip)
+        self.assertTrue(inspection["success"])
+        manifest = inspection["manifest"]
+        self.assertEqual(manifest.get("format_version"), "1.1")
+        self.assertIn("folders", manifest)
+        self.assertEqual(len(manifest["folders"]), 1)
+        self.assertEqual(manifest["folders"][0]["name"], "Murim Top Tier")
+        self.assertEqual(manifest["folders"][0]["description"], "Best martial arts cultivation manhwa")
+        self.assertEqual(manifest["folders"][0]["color"], "#ec4899")
+        self.assertIn("nano-machine", manifest["folders"][0]["series_slugs"])
+
+        # 4. Restore into fresh Phone B target
+        phone_b_dir = os.path.join(self.temp_dir, "phone_b_folder_storage")
+        phone_b_db = os.path.join(phone_b_dir, "library.db")
+        phone_b_downloads = os.path.join(phone_b_dir, "downloads")
+        os.makedirs(phone_b_downloads, exist_ok=True)
+        init_db(phone_b_db)
+
+        res = restore_backup_archive(out_zip, downloads_dir=phone_b_downloads, db_path=phone_b_db)
+        self.assertTrue(res["success"])
+        self.assertEqual(res.get("folders_synced"), 1)
+
+        # Verify Folder created in Phone B
+        b_folders = get_all_folders_with_items(db_path=phone_b_db)
+        self.assertEqual(len(b_folders), 1)
+        self.assertEqual(b_folders[0]["name"], "Murim Top Tier")
+        self.assertEqual(b_folders[0]["description"], "Best martial arts cultivation manhwa")
+        self.assertEqual(b_folders[0]["color"], "#ec4899")
+        self.assertIn(b_folders[0]["series_ids"][0], [1, 2])
+
+        # 5. Idempotent Second Restore: Ensure no duplicates created!
+        res_repeat = restore_backup_archive(out_zip, downloads_dir=phone_b_downloads, db_path=phone_b_db)
+        self.assertTrue(res_repeat["success"])
+        b_folders_after = get_all_folders_with_items(db_path=phone_b_db)
+        self.assertEqual(len(b_folders_after), 1) # Still exactly 1 folder!
+
+    def test_restore_legacy_v10_archive_compatibility(self):
+        """Ensure an archive without 'folders' (created in older app versions) imports cleanly without crashing."""
+        import io
+        zip_buf = io.BytesIO()
+        legacy_manifest = {
+            "format_version": "1.0",
+            "app_version": "1.0.0",
+            "batch": {"is_batched": False, "batch_index": 1, "total_batches": 1, "batch_label": "Legacy"},
+            "stats": {"series_count": 1, "chapter_count": 1, "uncompressed_bytes": 50},
+            "series": [
+                {
+                    "title": "Legacy Classic Manga",
+                    "slug": "legacy-classic-manga",
+                    "author": "Old Author",
+                    "status": "Completed",
+                    "chapters": [
+                        {
+                            "chapter_num": 1.0,
+                            "title": "Chapter 1",
+                            "relative_path": "files/Legacy_Classic_Manga/ch1.cbz",
+                            "file_format": "cbz",
+                            "file_size": 50,
+                            "panel_count": 10,
+                            "read_status": 0,
+                            "last_read_page": 0
+                        }
+                    ]
+                }
+            ]
+        }
+        with zipfile.ZipFile(zip_buf, 'w') as zf:
+            zf.writestr("manifest.json", json.dumps(legacy_manifest))
+            zf.writestr("files/Legacy_Classic_Manga/ch1.cbz", b"A" * 50)
+
+        legacy_zip = os.path.join(self.temp_dir, "legacy_v10.zip")
+        with open(legacy_zip, "wb") as f:
+            f.write(zip_buf.getvalue())
+
+        dest_dir = os.path.join(self.temp_dir, "legacy_restore_downloads")
+        os.makedirs(dest_dir, exist_ok=True)
+        res = restore_backup_archive(legacy_zip, downloads_dir=dest_dir, db_path=self.db_path)
+        self.assertTrue(res["success"])
+        self.assertEqual(res["chapters_imported"], 1)
+        self.assertEqual(res["series_synced"], 1)
+        self.assertEqual(res.get("folders_synced"), 0)
+
 
 class TestBackupApiEndpoints(unittest.TestCase):
     @classmethod
