@@ -267,12 +267,12 @@ class BaseExtractor(ABC):
             classes = " ".join(sel.get("class", []))
             sel_id = sel.get("id", "")
             sel_name = sel.get("name", "")
-            if re.search(r'report|issue|error|feedback|modal', f"{classes} {sel_id} {sel_name}", re.I):
+            if re.search(r'order|sort|filter|direction|report|issue|error|feedback|modal', f"{classes} {sel_id} {sel_name}", re.I):
                 continue
             if re.search(r'chapter|navi|select|reader', f"{classes} {sel_id} {sel_name}", re.I):
                 for opt in sel.find_all("option"):
                     val = opt.get("value") or opt.get("data-redirect") or opt.get("data-url")
-                    if not val or val in ("#", "0", ""):
+                    if not val or val.lower() in ("#", "0", "", "desc", "asc", "all", "order", "sort"):
                         continue
                     title = opt.get_text(strip=True)
                     if any(bad in title.lower() for bad in ("load images", "image position", "duplicate chapter", "not translated", "wrong chapter", "other error")):

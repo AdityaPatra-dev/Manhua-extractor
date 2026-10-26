@@ -330,16 +330,18 @@ class SearchDispatcher:
                 return []
             latency = int((time.time() - t0) * 1000)
             soup = BeautifulSoup(html, "html.parser")
-            items = soup.select(".c-tabs-item__content, .row.c-tabs-item__content")
+            items = soup.select(".c-tabs-item__content, .row.c-tabs-item__content, .manga-card, li.manga-card, .search-wrap .tab-content-wrap .c-tabs-item__content")
             results = []
             for it in items[:6]:
-                title_el = it.select_one(".post-title a, h3 a, h4 a")
+                title_el = it.select_one(".post-title a, h3 a, h4 a, .card-title-row h3 a, a.cover-link")
                 if not title_el:
                     continue
-                title = title_el.get_text(strip=True)
+                title = title_el.get_text(strip=True) or title_el.get("aria-label", "")
                 series_url = title_el.get("href") or ""
+                if series_url and not series_url.startswith("http"):
+                    series_url = urllib.parse.urljoin(f"https://{domain}", series_url)
                 
-                img_el = it.select_one(".tab-thumb img, img")
+                img_el = it.select_one(".tab-thumb img, .manga-cover img, img")
                 cover_url = ""
                 if img_el:
                     cover_url = img_el.get("data-src") or img_el.get("src") or ""
