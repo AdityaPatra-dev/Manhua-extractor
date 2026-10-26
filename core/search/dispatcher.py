@@ -73,11 +73,18 @@ TIER_1_SOURCES = [
     {"key": "toontop", "name": "ToonTop", "type": "toontop", "domain": "toontop.io"},
     {"key": "comicland", "name": "ComicLand", "type": "comicland", "domain": "comicland.org"},
     {"key": "manhwa18", "name": "Manhwa18", "type": "manhwa18", "domain": "manhwa18.net"},
+    {"key": "hentaifox", "name": "HentaiFox", "type": "hentaifox", "domain": "hentaifox.com"},
+    {"key": "3hentai", "name": "3Hentai", "type": "3hentai", "domain": "3hentai.net"},
+    {"key": "nhentaito", "name": "nhentai.to", "type": "nhentaito", "domain": "nhentai.to"},
+    {"key": "hentainame", "name": "hentai.name", "type": "hentainame", "domain": "hentai.name"},
+    {"key": "nhentaicom", "name": "nHentai.com", "type": "nhentaicom", "domain": "nhentai.com"},
+    {"key": "hentairead", "name": "HentaiRead", "type": "madara", "domain": "hentairead.com"},
 ]
 
 TIER_2_MADARA = [
     {"key": "zinmanga", "name": "ZinManga", "type": "madara", "domain": "www.zinmanga.net"},
     {"key": "hiperdex", "name": "Hiperdex", "type": "hiperdex", "domain": "hiperdex.tv"},
+    {"key": "hentairead", "name": "HentaiRead", "type": "madara", "domain": "hentairead.com"},
     {"key": "toongod", "name": "ToonGod", "type": "toongod", "domain": "toongod.cc"},
     {"key": "hentai20", "name": "Hentai20", "type": "mangastream", "domain": "hentai20.io"},
     {"key": "manhwaclub", "name": "ManhwaClub", "type": "madara", "domain": "manhwaclub.net"},
@@ -1666,12 +1673,216 @@ class SearchDispatcher:
         except Exception:
             return []
 
+    # --- Engine Adapter: HentaiFox ---
+    async def search_hentaifox(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://hentaifox.com/search/?q={urllib.parse.quote(query)}"
+        headers = {**DEFAULT_HEADERS, "Referer": "https://hentaifox.com/"}
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        try:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for item in soup.select(".thumb"):
+                    a = item.select_one(".g_title a, .caption a")
+                    img = item.select_one("img")
+                    if not a:
+                        continue
+                    title = a.get_text(strip=True)
+                    href = a.get("href", "")
+                    if not href.startswith("http"):
+                        href = urllib.parse.urljoin("https://hentaifox.com", href)
+                    cover = img.get("data-src") or img.get("src") if img else None
+                    if title:
+                        results.append({
+                            "title": title,
+                            "source_key": "hentaifox",
+                            "source_name": "HentaiFox",
+                            "source_logo": "/docs/logos/hentaifox.png",
+                            "series_url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Complete Work",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "HD",
+                            "latency_ms": int((time.time() - t0) * 1000)
+                        })
+                return results[:25]
+        except Exception:
+            return []
+
+    # --- Engine Adapter: 3Hentai ---
+    async def search_3hentai(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://3hentai.net/search?q={urllib.parse.quote(query)}"
+        headers = {**DEFAULT_HEADERS, "Referer": "https://3hentai.net/"}
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        try:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for a in soup.select('a[href*="/d/"]'):
+                    img = a.select_one("img")
+                    if not img:
+                        continue
+                    title = a.get_text(strip=True) or img.get("alt", "")
+                    href = a.get("href", "")
+                    if not href.startswith("http"):
+                        href = urllib.parse.urljoin("https://3hentai.net", href)
+                    cover = img.get("data-src") or img.get("src")
+                    if title and not any(r["series_url"] == href for r in results):
+                        results.append({
+                            "title": title,
+                            "source_key": "3hentai",
+                            "source_name": "3Hentai",
+                            "source_logo": "/docs/logos/3hentai.png",
+                            "series_url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Complete Work",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "HD",
+                            "latency_ms": int((time.time() - t0) * 1000)
+                        })
+                return results[:25]
+        except Exception:
+            return []
+
+    # --- Engine Adapter: nhentai.to ---
+    async def search_nhentaito(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://nhentai.to/search?q={urllib.parse.quote(query)}"
+        headers = {**DEFAULT_HEADERS, "Referer": "https://nhentai.to/"}
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        try:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for item in soup.select(".gallery"):
+                    a = item.select_one("a.cover, a[href*='/g/']")
+                    cap = item.select_one(".caption")
+                    img = item.select_one("img")
+                    if not a:
+                        continue
+                    title = cap.get_text(strip=True) if cap else a.get_text(strip=True)
+                    href = a.get("href", "")
+                    if not href.startswith("http"):
+                        href = urllib.parse.urljoin("https://nhentai.to", href)
+                    cover = img.get("data-src") or img.get("src") if img else None
+                    if title and not any(r["series_url"] == href for r in results):
+                        results.append({
+                            "title": title,
+                            "source_key": "nhentaito",
+                            "source_name": "nhentai.to",
+                            "source_logo": "/docs/logos/nhentai.png",
+                            "series_url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Complete Work",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "HD",
+                            "latency_ms": int((time.time() - t0) * 1000)
+                        })
+                return results[:25]
+        except Exception:
+            return []
+
+    # --- Engine Adapter: hentai.name ---
+    async def search_hentainame(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://www.hentai.name/search/{urllib.parse.quote(query)}/"
+        headers = {"User-Agent": "curl/7.88.1", "Referer": "https://www.hentai.name/"}
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        try:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for a in soup.select('a[href*="/g/"]'):
+                    title = a.get_text(strip=True)
+                    img = a.select_one("img")
+                    cover = img.get("src") or img.get("data-src") if img else None
+                    href = a.get("href", "")
+                    if not href.startswith("http"):
+                        href = urllib.parse.urljoin("https://www.hentai.name", href)
+                    if title and not any(r["series_url"] == href for r in results):
+                        results.append({
+                            "title": title,
+                            "source_key": "hentainame",
+                            "source_name": "hentai.name",
+                            "source_logo": "/docs/logos/hentainame.png",
+                            "series_url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Complete Work",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "HD",
+                            "latency_ms": int((time.time() - t0) * 1000)
+                        })
+                return results[:25]
+        except Exception:
+            return []
+
+    # --- Engine Adapter: nHentai.com ---
+    async def search_nhentaicom(self, query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
+        t0 = time.time()
+        url = f"https://nhentai.com/en/comics?q={urllib.parse.quote(query)}"
+        headers = {**DEFAULT_HEADERS, "Referer": "https://nhentai.com/"}
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        try:
+            async with session.get(url, headers=headers, timeout=timeout) as resp:
+                if resp.status != 200:
+                    return []
+                html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                results = []
+                for a in soup.select('a[href*="/comic/"]'):
+                    img = a.select_one("img")
+                    title = a.get_text(strip=True) or (img.get("alt", "") if img else "")
+                    cover = img.get("src") or img.get("data-src") if img else None
+                    href = a.get("href", "")
+                    if not href.startswith("http"):
+                        href = urllib.parse.urljoin("https://nhentai.com", href)
+                    if title and not any(r["series_url"] == href for r in results):
+                        results.append({
+                            "title": title,
+                            "source_key": "nhentaicom",
+                            "source_name": "nHentai.com",
+                            "source_logo": "/docs/logos/nhentai.png",
+                            "series_url": href,
+                            "cover_url": cover,
+                            "latest_chapter": "Complete Work",
+                            "latest_chapter_num": 1.0,
+                            "quality_tag": "HD",
+                            "latency_ms": int((time.time() - t0) * 1000)
+                        })
+                return results[:25]
+        except Exception:
+            return []
+
     # --- Dispatcher Worker for Single Source ---
     async def _query_single_source(self, source: Dict[str, Any], query: str, session: aiohttp.ClientSession) -> List[Dict[str, Any]]:
         async with self.semaphore:
             stype = source.get("type")
             if stype in ("hitomi", "api_hitomi"):
                 return await self.search_hitomi(query, session)
+            elif stype == "hentaifox":
+                return await self.search_hentaifox(query, session)
+            elif stype == "3hentai":
+                return await self.search_3hentai(query, session)
+            elif stype == "nhentaito":
+                return await self.search_nhentaito(query, session)
+            elif stype == "hentainame":
+                return await self.search_hentainame(query, session)
+            elif stype == "nhentaicom":
+                return await self.search_nhentaicom(query, session)
             elif stype == "asura":
                 return await self.search_asura(query, session)
             elif stype == "roliascan":

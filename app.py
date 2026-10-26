@@ -714,7 +714,13 @@ async def execute_download_job(job: Dict[str, Any]):
                 break
 
             raw_title = req.series_title or data.get("series_title") or "Unknown Series"
-            is_hitomi = (data.get("engine_id") == "hitomi") or ("hitomi.la" in current_url) or (str(data.get("series_slug") or "").lower().startswith("hitomi"))
+            gallery_engines = ("hitomi", "hentaifox", "3hentai", "nhentaito", "hentainame", "nhentaicom")
+            gallery_domains = ("hitomi.la", "hentaifox.com", "3hentai.net", "nhentai.to", "hentai.name", "nhentai.com")
+            is_hitomi = (
+                (data.get("engine_id") in gallery_engines) or
+                any(d in current_url.lower() for d in gallery_domains) or
+                any(str(data.get("series_slug") or "").lower().startswith(p) for p in gallery_engines)
+            )
 
             if not is_hitomi:
                 clean_series_title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', raw_title, flags=re.I).strip(' -:|—')

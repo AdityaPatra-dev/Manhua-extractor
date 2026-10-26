@@ -66,19 +66,22 @@ async def find_new_chapters_for_series(series: Dict[str, Any]) -> Tuple[Optional
     series_id = series["id"]
     existing_chapters = get_chapters_for_series(series_id)
 
-    completed_nums = set()
+    completed_nums = []
     completed_urls = set()
     for c in existing_chapters:
-        if c.get("status") == "completed":
+        is_completed = (c.get("status") == "completed") or bool(c.get("file_path") and os.path.exists(c.get("file_path")))
+        if is_completed:
             c_num = c.get("chapter_num")
             if c_num is not None:
                 try:
-                    completed_nums.add(float(c_num))
+                    completed_nums.append(float(c_num))
                 except (ValueError, TypeError):
                     pass
             c_u = c.get("source_url")
             if c_u:
                 completed_urls.add(c_u.strip().rstrip("/"))
+
+    max_local_num = max(completed_nums) if completed_nums else None
 
     # Inspect series catalog page
     catalog = await asyncio.to_thread(dispatcher.inspect_series, target_url)
@@ -89,15 +92,41 @@ async def find_new_chapters_for_series(series: Dict[str, Any]) -> Tuple[Optional
     for ch in catalog.get("chapters", []):
         c_num = ch.get("chapter_num")
         c_url = (ch.get("url") or "").strip().rstrip("/")
+        c_num_float = None
         if c_num is not None:
             try:
-                if float(c_num) in completed_nums:
-                    continue
+                c_num_float = float(c_num)
             except (ValueError, TypeError):
                 pass
-        if c_url and c_url in completed_urls:
-            continue
-        new_chapters.append(ch)
+
+        if max_local_num is not None:
+            # ONLY include chapters strictly greater than the highest chapter number on the device
+            if c_num_float is not None:
+                if c_num_float <= max_local_num:
+                    continue
+            else:
+                # Omit unnumbered / non-numeric items during update check
+                continue
+
+            if c_url and c_url in completed_urls:
+                continue
+            new_chapters.append(ch)
+        else:
+            # Device has 0 local chapters for this series:
+            if c_url and c_url in completed_urls:
+                continue
+            new_chapters.append(ch)
+
+    if max_local_num is None and new_chapters:
+        # If user has no downloaded chapters for this series, queue only the single latest chapter
+        def _ch_num_val(c):
+            n = c.get("chapter_num")
+            try:
+                return float(n) if n is not None else 0.0
+            except (ValueError, TypeError):
+                return 0.0
+        latest_single = max(new_chapters, key=_ch_num_val)
+        new_chapters = [latest_single]
 
     # Sort new chapters ascending so earlier chapters download first
     def _ch_key(c):

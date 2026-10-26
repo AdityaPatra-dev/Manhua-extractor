@@ -174,6 +174,96 @@ class TestUpdateAndSharedQueue(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertIn("queue", data["message"].lower())
 
+    @patch("app.download_queue_manager.ensure_worker")
+    @patch("core.updater.dispatcher.inspect_series")
+    def test_update_only_downloads_newer_than_highest_chapter_user_has_chapter_101(self, mock_inspect, mock_worker):
+        # Scenario: User only has chapter 101 on device. Catalog has 1..102.
+        # It must ONLY queue 102, NOT chapters 1..100.
+        catalog_chapters = [
+            {"title": f"Chapter {i}", "chapter_num": float(i), "url": f"https://example.com/manga/ch-{i}"}
+            for i in range(1, 103)
+        ]
+        mock_inspect.return_value = {
+            "success": True,
+            "series_title": "Martial Peak",
+            "chapters": catalog_chapters
+        }
+
+        with patch("database.db.DEFAULT_DB_PATH", self.db_path), \
+             patch("core.updater.get_series_by_id", lambda sid: {"id": sid, "title": "Martial Peak", "source_url": "https://example.com/manga/mp"}), \
+             patch("core.updater.get_chapters_for_series", lambda sid: [
+                 {"chapter_num": 101.0, "status": "completed", "source_url": "https://example.com/manga/ch-101"}
+             ]):
+            resp = self.client.post("/api/library/101/check-update")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+
+            self.assertTrue(data["success"])
+            self.assertTrue(data["queued"])
+            self.assertEqual(data["series_title"], "Martial Peak")
+            # Must ONLY be chapter 102
+            self.assertEqual(data["new_chapters"], [102.0])
+
+    @patch("app.download_queue_manager.ensure_worker")
+    @patch("core.updater.dispatcher.inspect_series")
+    def test_update_does_not_backfill_missing_lower_chapters_user_has_50(self, mock_inspect, mock_worker):
+        # Scenario: User has chapters 1, 2, 3 and 50 (missing 4..49). Catalog has 1..55.
+        # It must only queue 51..55 and NOT backfill 4..49.
+        catalog_chapters = [
+            {"title": f"Chapter {i}", "chapter_num": float(i), "url": f"https://example.com/manga/ch-{i}"}
+            for i in range(1, 56)
+        ]
+        mock_inspect.return_value = {
+            "success": True,
+            "series_title": "Tower of God",
+            "chapters": catalog_chapters
+        }
+
+        with patch("database.db.DEFAULT_DB_PATH", self.db_path), \
+             patch("core.updater.get_series_by_id", lambda sid: {"id": sid, "title": "Tower of God", "source_url": "https://example.com/manga/tog"}), \
+             patch("core.updater.get_chapters_for_series", lambda sid: [
+                 {"chapter_num": 1.0, "status": "completed"},
+                 {"chapter_num": 2.0, "status": "completed"},
+                 {"chapter_num": 3.0, "status": "completed"},
+                 {"chapter_num": 50.0, "status": "completed"}
+             ]):
+            resp = self.client.post("/api/library/50/check-update")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+
+            self.assertTrue(data["success"])
+            self.assertTrue(data["queued"])
+            self.assertEqual(data["series_title"], "Tower of God")
+            # Must ONLY be chapters 51, 52, 53, 54, 55
+            self.assertEqual(data["new_chapters"], [51.0, 52.0, 53.0, 54.0, 55.0])
+
+    @patch("app.download_queue_manager.ensure_worker")
+    @patch("core.updater.dispatcher.inspect_series")
+    def test_update_zero_local_chapters_queues_single_latest_chapter(self, mock_inspect, mock_worker):
+        # Scenario: User has 0 downloaded chapters locally. Catalog has chapters 1..20.
+        # Update should queue only the single latest released chapter (Chapter 20), not spam 1..20.
+        catalog_chapters = [
+            {"title": f"Chapter {i}", "chapter_num": float(i), "url": f"https://example.com/manga/ch-{i}"}
+            for i in range(1, 21)
+        ]
+        mock_inspect.return_value = {
+            "success": True,
+            "series_title": "New Series",
+            "chapters": catalog_chapters
+        }
+
+        with patch("database.db.DEFAULT_DB_PATH", self.db_path), \
+             patch("core.updater.get_series_by_id", lambda sid: {"id": sid, "title": "New Series", "source_url": "https://example.com/manga/ns"}), \
+             patch("core.updater.get_chapters_for_series", lambda sid: []):
+            resp = self.client.post("/api/library/99/check-update")
+            self.assertEqual(resp.status_code, 200)
+            data = resp.json()
+
+            self.assertTrue(data["success"])
+            self.assertTrue(data["queued"])
+            self.assertEqual(data["series_title"], "New Series")
+            self.assertEqual(data["new_chapters"], [20.0])
+
 
 if __name__ == "__main__":
     unittest.main()

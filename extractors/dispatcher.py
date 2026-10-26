@@ -14,6 +14,11 @@ from .comicland import ComicLandExtractor
 from .hiperdex import HiperdexExtractor
 from .mangadex import MangaDexExtractor
 from .hitomi import HitomiExtractor
+from .hentaifox import HentaiFoxExtractor
+from .threehentai import ThreeHentaiExtractor
+from .nhentaito import NHentaiToExtractor
+from .hentainame import HentaiNameExtractor
+from .nhentaicom import NHentaiComExtractor
 from .manhwa18 import Manhwa18Extractor
 from .modern_ssr import ModernSSRExtractor
 from .madara import MadaraExtractor
@@ -47,6 +52,11 @@ class ExtractorDispatcher:
             ComicKExtractor(),
             MangaDexExtractor(),
             HitomiExtractor(),
+            HentaiFoxExtractor(),
+            ThreeHentaiExtractor(),
+            NHentaiToExtractor(),
+            HentaiNameExtractor(),
+            NHentaiComExtractor(),
             ModernSSRExtractor(),
             MadaraExtractor(),
             MangaStreamExtractor(),
@@ -79,6 +89,14 @@ class ExtractorDispatcher:
 
     def fetch_page(self, url: str) -> Tuple[int, str, BeautifulSoup]:
         """Fetch URL using curl_cffi Chrome impersonation, falling back to Cloudscraper, then Browser Sidecar."""
+        if "hentai.name" in url.lower():
+            try:
+                r = requests.get(url, headers={"User-Agent": "curl/7.88.1", "Referer": "https://www.hentai.name/"}, timeout=15)
+                if r.status_code == 200 and not self._is_challenge_page(r.text):
+                    return 200, r.text, BeautifulSoup(r.text, "html.parser")
+            except Exception:
+                pass
+
         headers = DEFAULT_HEADERS.copy()
         headers["Referer"] = url
         if self.cffi_session and "User-Agent" in self.cffi_session.headers:
@@ -160,6 +178,13 @@ class ExtractorDispatcher:
         status_code = resp.status_code if resp is not None else 500
         return status_code, html, soup
 
+    def match_engine(self, soup: BeautifulSoup, url: str, html: str) -> Optional[BaseExtractor]:
+        """Find best matching extractor engine for a given page."""
+        for engine in self.engines:
+            if engine.can_handle(soup, url, html):
+                return engine
+        return None
+
     def analyze_url(self, url: str) -> Dict[str, Any]:
         """Analyze a page, match the appropriate engine, and extract panels + navigation."""
         status_code, html, soup = self.fetch_page(url)
@@ -176,11 +201,7 @@ class ExtractorDispatcher:
             }
 
         # Find best matching engine
-        matched_engine: Optional[BaseExtractor] = None
-        for engine in self.engines:
-            if engine.can_handle(soup, url, html):
-                matched_engine = engine
-                break
+        matched_engine = self.match_engine(soup, url, html)
 
         if not matched_engine:
             matched_engine = self.engines[-1]  # Heuristic fallback
@@ -239,13 +260,7 @@ class ExtractorDispatcher:
             }
 
         # Find best matching engine
-        matched_engine: Optional[BaseExtractor] = None
-        for engine in self.engines:
-            if engine.can_handle(soup, url, html):
-                matched_engine = engine
-                break
-        if not matched_engine:
-            matched_engine = self.engines[-1]
+        matched_engine = self.match_engine(soup, url, html) or self.engines[-1]
 
         series_info = matched_engine.extract_series_info(soup, url, html)
         chapters = matched_engine.extract_chapter_list(soup, url, html)
@@ -292,7 +307,7 @@ class ExtractorDispatcher:
 
         # If url is a chapter reader page, attempt to fetch the parent series page to get the full catalog
         is_chapter_page = bool(re.search(r'[-_](?:chapter|ch|c)[-_/\d]|/(?:chapters?|ch|c)[-_/\d]', url, re.I))
-        if matched_engine.engine_id == "hitomi":
+        if matched_engine.engine_id in ("hitomi", "hentaifox", "3hentai", "nhentaito", "hentainame", "nhentaicom"):
             is_chapter_page = False
         series_url = url
         if is_chapter_page:
@@ -363,7 +378,9 @@ class ExtractorDispatcher:
         ]
 
         # Fallback: guarantee at least the current chapter is returned so the user can download or browse it
-        if not chapters:
+        gallery_engine_ids = {"hitomi", "hentaifox", "3hentai", "nhentaito", "hentainame", "nhentaicom"}
+        is_gallery_engine = getattr(matched_engine, "engine_id", "") in gallery_engine_ids
+        if not chapters and not is_gallery_engine:
             current_num = matched_engine.extract_chapter_number(url, series_info.get("title"))
             chapters.append({
                 "chapter_num": current_num,

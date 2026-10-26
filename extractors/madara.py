@@ -10,6 +10,9 @@ class MadaraExtractor(BaseExtractor):
 
     def can_handle(self, soup: BeautifulSoup, url: str, html: str) -> bool:
         """Check for WordPress Madara theme signatures."""
+        lower_url = (url or "").lower()
+        if "hentairead.com" in lower_url:
+            return True
         if soup.find(class_="wp-manga-chapter-img"):
             return True
         if soup.find(class_="reading-content"):

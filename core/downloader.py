@@ -81,6 +81,25 @@ async def fetch_single_panel(
         if "gold-usergeneratedcontent.net" in img_domain or "gold-usergeneratedcontent.net" in url:
             headers = dict(headers)
             headers["Referer"] = "https://hitomi.la/"
+        elif "hentaifox.com" in img_domain:
+            headers = dict(headers)
+            headers["Referer"] = "https://hentaifox.com/"
+        elif "3hentai.net" in img_domain:
+            headers = dict(headers)
+            headers["Referer"] = "https://3hentai.net/"
+        elif "supercdn.site" in img_domain or "nhentai.to" in img_domain:
+            headers = dict(headers)
+            headers["Referer"] = "https://nhentai.to/"
+        elif "hentai.name" in img_domain:
+            headers = dict(headers)
+            headers["Referer"] = "https://www.hentai.name/"
+            headers["User-Agent"] = "curl/7.88.1"
+        elif "nhentai.com" in img_domain:
+            headers = dict(headers)
+            headers["Referer"] = "https://nhentai.com/"
+        elif "hentairead.com" in img_domain:
+            headers = dict(headers)
+            headers["Referer"] = "https://hentairead.com/"
     except Exception:
         pass
 

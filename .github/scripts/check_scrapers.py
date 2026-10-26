@@ -94,6 +94,13 @@ KNOWN_DOMAINS = {
     "toontop": "toontop.io",
     "mangadass": "mangadass.com",
     "manga18club": "manga18.club",
+    "hitomi": "hitomi.la",
+    "hentaifox": "hentaifox.com",
+    "3hentai": "3hentai.net",
+    "nhentaito": "nhentai.to",
+    "hentainame": "www.hentai.name",
+    "nhentaicom": "nhentai.com",
+    "hentairead": "hentairead.com",
 }
 
 
@@ -251,6 +258,8 @@ async def test_single_source(
     series_data = None
     series_url_to_test = None
     first_attempt_data = None
+    is_gallery_type = stype in ("hitomi", "hentaifox", "3hentai", "nhentaito", "hentainame", "nhentaicom") or (key in ("hitomi", "hentaifox", "3hentai", "nhentaito", "hentainame", "nhentaicom"))
+
     if series_candidates:
         for cand_url in series_candidates[:5]:
             try:
@@ -263,7 +272,7 @@ async def test_single_source(
                 if s_data and s_data.get("chapters"):
                     real_ch = [
                         c for c in s_data["chapters"]
-                        if c.get("url") and c.get("url").rstrip('/') != cand_url.rstrip('/')
+                        if c.get("url") and (is_gallery_type or c.get("url").rstrip('/') != cand_url.rstrip('/'))
                     ]
                     if real_ch:
                         series_data = s_data
@@ -284,7 +293,7 @@ async def test_single_source(
 
             real_chapters = [
                 c for c in chapters
-                if c.get("url") and c.get("url").rstrip('/') != (series_url_to_test or "").rstrip('/')
+                if c.get("url") and (is_gallery_type or c.get("url").rstrip('/') != (series_url_to_test or "").rstrip('/'))
             ]
             if real_chapters:
                 result["direct_parse_status"] = "PASS"
