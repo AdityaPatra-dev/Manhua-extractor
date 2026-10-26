@@ -713,10 +713,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Drag and drop state
   let dragActive = false;
+  let dragSourceType = null; // "series" | "folder"
   let dragSourceId = null;
   let dragSourceCard = null;
   let dragGhost = null;
-  let dragHoverTarget = null;
+  let dragHoverAction = null; // { type: "group" | "reorder", position?: "before"|"after", targetCard: HTMLElement, isFolder?: boolean }
   let dragTouchStart = null;
   let longPressTimer = null;
   let lastDragPointer = null;
@@ -725,7 +726,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let suppressClickUntil = 0;
   let pendingGroupCreation = { sourceId: null, targetId: null };
 
-  const LONG_PRESS_DURATION = 350; // 350ms deliberate hold to pick up card
+  const LONG_PRESS_DURATION = 320; // 320ms deliberate hold to pick up card/block
 
   function clearLongPress() {
     if (longPressTimer) {
@@ -788,16 +789,19 @@ document.addEventListener("DOMContentLoaded", () => {
     clearLongPress();
     stopAutoScroll();
     dragActive = false;
+    dragSourceType = null;
     dragSourceId = null;
     dragSourceCard = null;
-    dragHoverTarget = null;
+    dragHoverAction = null;
     dragTouchStart = null;
     dragGhost = null;
     lastDragPointer = null;
 
     document.querySelectorAll(".drag-ghost").forEach(el => el.remove());
     document.querySelectorAll(".is-dragging").forEach(el => el.classList.remove("is-dragging"));
-    document.querySelectorAll(".drag-hover").forEach(el => el.classList.remove("drag-hover"));
+    document.querySelectorAll(".drag-hover, .drag-group-target, .drag-insert-before, .drag-insert-after").forEach(el => {
+      el.classList.remove("drag-hover", "drag-group-target", "drag-insert-before", "drag-insert-after");
+    });
     document.querySelectorAll(".card-drag-handle.is-grabbing").forEach(el => el.classList.remove("is-grabbing"));
   }
 
@@ -902,15 +906,33 @@ document.addEventListener("DOMContentLoaded", () => {
     const q = (filterQuery || "").toLowerCase().trim();
 
     if (!q) {
-      // Normal display: Show folders + standalone series
-      const foldersHtml = (libraryFoldersCache || []).map(f => renderFolderCardHtml(f)).join("");
-      const standaloneSeries = (libraryDataCache || []).filter(s => !s.folder_id);
-      const seriesHtml = standaloneSeries.map(s => renderSeriesCardHtml(s, false, false)).join("");
+      // Normal display: Unified custom grid of folders and standalone series
+      const unifiedItems = [];
 
-      if (!foldersHtml && !seriesHtml) {
+      (libraryFoldersCache || []).forEach(f => {
+        unifiedItems.push({
+          type: "folder",
+          id: f.id,
+          sort_order: typeof f.sort_order === "number" ? f.sort_order : 0,
+          html: renderFolderCardHtml(f)
+        });
+      });
+
+      const standaloneSeries = (libraryDataCache || []).filter(s => !s.folder_id);
+      standaloneSeries.forEach(s => {
+        unifiedItems.push({
+          type: "series",
+          id: s.id,
+          sort_order: typeof s.sort_order === "number" ? s.sort_order : 0,
+          html: renderSeriesCardHtml(s, false, false)
+        });
+      });
+
+      if (unifiedItems.length === 0) {
         grid.innerHTML = '<p class="empty-state">No downloaded series in the database yet. Download a chapter to start building your library!</p>';
       } else {
-        grid.innerHTML = foldersHtml + seriesHtml;
+        unifiedItems.sort((a, b) => a.sort_order - b.sort_order);
+        grid.innerHTML = unifiedItems.map(it => it.html).join("");
       }
     } else {
       // Unified Search: Match folders AND series
@@ -922,13 +944,29 @@ document.addEventListener("DOMContentLoaded", () => {
         return titleMatch || synMatch || folderMatch;
       });
 
-      const foldersHtml = matchingFolders.map(f => renderFolderCardHtml(f)).join("");
-      const seriesHtml = matchingSeries.map(s => renderSeriesCardHtml(s, true, false)).join("");
+      const unifiedMatching = [];
+      matchingFolders.forEach(f => {
+        unifiedMatching.push({
+          type: "folder",
+          id: f.id,
+          sort_order: typeof f.sort_order === "number" ? f.sort_order : 0,
+          html: renderFolderCardHtml(f)
+        });
+      });
+      matchingSeries.forEach(s => {
+        unifiedMatching.push({
+          type: "series",
+          id: s.id,
+          sort_order: typeof s.sort_order === "number" ? s.sort_order : 0,
+          html: renderSeriesCardHtml(s, true, false)
+        });
+      });
 
-      if (!foldersHtml && !seriesHtml) {
+      if (unifiedMatching.length === 0) {
         grid.innerHTML = `<p class="empty-state">No series or groups match "${escapeHtml(filterQuery)}".</p>`;
       } else {
-        grid.innerHTML = foldersHtml + seriesHtml;
+        unifiedMatching.sort((a, b) => a.sort_order - b.sort_order);
+        grid.innerHTML = unifiedMatching.map(it => it.html).join("");
       }
     }
 
@@ -1000,6 +1038,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let activeOpenedFolderId = null;
   window.openFolderModal = async function(folderId) {
+    if (Date.now() < suppressClickUntil) {
+      return;
+    }
+    endAndCleanupDrag();
     const modal = document.getElementById("folder-modal");
     if (!modal) return;
     activeOpenedFolderId = folderId;
@@ -1037,14 +1079,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  function spawnDragGhost(card, seriesId, clientX, clientY) {
+  function spawnDragGhost(card, itemType, itemId, clientX, clientY) {
     endAndCleanupDrag();
 
     const pullIndicator = document.getElementById("library-pull-indicator");
     if (pullIndicator) pullIndicator.classList.add("hidden");
 
     dragActive = true;
-    dragSourceId = seriesId;
+    dragSourceType = itemType; // "series" or "folder"
+    dragSourceId = itemId;
     dragSourceCard = card;
     suppressClickUntil = Date.now() + 800;
 
@@ -1052,12 +1095,24 @@ document.addEventListener("DOMContentLoaded", () => {
 
     card.classList.add("is-dragging");
 
-    const coverImg = card.querySelector(".series-cover");
     dragGhost = document.createElement("div");
     dragGhost.className = "drag-ghost";
-    if (coverImg && coverImg.src) {
-      dragGhost.innerHTML = `<img src="${coverImg.src}" alt="dragging">`;
+
+    if (itemType === "folder") {
+      dragGhost.classList.add("folder-ghost");
+      const coverWrapper = card.querySelector(".folder-cover-wrapper");
+      if (coverWrapper) {
+        dragGhost.innerHTML = coverWrapper.outerHTML;
+      } else {
+        dragGhost.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:2.5rem;">📁</div>`;
+      }
+    } else {
+      const coverImg = card.querySelector(".series-cover");
+      if (coverImg && coverImg.src) {
+        dragGhost.innerHTML = `<img src="${coverImg.src}" alt="dragging">`;
+      }
     }
+
     dragGhost.style.left = clientX + "px";
     dragGhost.style.top = clientY + "px";
     document.body.appendChild(dragGhost);
@@ -1070,7 +1125,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (dragGhost && dragGhost.parentNode) {
         endAndCleanupDrag();
       }
-    }, 12000);
+    }, 15000);
   }
 
   function updateDragPosition(clientX, clientY) {
@@ -1086,15 +1141,55 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const target = under?.closest(".series-card, .folder-card");
 
-    document.querySelectorAll(".drag-hover").forEach(el => {
-      if (el !== target) el.classList.remove("drag-hover");
+    // Clean up previous highlights
+    document.querySelectorAll(".drag-hover, .drag-group-target, .drag-insert-before, .drag-insert-after").forEach(el => {
+      if (el !== target) {
+        el.classList.remove("drag-hover", "drag-group-target", "drag-insert-before", "drag-insert-after");
+      }
     });
 
-    if (target && target !== dragSourceCard) {
-      target.classList.add("drag-hover");
-      dragHoverTarget = target;
+    if (!target || target === dragSourceCard) {
+      dragHoverAction = null;
+      return;
+    }
+
+    const rect = target.getBoundingClientRect();
+    const relX = (clientX - rect.left) / rect.width;
+    const relY = (clientY - rect.top) / rect.height;
+
+    // Check grouping sweet-spot: only standalone series can be grouped into another series or folder
+    const canGroup = (dragSourceType === "series");
+    const isCenterHover = (relX >= 0.22 && relX <= 0.78 && relY >= 0.18 && relY <= 0.82);
+
+    if (canGroup && isCenterHover) {
+      target.classList.remove("drag-insert-before", "drag-insert-after");
+      target.classList.add("drag-group-target");
+      dragHoverAction = {
+        type: "group",
+        targetCard: target,
+        isFolder: target.classList.contains("folder-card")
+      };
     } else {
-      dragHoverTarget = null;
+      // Reordering mode (adjusting position of card or folder block)
+      target.classList.remove("drag-group-target");
+      const insertBefore = (clientX < rect.left + rect.width / 2);
+      if (insertBefore) {
+        target.classList.remove("drag-insert-after");
+        target.classList.add("drag-insert-before");
+        dragHoverAction = {
+          type: "reorder",
+          position: "before",
+          targetCard: target
+        };
+      } else {
+        target.classList.remove("drag-insert-before");
+        target.classList.add("drag-insert-after");
+        dragHoverAction = {
+          type: "reorder",
+          position: "after",
+          targetCard: target
+        };
+      }
     }
   }
 
@@ -1105,22 +1200,72 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     suppressClickUntil = Date.now() + 600;
-    const target = dragHoverTarget;
+    const action = dragHoverAction;
+    const sourceCard = dragSourceCard;
+    const sourceType = dragSourceType;
     const sourceId = dragSourceId;
 
     endAndCleanupDrag();
 
-    if (target && sourceId) {
-      if (target.classList.contains("folder-card")) {
-        const fId = parseInt(target.dataset.folderId, 10);
-        if (fId) {
-          await addSeriesToGroup(fId, sourceId);
+    if (!action || !sourceCard || !sourceId) {
+      return;
+    }
+
+    if (action.type === "group") {
+      const targetCard = action.targetCard;
+      if (action.isFolder) {
+        const folderId = parseInt(targetCard.dataset.folderId, 10);
+        if (folderId) {
+          await addSeriesToGroup(folderId, sourceId);
         }
-      } else if (target.classList.contains("series-card")) {
-        const targetId = parseInt(target.dataset.seriesId, 10);
+      } else {
+        const targetId = parseInt(targetCard.dataset.seriesId, 10);
         if (targetId && targetId !== sourceId) {
           promptCreateGroup(sourceId, targetId);
         }
+      }
+    } else if (action.type === "reorder") {
+      const grid = document.getElementById("library-grid");
+      const targetCard = action.targetCard;
+      if (!grid || !targetCard || sourceCard === targetCard) return;
+
+      // Smoothly reorder DOM elements
+      if (action.position === "before") {
+        grid.insertBefore(sourceCard, targetCard);
+      } else {
+        grid.insertBefore(sourceCard, targetCard.nextSibling);
+      }
+
+      triggerHaptic([35]);
+
+      // Calculate and save the new unified library order
+      const newItems = [];
+      grid.querySelectorAll(".folder-card, .series-card").forEach((el, index) => {
+        if (el.classList.contains("folder-card")) {
+          const fid = parseInt(el.dataset.folderId, 10);
+          if (fid) {
+            newItems.push({ type: "folder", id: fid });
+            const fObj = (libraryFoldersCache || []).find(f => f.id === fid);
+            if (fObj) fObj.sort_order = index;
+          }
+        } else if (el.classList.contains("series-card")) {
+          const sid = parseInt(el.dataset.seriesId, 10);
+          if (sid) {
+            newItems.push({ type: "series", id: sid });
+            const sObj = (libraryDataCache || []).find(s => s.id === sid);
+            if (sObj) sObj.sort_order = index;
+          }
+        }
+      });
+
+      try {
+        await fetch("/api/library/reorder", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: newItems })
+        });
+      } catch (err) {
+        console.error("Error saving library order:", err);
       }
     }
   }
@@ -1128,13 +1273,15 @@ document.addEventListener("DOMContentLoaded", () => {
   let dragEventsBound = false;
   function initLibraryDragAndDrop() {
     endAndCleanupDrag();
-    const seriesCards = document.querySelectorAll(".library-grid > .series-card");
+    const libraryCards = document.querySelectorAll(".library-grid > .series-card, .library-grid > .folder-card");
 
-    seriesCards.forEach(card => {
-      const sId = parseInt(card.dataset.seriesId, 10);
-      if (!sId) return;
+    libraryCards.forEach(card => {
+      const isFolder = card.classList.contains("folder-card");
+      const itemType = isFolder ? "folder" : "series";
+      const itemId = parseInt(isFolder ? card.dataset.folderId : card.dataset.seriesId, 10);
+      if (!itemId) return;
 
-      // Mobile Touch Start: Start deliberate long-press timer (350ms)
+      // Mobile Touch Start: Start deliberate long-press timer (320ms)
       card.addEventListener("touchstart", (e) => {
         if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
         if (e.touches.length !== 1) return;
@@ -1144,11 +1291,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const startX = t.clientX;
         const startY = t.clientY;
 
-        dragTouchStart = { card, sId, startX, startY };
+        dragTouchStart = { card, itemType, itemId, startX, startY };
 
         longPressTimer = setTimeout(() => {
           longPressTimer = null;
-          spawnDragGhost(card, sId, startX, startY);
+          spawnDragGhost(card, itemType, itemId, startX, startY);
         }, LONG_PRESS_DURATION);
       }, { passive: true });
 
@@ -1160,12 +1307,12 @@ document.addEventListener("DOMContentLoaded", () => {
         clearLongPress();
         const startX = e.clientX;
         const startY = e.clientY;
-        dragTouchStart = { card, sId, startX, startY };
+        dragTouchStart = { card, itemType, itemId, startX, startY };
 
         longPressTimer = setTimeout(() => {
           longPressTimer = null;
-          spawnDragGhost(card, sId, startX, startY);
-        }, 300);
+          spawnDragGhost(card, itemType, itemId, startX, startY);
+        }, 280);
       });
     });
 
@@ -1228,7 +1375,7 @@ document.addEventListener("DOMContentLoaded", () => {
           const dist = Math.hypot(e.clientX - dragTouchStart.startX, e.clientY - dragTouchStart.startY);
           if (dist > 12) {
             clearLongPress();
-            spawnDragGhost(dragTouchStart.card, dragTouchStart.sId, e.clientX, e.clientY);
+            spawnDragGhost(dragTouchStart.card, dragTouchStart.itemType, dragTouchStart.itemId, e.clientX, e.clientY);
           }
         }
       });

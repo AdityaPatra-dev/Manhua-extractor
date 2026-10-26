@@ -221,6 +221,16 @@ class RenameFolderRequest(BaseModel):
 class AddFolderItemRequest(BaseModel):
     series_id: int
 
+class ReorderItem(BaseModel):
+    type: str  # "series" or "folder"
+    id: int
+
+class ReorderLibraryRequest(BaseModel):
+    items: List[ReorderItem]
+
+class ReorderFolderItemsRequest(BaseModel):
+    series_ids: List[int]
+
 
 
 # --- Endpoints ---
@@ -1234,6 +1244,19 @@ async def add_item_to_folder(folder_id: int, req: AddFolderItemRequest):
 @app.delete("/api/library/folders/{folder_id}/items/{series_id}")
 async def remove_item_from_folder(folder_id: int, series_id: int):
     ok = remove_series_from_folder(folder_id, series_id)
+    return {"success": ok}
+
+@app.post("/api/library/reorder")
+async def reorder_library(req: ReorderLibraryRequest):
+    from database.db import update_library_order
+    items_data = [{"type": it.type, "id": it.id} for it in req.items]
+    ok = update_library_order(items_data)
+    return {"success": ok}
+
+@app.post("/api/library/folders/{folder_id}/reorder")
+async def reorder_folder_items(folder_id: int, req: ReorderFolderItemsRequest):
+    from database.db import update_folder_items_order
+    ok = update_folder_items_order(folder_id, req.series_ids)
     return {"success": ok}
 
 @app.get("/api/library/{series_id}")

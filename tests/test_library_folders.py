@@ -13,7 +13,10 @@ from database.db import (
     add_series_to_folder,
     remove_series_from_folder,
     get_all_folders_with_items,
-    get_folder_by_id
+    get_folder_by_id,
+    get_all_series,
+    update_library_order,
+    update_folder_items_order
 )
 
 
@@ -113,6 +116,51 @@ class TestLibraryFolders(unittest.TestCase):
         # Delete via API
         res = client.delete(f"/api/library/folders/{f_id}")
         self.assertEqual(res.status_code, 200)
+
+        # Test library reorder endpoint
+        res = client.post("/api/library/reorder", json={"items": [{"type": "series", "id": 1}]})
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["success"])
+
+        # Test folder items reorder endpoint
+        res = client.post("/api/library/folders/999/reorder", json={"series_ids": [1, 2]})
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.json()["success"])
+
+    def test_update_library_and_folder_order_db(self):
+        folder_id = create_folder(
+            name="Ordering Test",
+            color="#3b82f6",
+            series_ids=[self.s1, self.s2],
+            db_path=self.db_path
+        )
+        self.assertGreater(folder_id, 0)
+
+        # Test updating library unified order
+        items = [
+            {"type": "series", "id": self.s2},
+            {"type": "folder", "id": folder_id},
+            {"type": "series", "id": self.s1}
+        ]
+        ok = update_library_order(items, db_path=self.db_path)
+        self.assertTrue(ok)
+
+        # Verify series are sorted by sort_order
+        all_s = get_all_series(db_path=self.db_path)
+        s_map = {s["id"]: s["sort_order"] for s in all_s}
+        self.assertEqual(s_map[self.s2], 0)
+        self.assertEqual(s_map[self.s1], 2)
+
+        # Verify folder sort_order
+        f = get_folder_by_id(folder_id, db_path=self.db_path)
+        self.assertEqual(f["sort_order"], 1)
+
+        # Test reordering items inside folder
+        ok_folder = update_folder_items_order(folder_id, [self.s2, self.s1], db_path=self.db_path)
+        self.assertTrue(ok_folder)
+        f_updated = get_folder_by_id(folder_id, db_path=self.db_path)
+        self.assertEqual(f_updated["series"][0]["id"], self.s2)
+        self.assertEqual(f_updated["series"][1]["id"], self.s1)
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                 cover_path TEXT,
                 source_url TEXT,
                 engine TEXT,
+                sort_order INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -182,6 +183,10 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             pass
         try:
             conn.execute("ALTER TABLE series ADD COLUMN year INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN sort_order INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass
 
@@ -529,7 +534,7 @@ def get_all_series(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
         FROM series s
         LEFT JOIN chapters c ON s.id = c.series_id
         GROUP BY s.id
-        ORDER BY s.updated_at DESC
+        ORDER BY s.sort_order ASC, s.updated_at DESC
     """).fetchall()
     series_list = [dict(r) for r in rows]
     for s in series_list:
@@ -1164,6 +1169,60 @@ def get_folder_by_name(name: str, db_path: str = DEFAULT_DB_PATH) -> Optional[Di
         if not f:
             return None
         return dict(f)
+    finally:
+        conn.close()
+
+
+def update_library_order(
+    items: List[Dict[str, Any]],
+    db_path: str = DEFAULT_DB_PATH
+) -> bool:
+    """
+    Persist unified custom ordering of library items (series cards and folder blocks).
+    items is an ordered list: [{"type": "series"|"folder", "id": int}, ...]
+    """
+    if not items:
+        return True
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            for idx, it in enumerate(items):
+                i_type = it.get("type")
+                i_id = it.get("id")
+                if not i_id:
+                    continue
+                if i_type == "series":
+                    conn.execute("UPDATE series SET sort_order = ? WHERE id = ?", (idx, i_id))
+                elif i_type == "folder":
+                    conn.execute("UPDATE library_folders SET sort_order = ? WHERE id = ?", (idx, i_id))
+        return True
+    except Exception as e:
+        print(f"[DB] Error updating library order: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def update_folder_items_order(
+    folder_id: int,
+    series_ids: List[int],
+    db_path: str = DEFAULT_DB_PATH
+) -> bool:
+    """Persist custom ordering of series inside a specific folder."""
+    if not folder_id or not series_ids:
+        return True
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            for idx, sid in enumerate(series_ids):
+                conn.execute(
+                    "UPDATE folder_items SET sort_order = ? WHERE folder_id = ? AND series_id = ?",
+                    (idx, folder_id, sid)
+                )
+        return True
+    except Exception as e:
+        print(f"[DB] Error updating folder items order: {e}")
+        return False
     finally:
         conn.close()
 
