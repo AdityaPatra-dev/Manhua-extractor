@@ -1172,6 +1172,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 15000);
   }
 
+  function getDropTargetCard(container, clientX, clientY, excludeCard) {
+    if (!container) return null;
+
+    dragGhost.style.display = "none";
+    const under = document.elementFromPoint(clientX, clientY);
+    dragGhost.style.display = "block";
+
+    const directTarget = under?.closest(".series-card, .folder-card");
+    if (directTarget && directTarget !== excludeCard && container.contains(directTarget)) {
+      return directTarget;
+    }
+
+    const cards = Array.from(container.querySelectorAll(".series-card, .folder-card"))
+      .filter(c => c !== excludeCard && !c.classList.contains("is-dragging"));
+    if (cards.length === 0) return null;
+
+    let closest = null;
+    let closestDist = Infinity;
+    for (const card of cards) {
+      const r = card.getBoundingClientRect();
+      const inRangeX = clientX >= r.left - 30 && clientX <= r.right + 30;
+      const inRangeY = clientY >= r.top - 30 && clientY <= r.bottom + 30;
+      if (inRangeX && inRangeY) {
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        const dist = Math.hypot(clientX - cx, clientY - cy);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = card;
+        }
+      }
+    }
+    return closest;
+  }
+
   function updateDragPosition(clientX, clientY) {
     if (!dragActive || !dragGhost) return;
     lastDragPointer = { x: clientX, y: clientY };
@@ -1179,17 +1214,12 @@ document.addEventListener("DOMContentLoaded", () => {
     dragGhost.style.left = clientX + "px";
     dragGhost.style.top = clientY + "px";
 
-    dragGhost.style.display = "none";
-    const under = document.elementFromPoint(clientX, clientY);
-    dragGhost.style.display = "block";
-
-    // Scenario A: Dragging a card inside an opened folder / group modal
+    // Scenario A: Dragging inside an opened folder / group modal
     if (dragSourceFolderId) {
-      // 1. Check eject dropzone hover
       const ejectDropzone = document.getElementById("folder-eject-dropzone");
       if (ejectDropzone) {
         const er = ejectDropzone.getBoundingClientRect();
-        if (clientX >= er.left && clientX <= er.right && clientY >= er.top && clientY <= er.bottom) {
+        if (clientX >= er.left - 10 && clientX <= er.right + 10 && clientY >= er.top - 10 && clientY <= er.bottom + 10) {
           ejectDropzone.classList.add("drag-hover", "drag-active-target");
           document.querySelectorAll("#folder-series-grid .drag-insert-before, #folder-series-grid .drag-insert-after").forEach(el => {
             el.classList.remove("drag-insert-before", "drag-insert-after");
@@ -1205,8 +1235,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      // 2. Check hovering over another series card inside folder grid
-      const target = under?.closest("#folder-series-grid > .series-card");
+      const grid = document.getElementById("folder-series-grid");
+      const target = getDropTargetCard(grid, clientX, clientY, dragSourceCard);
 
       document.querySelectorAll("#folder-series-grid .drag-insert-before, #folder-series-grid .drag-insert-after").forEach(el => {
         if (el !== target) {
@@ -1215,7 +1245,6 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       if (!target || target === dragSourceCard) {
-        dragHoverAction = null;
         return;
       }
 
@@ -1243,10 +1272,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Scenario B: Dragging card or folder on the main library grid
-    const target = under?.closest("#library-grid > .series-card, #library-grid > .folder-card");
+    // Scenario B: Dragging on the main library grid
+    const mainGrid = document.getElementById("library-grid");
+    const target = getDropTargetCard(mainGrid, clientX, clientY, dragSourceCard);
 
-    // Clean up previous highlights
     document.querySelectorAll("#library-grid .drag-hover, #library-grid .drag-group-target, #library-grid .drag-insert-before, #library-grid .drag-insert-after").forEach(el => {
       if (el !== target) {
         el.classList.remove("drag-hover", "drag-group-target", "drag-insert-before", "drag-insert-after");
@@ -1254,7 +1283,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (!target || target === dragSourceCard) {
-      dragHoverAction = null;
       return;
     }
 
@@ -1275,7 +1303,6 @@ document.addEventListener("DOMContentLoaded", () => {
         isFolder: target.classList.contains("folder-card")
       };
     } else {
-      // Reordering mode (adjusting position of card or folder block)
       target.classList.remove("drag-group-target");
       const insertBefore = (clientX < rect.left + rect.width / 2);
       if (insertBefore) {
@@ -1304,7 +1331,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    suppressClickUntil = Date.now() + 600;
+    suppressClickUntil = Date.now() + 450;
     const action = dragHoverAction;
     const sourceCard = dragSourceCard;
     const sourceType = dragSourceType;
@@ -1339,7 +1366,6 @@ document.addEventListener("DOMContentLoaded", () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ series_ids: seriesIds })
         });
-        // Background refresh main library to update 2x2 preview covers on the folder card
         loadLibrary();
       } catch (err) {
         console.error("Error saving folder series order:", err);
@@ -1365,7 +1391,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const targetCard = action.targetCard;
       if (!grid || !targetCard || sourceCard === targetCard) return;
 
-      // Smoothly reorder DOM elements
       if (action.position === "before") {
         grid.insertBefore(sourceCard, targetCard);
       } else {
@@ -1374,7 +1399,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       triggerHaptic([35]);
 
-      // Calculate and save the new unified library order
       const newItems = [];
       grid.querySelectorAll(".folder-card, .series-card").forEach((el, index) => {
         if (el.classList.contains("folder-card")) {
@@ -1406,6 +1430,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  let dragMouseDown = null;
+
   function bindCardDragListeners(card) {
     if (card._dragBound) return;
     card._dragBound = true;
@@ -1414,7 +1440,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const itemId = parseInt(isFolder ? card.dataset.folderId : card.dataset.seriesId, 10);
     if (!itemId) return;
 
-    // Mobile Touch Start: Start deliberate long-press timer (320ms)
+    card.addEventListener("dragstart", (e) => e.preventDefault());
+    card.addEventListener("contextmenu", (e) => {
+      if (dragActive || longPressTimer) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    });
+
+    // Mobile Touch Start: Start deliberate long-press timer (380ms)
     card.addEventListener("touchstart", (e) => {
       if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
       if (e.touches.length !== 1) return;
@@ -1429,23 +1464,16 @@ document.addEventListener("DOMContentLoaded", () => {
       longPressTimer = setTimeout(() => {
         longPressTimer = null;
         spawnDragGhost(card, itemType, itemId, startX, startY);
-      }, LONG_PRESS_DURATION);
+      }, 380);
     }, { passive: true });
 
-    // Desktop Mouse Down: Start deliberate hold timer
+    // Desktop Mouse Down: Prepare drag on move (instant click preserved)
     card.addEventListener("mousedown", (e) => {
       if (e.button !== 0) return;
       if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
 
       clearLongPress();
-      const startX = e.clientX;
-      const startY = e.clientY;
-      dragTouchStart = { card, itemType, itemId, startX, startY };
-
-      longPressTimer = setTimeout(() => {
-        longPressTimer = null;
-        spawnDragGhost(card, itemType, itemId, startX, startY);
-      }, 280);
+      dragMouseDown = { card, itemType, itemId, startX: e.clientX, startY: e.clientY };
     });
   }
 
@@ -1458,21 +1486,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!dragEventsBound) {
       dragEventsBound = true;
 
+      window.addEventListener("contextmenu", (e) => {
+        if (dragActive) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }, { capture: true });
+
       // Window Touch Move
       window.addEventListener("touchmove", (e) => {
         if (e.touches.length === 0) return;
         const t = e.touches[0];
 
         if (dragActive) {
-          // Actively dragging card: prevent native scroll & update drag position + autoscroll
           e.preventDefault();
           updateDragPosition(t.clientX, t.clientY);
           checkAutoScroll(t.clientY);
           return;
         }
 
-        // If long press is still pending and user moves more than 8px:
-        // User is scrolling the library! Cancel long-press so native scroll happens 100% smoothly!
         if (longPressTimer && dragTouchStart) {
           const dist = Math.hypot(t.clientX - dragTouchStart.startX, t.clientY - dragTouchStart.startY);
           if (dist > 8) {
@@ -1490,15 +1523,21 @@ document.addEventListener("DOMContentLoaded", () => {
           e.preventDefault();
           performDrop();
         } else {
+          dragTouchStart = null;
           endAndCleanupDrag();
         }
       }, { passive: false });
 
-      // Window Touch Cancel
+      // Window Touch Cancel: treat as drop if dragging to avoid reverting
       window.addEventListener("touchcancel", () => {
         clearLongPress();
         stopAutoScroll();
-        endAndCleanupDrag();
+        if (dragActive) {
+          performDrop();
+        } else {
+          dragTouchStart = null;
+          endAndCleanupDrag();
+        }
       });
 
       // Window Mouse Move
@@ -1510,11 +1549,12 @@ document.addEventListener("DOMContentLoaded", () => {
           return;
         }
 
-        if (longPressTimer && dragTouchStart && e.buttons === 1) {
-          const dist = Math.hypot(e.clientX - dragTouchStart.startX, e.clientY - dragTouchStart.startY);
-          if (dist > 12) {
-            clearLongPress();
-            spawnDragGhost(dragTouchStart.card, dragTouchStart.itemType, dragTouchStart.itemId, e.clientX, e.clientY);
+        if (dragMouseDown && e.buttons === 1) {
+          const dist = Math.hypot(e.clientX - dragMouseDown.startX, e.clientY - dragMouseDown.startY);
+          if (dist > 8) {
+            const m = dragMouseDown;
+            dragMouseDown = null;
+            spawnDragGhost(m.card, m.itemType, m.itemId, e.clientX, e.clientY);
           }
         }
       });
@@ -1523,6 +1563,7 @@ document.addEventListener("DOMContentLoaded", () => {
       window.addEventListener("mouseup", (e) => {
         clearLongPress();
         stopAutoScroll();
+        dragMouseDown = null;
         if (dragActive) {
           performDrop();
         } else {
@@ -1530,16 +1571,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
 
-      window.addEventListener("blur", () => {
-        clearLongPress();
-        stopAutoScroll();
-        endAndCleanupDrag();
-      });
-
       document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
           clearLongPress();
           stopAutoScroll();
+          dragMouseDown = null;
+          dragTouchStart = null;
           endAndCleanupDrag();
         }
       });

@@ -2964,6 +2964,23 @@ body.theme-amoled .modal-card {
 }
 
 /* Drag and Drop Visual Highlights & Reordering */
+.library-grid,
+.folder-inner-grid,
+.series-card,
+.folder-card {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+.series-card img,
+.folder-card img,
+.drag-ghost img {
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  pointer-events: none !important;
+}
+
 .series-card.is-dragging,
 .folder-card.is-dragging {
   opacity: 0.38 !important;

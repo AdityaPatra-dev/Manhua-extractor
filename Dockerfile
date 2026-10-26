@@ -5,7 +5,7 @@ FROM python:3.11-slim
 LABEL maintainer="Aditya Patra <adityapatra.dev>"
 LABEL org.opencontainers.image.title="Universal Manhua Extractor"
 LABEL org.opencontainers.image.description="All-in-one manga/manhua downloader, web reader, OPDS catalog, and backup sync server."
-LABEL org.opencontainers.image.version="1.2.5"
+LABEL org.opencontainers.image.version="1.2.6"
 LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/AdityaPatra-dev/Manhua-extractor"
 

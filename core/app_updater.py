@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("app_updater")
 
-CURRENT_APP_VERSION = "1.2.5"
+CURRENT_APP_VERSION = "1.2.6"
 GITHUB_REPO = "AdityaPatra-dev/Manhua-extractor"
 CACHE_TTL = 1800  # 30 minutes
 
