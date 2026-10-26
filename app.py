@@ -70,7 +70,8 @@ from core.backup_engine import (
     inspect_backup_archive,
     restore_backup_archive,
     format_bytes,
-    DEFAULT_BATCH_SIZE_BYTES
+    DEFAULT_BATCH_SIZE_BYTES,
+    cleanup_stale_backups
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -78,6 +79,10 @@ DOWNLOADS_DIR = os.environ.get("MANHUA_DOWNLOADS_DIR") or os.path.join(BASE_DIR,
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 BACKUPS_DIR = os.environ.get("MANHUA_BACKUPS_DIR") or os.path.join(BASE_DIR, "backups")
 os.makedirs(BACKUPS_DIR, exist_ok=True)
+try:
+    cleanup_stale_backups(BACKUPS_DIR)
+except Exception:
+    pass
 
 # Initialize Database
 init_db()

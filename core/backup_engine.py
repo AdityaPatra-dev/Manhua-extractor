@@ -344,47 +344,55 @@ def create_backup_batch_file(
 
     # Write ZIP stream with ZIP64 enabled
     processed_count = 0
-    with zipfile.ZipFile(temp_zip_path, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
-        # 1. Write manifest.json
-        manifest_bytes = json.dumps(manifest, indent=2, ensure_ascii=False).encode('utf-8')
-        zf.writestr("manifest.json", manifest_bytes)
+    try:
+        with zipfile.ZipFile(temp_zip_path, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            # 1. Write manifest.json
+            manifest_bytes = json.dumps(manifest, indent=2, ensure_ascii=False).encode('utf-8')
+            zf.writestr("manifest.json", manifest_bytes)
 
-        # 2. Write series covers (self-contained for every referenced series)
-        for s in series_map.values():
-            cov_local = s.get("cover_path_local")
-            cov_rel = s.get("cover_relative_path")
-            if cov_local and cov_rel and os.path.exists(cov_local) and os.path.isfile(cov_local):
-                try:
-                    zf.write(cov_local, arcname=cov_rel)
-                except Exception:
-                    pass
-
-        # 3. Write chapter files
-        if include_files:
+            # 2. Write series covers (self-contained for every referenced series)
             for s in series_map.values():
-                for ch in s["chapters"]:
-                    src_path = ch["_source_file_path"]
-                    rel_path = ch["relative_path"]
-                    if progress_callback:
-                        progress_callback(processed_count, total_items, f"Archiving {s['title']} Ch {ch['chapter_num']}")
+                cov_local = s.get("cover_path_local")
+                cov_rel = s.get("cover_relative_path")
+                if cov_local and cov_rel and os.path.exists(cov_local) and os.path.isfile(cov_local):
+                    try:
+                        zf.write(cov_local, arcname=cov_rel)
+                    except Exception:
+                        pass
 
-                    if os.path.isfile(src_path):
-                        zf.write(src_path, arcname=rel_path)
-                    elif os.path.isdir(src_path):
-                        # Recursive folder archive
-                        for root, _, files in os.walk(src_path):
-                            for f in files:
-                                f_src = os.path.join(root, f)
-                                f_rel = os.path.relpath(f_src, src_path)
-                                arcname = os.path.join(rel_path, f_rel)
-                                zf.write(f_src, arcname=arcname)
+            # 3. Write chapter files
+            if include_files:
+                for s in series_map.values():
+                    for ch in s["chapters"]:
+                        src_path = ch["_source_file_path"]
+                        rel_path = ch["relative_path"]
+                        if progress_callback:
+                            progress_callback(processed_count, total_items, f"Archiving {s['title']} Ch {ch['chapter_num']}")
 
-                    processed_count += 1
+                        if os.path.isfile(src_path):
+                            zf.write(src_path, arcname=rel_path)
+                        elif os.path.isdir(src_path):
+                            # Recursive folder archive
+                            for root, _, files in os.walk(src_path):
+                                for f in files:
+                                    f_src = os.path.join(root, f)
+                                    f_rel = os.path.relpath(f_src, src_path)
+                                    arcname = os.path.join(rel_path, f_rel)
+                                    zf.write(f_src, arcname=arcname)
 
-    # Atomic move
-    if os.path.exists(output_zip_path):
-        os.remove(output_zip_path)
-    shutil.move(temp_zip_path, output_zip_path)
+                        processed_count += 1
+
+        # Atomic move
+        if os.path.exists(output_zip_path):
+            os.remove(output_zip_path)
+        shutil.move(temp_zip_path, output_zip_path)
+    except Exception:
+        if os.path.exists(temp_zip_path):
+            try:
+                os.remove(temp_zip_path)
+            except Exception:
+                pass
+        raise
 
     return {
         "success": True,
@@ -392,6 +400,26 @@ def create_backup_batch_file(
         "file_size": os.path.getsize(output_zip_path),
         "manifest": manifest
     }
+
+
+def cleanup_stale_backups(backup_dir: str = "backups", max_age_hours: int = 1) -> int:
+    """Clean up orphaned temporary files left behind by interrupted backup processes."""
+    if not os.path.exists(backup_dir):
+        return 0
+    import time
+    now = time.time()
+    count = 0
+    for root, _, files in os.walk(backup_dir):
+        for f in files:
+            if ".tmp_" in f:
+                fp = os.path.join(root, f)
+                try:
+                    if now - os.path.getmtime(fp) > max_age_hours * 3600:
+                        os.remove(fp)
+                        count += 1
+                except Exception:
+                    pass
+    return count
 
 
 def inspect_backup_archive(zip_path: str) -> Dict[str, Any]:

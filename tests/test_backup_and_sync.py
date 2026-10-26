@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 import json
 
@@ -312,7 +313,8 @@ class TestBackupApiEndpoints(unittest.TestCase):
         self.assertIn("batches_1_5gb", data)
         self.assertIn("batches", data)
 
-    def test_export_and_status_endpoints(self):
+    @patch("threading.Thread")
+    def test_export_and_status_endpoints(self, mock_thread):
         # Trigger export
         payload = {
             "mode": "single",
