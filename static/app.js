@@ -716,13 +716,15 @@ document.addEventListener("DOMContentLoaded", () => {
   let dragSourceType = null; // "series" | "folder"
   let dragSourceId = null;
   let dragSourceCard = null;
+  let dragSourceFolderId = null; // null if from main library, folderId if from inside folder modal
   let dragGhost = null;
-  let dragHoverAction = null; // { type: "group" | "reorder", position?: "before"|"after", targetCard: HTMLElement, isFolder?: boolean }
+  let dragHoverAction = null; // { type: "group" | "reorder" | "reorder_folder" | "eject", position?: "before"|"after", targetCard?: HTMLElement, isFolder?: boolean, folderId?: number, seriesId?: number }
   let dragTouchStart = null;
   let longPressTimer = null;
   let lastDragPointer = null;
   let autoScrollRaf = null;
   let autoScrollSpeed = 0;
+  let autoScrollTarget = null;
   let suppressClickUntil = 0;
   let pendingGroupCreation = { sourceId: null, targetId: null };
 
@@ -735,15 +737,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function startAutoScroll(speed) {
+  function startAutoScroll(speed, target = null) {
     autoScrollSpeed = speed;
+    autoScrollTarget = target;
     if (!autoScrollRaf) {
       function scrollStep() {
         if (!dragActive || autoScrollSpeed === 0) {
           autoScrollRaf = null;
           return;
         }
-        window.scrollBy(0, autoScrollSpeed);
+        if (autoScrollTarget) {
+          autoScrollTarget.scrollTop += autoScrollSpeed;
+        } else {
+          window.scrollBy(0, autoScrollSpeed);
+        }
         if (lastDragPointer) {
           updateDragPosition(lastDragPointer.x, lastDragPointer.y);
         }
@@ -755,6 +762,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function stopAutoScroll() {
     autoScrollSpeed = 0;
+    autoScrollTarget = null;
     if (autoScrollRaf) {
       cancelAnimationFrame(autoScrollRaf);
       autoScrollRaf = null;
@@ -766,6 +774,27 @@ document.addEventListener("DOMContentLoaded", () => {
       stopAutoScroll();
       return;
     }
+
+    const folderModal = document.getElementById("folder-modal");
+    if (dragSourceFolderId && folderModal && !folderModal.classList.contains("hidden")) {
+      const modalBody = folderModal.querySelector(".folder-modal-body");
+      if (modalBody) {
+        const rect = modalBody.getBoundingClientRect();
+        const edgeZone = 70;
+        if (clientY < rect.top + edgeZone && clientY >= rect.top - 20) {
+          const ratio = Math.max(0, Math.min(1, (rect.top + edgeZone - clientY) / edgeZone));
+          const speed = -Math.round(4 + ratio * 14);
+          startAutoScroll(speed, modalBody);
+          return;
+        } else if (clientY > rect.bottom - edgeZone && clientY <= rect.bottom + 20) {
+          const ratio = Math.max(0, Math.min(1, (clientY - (rect.bottom - edgeZone)) / edgeZone));
+          const speed = Math.round(4 + ratio * 14);
+          startAutoScroll(speed, modalBody);
+          return;
+        }
+      }
+    }
+
     const edgeZone = 120;
     const vh = window.innerHeight || document.documentElement.clientHeight;
 
@@ -773,13 +802,13 @@ document.addEventListener("DOMContentLoaded", () => {
       // Near top edge of screen: smoothly scroll up
       const ratio = Math.max(0, Math.min(1, (edgeZone - clientY) / edgeZone));
       const speed = -Math.round(4 + ratio * 16);
-      startAutoScroll(speed);
+      startAutoScroll(speed, null);
     } else if (clientY > vh - edgeZone) {
       // Near bottom edge of screen: smoothly scroll down
       const dist = clientY - (vh - edgeZone);
       const ratio = Math.max(0, Math.min(1, dist / edgeZone));
       const speed = Math.round(4 + ratio * 16);
-      startAutoScroll(speed);
+      startAutoScroll(speed, null);
     } else {
       stopAutoScroll();
     }
@@ -792,10 +821,17 @@ document.addEventListener("DOMContentLoaded", () => {
     dragSourceType = null;
     dragSourceId = null;
     dragSourceCard = null;
+    dragSourceFolderId = null;
     dragHoverAction = null;
     dragTouchStart = null;
     dragGhost = null;
     lastDragPointer = null;
+
+    document.body.classList.remove("dragging-folder-item");
+    const ejectDropzone = document.getElementById("folder-eject-dropzone");
+    if (ejectDropzone) {
+      ejectDropzone.classList.remove("drag-hover", "drag-active-target");
+    }
 
     document.querySelectorAll(".drag-ghost").forEach(el => el.remove());
     document.querySelectorAll(".is-dragging").forEach(el => el.classList.remove("is-dragging"));
@@ -1070,6 +1106,7 @@ document.addEventListener("DOMContentLoaded", () => {
           grid.innerHTML = '<p class="empty-state">No manga in this group.</p>';
         } else {
           grid.innerHTML = f.series.map(s => renderSeriesCardHtml(s, false, true, folderId)).join("");
+          grid.querySelectorAll(".series-card").forEach(bindCardDragListeners);
         }
       }
 
@@ -1089,6 +1126,13 @@ document.addEventListener("DOMContentLoaded", () => {
     dragSourceType = itemType; // "series" or "folder"
     dragSourceId = itemId;
     dragSourceCard = card;
+
+    const insideFolderEl = card.closest("#folder-series-grid");
+    dragSourceFolderId = insideFolderEl ? activeOpenedFolderId : null;
+    if (dragSourceFolderId) {
+      document.body.classList.add("dragging-folder-item");
+    }
+
     suppressClickUntil = Date.now() + 800;
 
     triggerHaptic([40]);
@@ -1139,10 +1183,71 @@ document.addEventListener("DOMContentLoaded", () => {
     const under = document.elementFromPoint(clientX, clientY);
     dragGhost.style.display = "block";
 
-    const target = under?.closest(".series-card, .folder-card");
+    // Scenario A: Dragging a card inside an opened folder / group modal
+    if (dragSourceFolderId) {
+      // 1. Check eject dropzone hover
+      const ejectDropzone = document.getElementById("folder-eject-dropzone");
+      if (ejectDropzone) {
+        const er = ejectDropzone.getBoundingClientRect();
+        if (clientX >= er.left && clientX <= er.right && clientY >= er.top && clientY <= er.bottom) {
+          ejectDropzone.classList.add("drag-hover", "drag-active-target");
+          document.querySelectorAll("#folder-series-grid .drag-insert-before, #folder-series-grid .drag-insert-after").forEach(el => {
+            el.classList.remove("drag-insert-before", "drag-insert-after");
+          });
+          dragHoverAction = {
+            type: "eject",
+            folderId: dragSourceFolderId,
+            seriesId: dragSourceId
+          };
+          return;
+        } else {
+          ejectDropzone.classList.remove("drag-hover", "drag-active-target");
+        }
+      }
+
+      // 2. Check hovering over another series card inside folder grid
+      const target = under?.closest("#folder-series-grid > .series-card");
+
+      document.querySelectorAll("#folder-series-grid .drag-insert-before, #folder-series-grid .drag-insert-after").forEach(el => {
+        if (el !== target) {
+          el.classList.remove("drag-insert-before", "drag-insert-after");
+        }
+      });
+
+      if (!target || target === dragSourceCard) {
+        dragHoverAction = null;
+        return;
+      }
+
+      const rect = target.getBoundingClientRect();
+      const insertBefore = (clientX < rect.left + rect.width / 2);
+      if (insertBefore) {
+        target.classList.remove("drag-insert-after");
+        target.classList.add("drag-insert-before");
+        dragHoverAction = {
+          type: "reorder_folder",
+          position: "before",
+          targetCard: target,
+          folderId: dragSourceFolderId
+        };
+      } else {
+        target.classList.remove("drag-insert-before");
+        target.classList.add("drag-insert-after");
+        dragHoverAction = {
+          type: "reorder_folder",
+          position: "after",
+          targetCard: target,
+          folderId: dragSourceFolderId
+        };
+      }
+      return;
+    }
+
+    // Scenario B: Dragging card or folder on the main library grid
+    const target = under?.closest("#library-grid > .series-card, #library-grid > .folder-card");
 
     // Clean up previous highlights
-    document.querySelectorAll(".drag-hover, .drag-group-target, .drag-insert-before, .drag-insert-after").forEach(el => {
+    document.querySelectorAll("#library-grid .drag-hover, #library-grid .drag-group-target, #library-grid .drag-insert-before, #library-grid .drag-insert-after").forEach(el => {
       if (el !== target) {
         el.classList.remove("drag-hover", "drag-group-target", "drag-insert-before", "drag-insert-after");
       }
@@ -1211,7 +1316,38 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    if (action.type === "group") {
+    if (action.type === "reorder_folder") {
+      const grid = document.getElementById("folder-series-grid");
+      const targetCard = action.targetCard;
+      if (!grid || !targetCard || sourceCard === targetCard) return;
+
+      if (action.position === "before") {
+        grid.insertBefore(sourceCard, targetCard);
+      } else {
+        grid.insertBefore(sourceCard, targetCard.nextSibling);
+      }
+
+      triggerHaptic([35]);
+
+      const seriesIds = Array.from(grid.querySelectorAll(".series-card"))
+        .map(el => parseInt(el.dataset.seriesId, 10))
+        .filter(Boolean);
+
+      try {
+        await fetch(`/api/library/folders/${action.folderId}/reorder`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ series_ids: seriesIds })
+        });
+        // Background refresh main library to update 2x2 preview covers on the folder card
+        loadLibrary();
+      } catch (err) {
+        console.error("Error saving folder series order:", err);
+      }
+    } else if (action.type === "eject") {
+      triggerHaptic([50]);
+      await removeSeriesFromGroup(action.folderId, action.seriesId);
+    } else if (action.type === "group") {
       const targetCard = action.targetCard;
       if (action.isFolder) {
         const folderId = parseInt(targetCard.dataset.folderId, 10);
@@ -1270,51 +1406,54 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function bindCardDragListeners(card) {
+    if (card._dragBound) return;
+    card._dragBound = true;
+    const isFolder = card.classList.contains("folder-card");
+    const itemType = isFolder ? "folder" : "series";
+    const itemId = parseInt(isFolder ? card.dataset.folderId : card.dataset.seriesId, 10);
+    if (!itemId) return;
+
+    // Mobile Touch Start: Start deliberate long-press timer (320ms)
+    card.addEventListener("touchstart", (e) => {
+      if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
+      if (e.touches.length !== 1) return;
+
+      clearLongPress();
+      const t = e.touches[0];
+      const startX = t.clientX;
+      const startY = t.clientY;
+
+      dragTouchStart = { card, itemType, itemId, startX, startY };
+
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        spawnDragGhost(card, itemType, itemId, startX, startY);
+      }, LONG_PRESS_DURATION);
+    }, { passive: true });
+
+    // Desktop Mouse Down: Start deliberate hold timer
+    card.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
+
+      clearLongPress();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      dragTouchStart = { card, itemType, itemId, startX, startY };
+
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        spawnDragGhost(card, itemType, itemId, startX, startY);
+      }, 280);
+    });
+  }
+
   let dragEventsBound = false;
   function initLibraryDragAndDrop() {
     endAndCleanupDrag();
     const libraryCards = document.querySelectorAll(".library-grid > .series-card, .library-grid > .folder-card");
-
-    libraryCards.forEach(card => {
-      const isFolder = card.classList.contains("folder-card");
-      const itemType = isFolder ? "folder" : "series";
-      const itemId = parseInt(isFolder ? card.dataset.folderId : card.dataset.seriesId, 10);
-      if (!itemId) return;
-
-      // Mobile Touch Start: Start deliberate long-press timer (320ms)
-      card.addEventListener("touchstart", (e) => {
-        if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
-        if (e.touches.length !== 1) return;
-
-        clearLongPress();
-        const t = e.touches[0];
-        const startX = t.clientX;
-        const startY = t.clientY;
-
-        dragTouchStart = { card, itemType, itemId, startX, startY };
-
-        longPressTimer = setTimeout(() => {
-          longPressTimer = null;
-          spawnDragGhost(card, itemType, itemId, startX, startY);
-        }, LONG_PRESS_DURATION);
-      }, { passive: true });
-
-      // Desktop Mouse Down: Start deliberate hold timer
-      card.addEventListener("mousedown", (e) => {
-        if (e.button !== 0) return;
-        if (e.target.closest("button, a, input, select, textarea, .series-in-folder-badge")) return;
-
-        clearLongPress();
-        const startX = e.clientX;
-        const startY = e.clientY;
-        dragTouchStart = { card, itemType, itemId, startX, startY };
-
-        longPressTimer = setTimeout(() => {
-          longPressTimer = null;
-          spawnDragGhost(card, itemType, itemId, startX, startY);
-        }, 280);
-      });
-    });
+    libraryCards.forEach(bindCardDragListeners);
 
     if (!dragEventsBound) {
       dragEventsBound = true;
@@ -1456,6 +1595,15 @@ document.addEventListener("DOMContentLoaded", () => {
   folderModalClose?.addEventListener("click", () => {
     folderModal?.classList.add("hidden");
     activeOpenedFolderId = null;
+    endAndCleanupDrag();
+  });
+
+  folderModal?.addEventListener("click", (e) => {
+    if (e.target === folderModal) {
+      folderModal.classList.add("hidden");
+      activeOpenedFolderId = null;
+      endAndCleanupDrag();
+    }
   });
 
   const saveFolderMetadata = async () => {
