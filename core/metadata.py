@@ -24,6 +24,39 @@ def clean_search_title(title: str) -> str:
 
 
 
+def titles_match(query: str, target: str, alt_titles: Optional[List[str]] = None) -> bool:
+    """Check if queried title matches candidate title or its alternative titles with high confidence."""
+    def clean(t: str) -> str:
+        return re.sub(r'[^a-z0-9]+', ' ', (t or '').lower()).strip()
+
+    q_clean = clean(query)
+    if not q_clean:
+        return False
+    q_words = set(q_clean.split())
+    stop_words = {"the", "a", "an", "and", "or", "of", "in", "to", "is", "where", "with", "as", "at"}
+    q_sig = q_words - stop_words
+    if not q_sig:
+        q_sig = q_words
+
+    candidates = [target] + (alt_titles or [])
+    for cand in candidates:
+        if not cand:
+            continue
+        c_clean = clean(cand)
+        if not c_clean:
+            continue
+        if q_clean == c_clean or q_clean in c_clean or c_clean in q_clean:
+            return True
+        c_words = set(c_clean.split())
+        c_sig = c_words - stop_words
+        if not c_sig:
+            c_sig = c_words
+        overlap = len(q_sig & c_sig)
+        if overlap / max(len(q_sig), 1) >= 0.5:
+            return True
+    return False
+
+
 def fetch_mangadex_metadata(title: str) -> Optional[Dict[str, Any]]:
     """Queries MangaDex API for rich metadata, authors, artists, genres, and synopsis."""
     clean_title = clean_search_title(title)
@@ -32,7 +65,7 @@ def fetch_mangadex_metadata(title: str) -> Optional[Dict[str, Any]]:
 
     params = {
         "title": clean_title,
-        "limit": 1,
+        "limit": 5,
         "includes[]": ["author", "artist", "cover_art"]
     }
 
@@ -45,19 +78,25 @@ def fetch_mangadex_metadata(title: str) -> Optional[Dict[str, Any]]:
         if not manga_list:
             return None
 
-        manga = manga_list[0]
+        matched_manga = None
+        for cand_manga in manga_list:
+            cand_attrs = cand_manga.get("attributes", {})
+            t_obj = cand_attrs.get("title", {})
+            cand_title = t_obj.get("en") or t_obj.get("ja-ro") or t_obj.get("ko-ro") or (list(t_obj.values())[0] if t_obj else "")
+            cand_alts = []
+            for alt_item in cand_attrs.get("altTitles", []):
+                cand_alts.extend(list(alt_item.values()))
+            if titles_match(clean_title, cand_title, cand_alts):
+                matched_manga = (cand_manga, cand_title, cand_alts)
+                break
+
+        if not matched_manga:
+            return None
+
+        manga, canonical_title, alt_titles = matched_manga
         manga_id = manga.get("id")
         attrs = manga.get("attributes", {})
         rels = manga.get("relationships", [])
-
-        # Extract title
-        title_obj = attrs.get("title", {})
-        canonical_title = title_obj.get("en") or title_obj.get("ja-ro") or title_obj.get("ko-ro") or list(title_obj.values())[0] if title_obj else title
-
-        # Alt titles
-        alt_titles = []
-        for alt_item in attrs.get("altTitles", []):
-            alt_titles.extend(list(alt_item.values()))
 
         # Authors and Artists
         authors = [rel.get("attributes", {}).get("name") for rel in rels if rel.get("type") == "author" and rel.get("attributes")]
@@ -157,6 +196,12 @@ def fetch_anilist_metadata(title: str) -> Optional[Dict[str, Any]]:
             return None
         media = r.json().get("data", {}).get("Media")
         if not media:
+            return None
+
+        t_data = media.get("title", {})
+        cand_titles = [t_data.get("english"), t_data.get("romaji"), t_data.get("native")]
+        cand_titles = [ct for ct in cand_titles if ct]
+        if not cand_titles or not any(titles_match(clean_title, ct) for ct in cand_titles):
             return None
 
         canonical_title = media.get("title", {}).get("english") or media.get("title", {}).get("romaji") or title

@@ -266,3 +266,85 @@ def cluster_search_results(raw_hits: List[Dict[str, Any]], query: str = "") -> L
     clusters.sort(key=lambda c: (c["relevance_score"], c["max_chapter_num"], c["total_sources"]), reverse=True)
     return clusters
 
+
+def resolve_cover_from_search(series_title: str, db_path: Optional[str] = None) -> Optional[str]:
+    """Find the best cover image URL for a series title by querying cached search clusters or fast providers."""
+    if not series_title or series_title.strip().lower() in ("unknown", "unknown series", "series"):
+        return None
+
+    clean_title = series_title.strip()
+
+    # 1. Search existing clusters in SQLite search_cache table
+    try:
+        import json
+        from database.db import get_cached_search, get_connection, DEFAULT_DB_PATH
+        actual_db = db_path or DEFAULT_DB_PATH
+
+        # Direct cached query
+        cached = get_cached_search(clean_title, db_path=actual_db)
+        if cached:
+            for c in cached:
+                if is_same_series(clean_title, c.get("canonical_title") or c.get("title", "")) and c.get("cover_url"):
+                    return c["cover_url"]
+
+        # Scan recent search cache rows for matching cluster
+        conn = get_connection(actual_db)
+        rows = conn.execute("SELECT results_json FROM search_cache ORDER BY created_at DESC LIMIT 40").fetchall()
+        conn.close()
+        for r in rows:
+            if r["results_json"]:
+                clusters = json.loads(r["results_json"])
+                for c in clusters:
+                    cand_t = c.get("canonical_title") or c.get("title", "")
+                    cand_alts = c.get("alt_titles", [])
+                    if is_same_series(clean_title, cand_t, alt_titles2=cand_alts) and c.get("cover_url"):
+                        return c["cover_url"]
+    except Exception:
+        pass
+
+    # 2. Fast remote MangaDex search
+    try:
+        import requests
+        resp = requests.get(
+            "https://api.mangadex.org/manga",
+            params={"title": clean_title, "limit": 4, "includes[]": ["cover_art"]},
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"},
+            timeout=4.5
+        )
+        if resp.status_code == 200:
+            data = resp.json().get("data", [])
+            for item in data:
+                m_title = item.get("attributes", {}).get("title", {}).get("en") or ""
+                alts = [list(a.values())[0] for a in item.get("attributes", {}).get("altTitles", []) if a]
+                if is_same_series(clean_title, m_title, alt_titles2=alts) or not m_title:
+                    cover_file = None
+                    for rel in item.get("relationships", []):
+                        if rel.get("type") == "cover_art" and rel.get("attributes"):
+                            cover_file = rel["attributes"].get("fileName")
+                    if cover_file:
+                        return f"https://uploads.mangadex.org/covers/{item['id']}/{cover_file}.512.jpg"
+    except Exception:
+        pass
+
+    # 3. Fast ComicK API search
+    try:
+        import requests
+        resp = requests.get(
+            f"https://api.comick.fun/v1.0/search?q={requests.utils.quote(clean_title)}&limit=3",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"},
+            timeout=4.5
+        )
+        if resp.status_code == 200:
+            items = resp.json()
+            if isinstance(items, list):
+                for it in items:
+                    it_title = it.get("title") or ""
+                    b2key = it.get("b2key") or (it.get("md_covers", [{}])[0].get("b2key") if it.get("md_covers") else None)
+                    if b2key and is_same_series(clean_title, it_title):
+                        return f"https://meo.comick.pictures/{b2key}"
+    except Exception:
+        pass
+
+    return None
+
+
