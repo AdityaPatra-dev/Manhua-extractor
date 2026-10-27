@@ -639,6 +639,8 @@
               <button id="modal-btn-delete-series" class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); cursor: pointer;" title="Delete this series and downloaded files">🗑️ Delete Manhua</button>
             </div>
             <div id="modal-meta-tags" style="margin: 6px 0; font-size: 0.85rem; color: var(--text-muted);"></div>
+            <div id="modal-source-url-box" style="margin: 8px 0; display: none;"></div>
+            <div id="modal-resume-box" style="margin: 8px 0; display: none;"></div>
             <p id="modal-synopsis" class="modal-synopsis"></p>
             
             <!-- Storage Location Display -->
@@ -651,7 +653,10 @@
               </div>
             </div>
 
-            <button id="modal-btn-refresh-meta" class="btn btn-secondary" style="margin-top: 4px; font-size: 0.8rem;">🔄 Fetch MangaDex Metadata</button>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+              <button id="modal-btn-sync-search-cover" class="btn btn-secondary" style="font-size: 0.8rem;">🖼️ Sync Global Search Cover</button>
+              <button id="modal-btn-refresh-meta" class="btn btn-secondary" style="font-size: 0.8rem;">🔄 Fetch MangaDex Metadata</button>
+            </div>
           </div>
         </div>
         <h4 style="margin-top: 1rem; margin-bottom: 0.5rem;">Chapters</h4>

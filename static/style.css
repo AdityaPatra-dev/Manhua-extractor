@@ -958,6 +958,21 @@ input:focus, select:focus {
   gap: 0.4rem;
 }
 
+.btn-resume-reading {
+  background: linear-gradient(135deg, #2563eb, #7c3aed) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  border: none !important;
+  border-radius: 6px !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4) !important;
+  transition: transform 0.15s, box-shadow 0.15s !important;
+}
+
+.btn-resume-reading:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.55) !important;
+}
+
 /* Mobile Viewport Adjustments (Phones & Android WebView) */
 /* Mobile Viewport & Android Native Phone Ergonomics */
 @media (max-width: 768px) {
@@ -1651,6 +1666,10 @@ input:focus, select:focus {
   100% { background-position: -200% 0; }
 }
 
+#source-modal {
+  z-index: 100000 !important;
+}
+
 /* Multi-Source Comparison Modal / Drawer */
 .source-modal-card {
   max-width: 620px;
@@ -1658,6 +1677,7 @@ input:focus, select:focus {
   max-height: 85vh;
   display: flex;
   flex-direction: column;
+  z-index: 100001;
 }
 
 .source-modal-cover {
