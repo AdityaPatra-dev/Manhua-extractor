@@ -102,6 +102,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentCatalogChapters = [];
   let currentCatalogUrl = "";
   let currentSeriesTitle = "";
+  let currentCatalogCoverUrl = "";
   const selectedCatalogUrls = new Set();
   let lastHandledProgressStatus = null;
 
@@ -116,10 +117,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnDownloadSelected = document.getElementById("btn-download-selected");
   const catSelectedCount = document.getElementById("cat-selected-count");
 
-  async function inspectSeries(url, isSilent = false) {
+  async function inspectSeries(url, isSilent = false, coverUrl = null) {
     if (!url) {
       if (!isSilent) showToast("Please enter a valid manga or chapter URL.", "info");
       return;
+    }
+
+    if (coverUrl) {
+      currentCatalogCoverUrl = coverUrl;
     }
 
     if (!isSilent && btnInspect) {
@@ -131,7 +136,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch("/api/inspect-series", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url, cover_url: currentCatalogCoverUrl || undefined })
       });
       const data = await res.json();
 
@@ -139,6 +144,9 @@ document.addEventListener("DOMContentLoaded", () => {
         currentCatalogChapters = data.chapters || [];
         currentCatalogUrl = url;
         currentSeriesTitle = data.series_title || "Unknown Series";
+        if (data.cover_url) {
+          currentCatalogCoverUrl = data.cover_url;
+        }
 
         // Populate catalog card header
         const coverImg = document.getElementById("cat-series-cover");
@@ -146,13 +154,15 @@ document.addEventListener("DOMContentLoaded", () => {
           coverImg.onerror = function() {
             this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="110"><rect fill="%231c2640" width="80" height="110"/><text fill="%2394a3b8" x="50%" y="50%" text-anchor="middle" font-size="10">No Cover</text></svg>';
           };
-          if (data.cover_url) {
-            coverImg.src = data.cover_url;
+          const effCover = currentCatalogCoverUrl || data.cover_url;
+          if (effCover) {
+            coverImg.src = `/api/cover-proxy?url=${encodeURIComponent(effCover)}`;
             coverImg.style.display = "block";
           } else {
             coverImg.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="80" height="110"><rect fill="%231c2640" width="80" height="110"/><text fill="%2394a3b8" x="50%" y="50%" text-anchor="middle" font-size="10">No Cover</text></svg>';
           }
         }
+
         const badgeElem = document.getElementById("cat-engine-badge");
         if (badgeElem) badgeElem.textContent = `Engine: ${data.engine_name || 'Auto'}`;
 
@@ -361,7 +371,9 @@ document.addEventListener("DOMContentLoaded", () => {
           image_format: imageFormat,
           upscale_scale: upscaleScale,
           slice_eink: sliceEink,
-          filter_promos: filterPromos
+          filter_promos: filterPromos,
+          cover_url: currentCatalogCoverUrl || undefined,
+          series_title: currentSeriesTitle || undefined
         })
       });
 
@@ -517,7 +529,9 @@ document.addEventListener("DOMContentLoaded", () => {
           image_format: imageFormat,
           upscale_scale: upscaleScale,
           slice_eink: sliceEink,
-          filter_promos: filterPromos
+          filter_promos: filterPromos,
+          cover_url: currentCatalogCoverUrl || undefined,
+          series_title: currentSeriesTitle || undefined
         })
       });
 
@@ -664,16 +678,23 @@ document.addEventListener("DOMContentLoaded", () => {
         if (dCount) dCount.textContent = countTxt;
         grid.innerHTML = data.series.map((s) => `
           <div class="series-card" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
-            <img class="series-cover" src="/api/series/${s.id}/cover" alt="${s.title}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
+            <img class="series-cover" src="/api/series/${s.id}/cover" alt="${escapeAttr(s.title)}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
             <div class="series-details">
-              <h4 class="series-title">${s.title}</h4>
+              <h4 class="series-title">${escapeHtml(s.title)}</h4>
               <p class="series-meta">
                 📥 <strong>${s.downloaded_chapters || 0}</strong> chapters downloaded<br>
-                Engine: ${s.engine || 'Auto'}
+                Engine: ${escapeHtml(s.engine || 'Auto')}
               </p>
-              <div class="series-card-actions" style="display: flex; gap: 6px; margin-top: 6px;">
-                <button class="btn btn-primary" style="padding: 6px 10px; font-size: 0.8rem; flex: 1;" onclick="event.stopPropagation(); openSeriesModal(${s.id})">📖 View Chapters</button>
-                <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(s.title)}')">🗑️</button>
+              <div class="series-card-actions" style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+                ${s.resume_chapter_id ? `
+                  <button class="btn btn-primary btn-resume-reading" style="padding: 7px 10px; font-size: 0.82rem; font-weight: 600; width: 100%; display: flex; align-items: center; justify-content: center; gap: 5px; background: linear-gradient(135deg, #3b82f6, #6366f1); border: none; border-radius: 6px; box-shadow: 0 2px 6px rgba(59, 130, 246, 0.35);" onclick="event.stopPropagation(); openReader(${s.resume_chapter_id})" title="Jump straight into exact chapter where you left">
+                    ▶ Start where you left (Ch. ${s.resume_chapter_num})
+                  </button>
+                ` : ''}
+                <div style="display: flex; gap: 6px; width: 100%;">
+                  <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; flex: 1;" onclick="event.stopPropagation(); openSeriesModal(${s.id})">📖 View Chapters</button>
+                  <button class="btn btn-secondary" style="padding: 6px 10px; font-size: 0.8rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete Manhua" onclick="event.stopPropagation(); deleteSeriesPrompt(${s.id}, '${escapeAttr(s.title)}')">🗑️</button>
+                </div>
               </div>
             </div>
           </div>
@@ -758,6 +779,38 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.year) metaParts.push(`📅 ${s.year}`);
         document.getElementById("modal-meta-tags").innerHTML = metaParts.length > 0 ? metaParts.join(" &bull; ") : "<em>No author/genre metadata cached yet.</em>";
 
+        // Manhua source URL in bio/card
+        const sourceUrlBox = document.getElementById("modal-source-url-box");
+        if (sourceUrlBox) {
+          if (s.source_url) {
+            sourceUrlBox.style.display = "block";
+            sourceUrlBox.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.7); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 6px;">
+                <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600; white-space: nowrap;">🔗 URL:</span>
+                <a href="${escapeAttr(s.source_url)}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: underline; font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;" title="${escapeAttr(s.source_url)}">${escapeHtml(s.source_url)}</a>
+                <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 0.75rem; white-space: nowrap;" onclick="navigator.clipboard.writeText('${escapeAttr(s.source_url)}'); showToast('Manhua URL copied!', 'success');" title="Copy URL">📋 Copy</button>
+              </div>
+            `;
+          } else {
+            sourceUrlBox.style.display = "none";
+          }
+        }
+
+        // Quick resume button in modal
+        const resumeBox = document.getElementById("modal-resume-box");
+        if (resumeBox) {
+          if (s.resume_chapter_id) {
+            resumeBox.style.display = "block";
+            resumeBox.innerHTML = `
+              <button class="btn btn-primary" style="padding: 9px 16px; font-size: 0.9rem; font-weight: 600; width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background: linear-gradient(135deg, #3b82f6, #6366f1); border: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); margin-bottom: 8px; cursor: pointer;" onclick="openReader(${s.resume_chapter_id})">
+                ▶ Start where you left (Ch. ${s.resume_chapter_num})
+              </button>
+            `;
+          } else {
+            resumeBox.style.display = "none";
+          }
+        }
+
         // Storage location wiring
         const storageInput = document.getElementById("modal-storage-path");
         if (storageInput) {
@@ -795,6 +848,30 @@ document.addEventListener("DOMContentLoaded", () => {
           };
         }
 
+        const btnSyncSearchCover = document.getElementById("modal-btn-sync-search-cover");
+        if (btnSyncSearchCover) {
+          btnSyncSearchCover.onclick = async () => {
+            btnSyncSearchCover.textContent = "Syncing...";
+            btnSyncSearchCover.disabled = true;
+            try {
+              const cRes = await fetch(`/api/series/${seriesId}/sync-search-cover`, { method: "POST" });
+              const cData = await cRes.json();
+              if (cData.success) {
+                showToast("Global Search cover synced!", "success");
+                if (coverEl) coverEl.src = `/api/series/${seriesId}/cover?t=${Date.now()}`;
+                loadLibrary();
+              } else {
+                showToast(cData.error || "Could not find cover in Global Search.", "info");
+              }
+            } catch(err) {
+              showToast("Error syncing cover: " + err.message, "error");
+            } finally {
+              btnSyncSearchCover.textContent = "🖼️ Sync Global Search Cover";
+              btnSyncSearchCover.disabled = false;
+            }
+          };
+        }
+
         const btnRefreshMeta = document.getElementById("modal-btn-refresh-meta");
         if (btnRefreshMeta) {
           btnRefreshMeta.onclick = async () => {
@@ -823,12 +900,14 @@ document.addEventListener("DOMContentLoaded", () => {
           chList.innerHTML = data.chapters.map(c => `
             <div class="modal-chapter-row" id="modal-ch-${c.id}">
               <div>
-                <strong>${c.title || `Chapter ${c.chapter_num}`}</strong>
+                <strong>${escapeHtml(c.title || `Chapter ${c.chapter_num}`)}</strong>
                 <span class="chapter-badge-format">${c.file_format || 'PDF'}</span>
                 <span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 0.5rem;">(${c.panel_count || 0} panels)</span>
+                ${c.read_status === 2 ? '<span style="font-size: 0.75rem; color: #4ade80; margin-left: 6px;">✓ Completed</span>' : (c.read_status === 1 ? `<span style="font-size: 0.75rem; color: #60a5fa; margin-left: 6px;">📖 Page ${c.last_read_page || 1}</span>` : '')}
+                ${c.source_url ? `<a href="${escapeAttr(c.source_url)}" target="_blank" rel="noopener noreferrer" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 6px; text-decoration: none;" title="Online chapter URL: ${escapeAttr(c.source_url)}">🔗</a>` : ''}
               </div>
               <div style="display: flex; gap: 0.5rem; align-items: center;">
-                ${c.status === 'completed' ? `<button class="btn btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;" onclick="openReader(${c.id})">📖 Read</button>` : `<span style="font-size: 0.8rem; color: var(--warning);">${c.status}</span>`}
+                ${c.status === 'completed' ? `<button class="btn btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;" onclick="openReader(${c.id})">${c.read_status === 1 ? '▶ Continue' : '📖 Read'}</button>` : `<span style="font-size: 0.8rem; color: var(--warning);">${c.status}</span>`}
                 ${c.status === 'completed' ? `<a href="/api/download/file/${c.id}" class="btn btn-secondary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem; text-decoration: none;" download>💾 File</a>` : ''}
                 <button class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.85rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete Chapter" onclick="deleteChapterPrompt(${c.id}, ${seriesId}, '${escapeAttr(c.title || `Chapter ${c.chapter_num}`)}')">🗑️</button>
               </div>
@@ -2306,10 +2385,11 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (cluster.latest_chapter && cluster.latest_chapter !== "Chapter 1") {
         latestCh = cluster.latest_chapter;
       }
-      const coverUrl = cluster.cover_url || "";
+      const rawCover = cluster.cover_url || "";
+      const coverUrl = rawCover ? `/api/cover-proxy?url=${encodeURIComponent(rawCover)}` : "";
 
       return `
-        <div class="search-result-card" data-cluster-index="${idx}">
+        <div class="search-result-card" data-cluster-index="${idx}" onclick="window.openSourceComparisonModal(${idx})">
           <img class="search-card-poster" src="${escapeHtml(coverUrl)}" alt="${title}" loading="lazy" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'75\\' height=\\'105\\'><rect fill=\\'%231c2640\\' width=\\'75\\' height=\\'105\\'/><text fill=\\'%2394a3b8\\' x=\\'50%\\' y=\\'50%\\' text-anchor=\\'middle\\' font-size=\\'10\\'>No Cover</text></svg>'">
           <div class="search-card-content">
             <div>
@@ -2321,20 +2401,20 @@ document.addEventListener("DOMContentLoaded", () => {
               </div>
             </div>
             <div class="search-card-actions">
-              <button class="btn btn-secondary btn-compare-sources" data-cluster-index="${idx}">🔍 Compare Sources</button>
-              <button class="btn btn-primary btn-quick-dl" data-cluster-index="${idx}">⚡ Quick DL</button>
+              <button class="btn btn-secondary btn-compare-sources" data-cluster-index="${idx}" onclick="event.stopPropagation(); window.openSourceComparisonModal(${idx})">🔍 Compare Sources</button>
+              <button class="btn btn-primary btn-quick-dl" data-cluster-index="${idx}" onclick="event.stopPropagation(); window.quickDownloadCluster(${idx})">⚡ Quick DL</button>
             </div>
           </div>
         </div>
       `;
     }).join("");
 
-    // Wire action buttons
+    // Wire action buttons with event delegation & direct binding
     searchResultsGrid.querySelectorAll(".btn-compare-sources").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const idx = parseInt(btn.getAttribute("data-cluster-index"), 10);
-        openSourceComparisonModal(currentSearchResults[idx]);
+        openSourceComparisonModal(idx);
       });
     });
 
@@ -2342,22 +2422,41 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const idx = parseInt(btn.getAttribute("data-cluster-index"), 10);
-        quickDownloadCluster(currentSearchResults[idx]);
+        quickDownloadCluster(idx);
       });
     });
 
     searchResultsGrid.querySelectorAll(".search-result-card").forEach(card => {
       card.addEventListener("click", () => {
         const idx = parseInt(card.getAttribute("data-cluster-index"), 10);
-        openSourceComparisonModal(currentSearchResults[idx]);
+        openSourceComparisonModal(idx);
       });
     });
   }
 
-  function openSourceComparisonModal(cluster) {
-    if (!cluster || !sourceModal) return;
+  function openSourceComparisonModal(idxOrCluster) {
+    let cluster = idxOrCluster;
+    if (typeof idxOrCluster === "number" || typeof idxOrCluster === "string") {
+      const i = parseInt(idxOrCluster, 10);
+      cluster = currentSearchResults[i];
+    }
+    if (!cluster) {
+      showToast("Could not find source details for this series.", "info");
+      return;
+    }
+    if (!sourceModal) return;
+
+    if (cluster.cover_url) {
+      currentCatalogCoverUrl = cluster.cover_url;
+    }
+    if (cluster.canonical_title) {
+      currentSeriesTitle = cluster.canonical_title;
+    }
+
     sourceModalTitle.textContent = cluster.canonical_title || "Unknown Series";
-    sourceModalCover.src = cluster.cover_url || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="68"><rect fill="%231c2640" width="48" height="68"/></svg>';
+    const rawModalCover = cluster.cover_url || "";
+    const modalCoverSrc = rawModalCover ? `/api/cover-proxy?url=${encodeURIComponent(rawModalCover)}` : '';
+    sourceModalCover.src = modalCoverSrc || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="68"><rect fill="%231c2640" width="48" height="68"/></svg>';
     sourceModalCover.onerror = function() {
       this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="68"><rect fill="%231c2640" width="48" height="68"/></svg>';
     };
@@ -2373,6 +2472,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const lat = src.latency_ms ? `⚡ ${src.latency_ms}ms` : '🟢 Fast';
         const qTag = src.quality_tag || '1080p WebP';
         const chTxt = src.latest_chapter || (src.latest_chapter_num ? `Chapter ${src.latest_chapter_num}` : 'Available');
+        const srcUrl = src.series_url || src.url || "";
 
         return `
           <div class="source-item-row">
@@ -2390,58 +2490,72 @@ document.addEventListener("DOMContentLoaded", () => {
               </div>
             </div>
             <div class="source-actions">
-              <button class="btn btn-secondary btn-inspect-source" data-url="${escapeHtml(src.series_url)}">🔍 Inspect Chapters</button>
-              <button class="btn btn-primary btn-dl-source" data-url="${escapeHtml(src.series_url)}">⬇️ Download</button>
+              <button class="btn btn-secondary btn-inspect-source" data-url="${escapeHtml(srcUrl)}" onclick="window.inspectSourceFromModal(this)">🔍 Inspect Chapters</button>
+              <button class="btn btn-primary btn-dl-source" data-url="${escapeHtml(srcUrl)}" onclick="window.downloadSourceFromModal(this)">⬇️ Download</button>
             </div>
           </div>
         `;
       }).join("");
 
-      // Wire modal buttons
+      // Wire modal buttons directly as well
       sourceModalList.querySelectorAll(".btn-inspect-source").forEach(b => {
-        b.addEventListener("click", () => {
-          const url = b.getAttribute("data-url");
-          if (url) {
-            sourceModal.classList.add("hidden");
-            if (chapterUrlInput) chapterUrlInput.value = url;
-            setMode("url");
-            inspectSeries(url);
-          }
-        });
+        b.addEventListener("click", () => window.inspectSourceFromModal(b));
       });
 
       sourceModalList.querySelectorAll(".btn-dl-source").forEach(b => {
-        b.addEventListener("click", () => {
-          const url = b.getAttribute("data-url");
-          if (url) {
-            sourceModal.classList.add("hidden");
-            if (chapterUrlInput) chapterUrlInput.value = url;
-            setMode("url");
-            inspectSeries(url).then(() => {
-              const startBtn = document.getElementById("btn-start-download");
-              if (startBtn) startBtn.click();
-            });
-          }
-        });
+        b.addEventListener("click", () => window.downloadSourceFromModal(b));
       });
     }
 
     sourceModal.classList.remove("hidden");
   }
+  window.openSourceComparisonModal = openSourceComparisonModal;
 
-  function quickDownloadCluster(cluster) {
+  window.inspectSourceFromModal = function(btn) {
+    const url = btn.getAttribute("data-url");
+    if (url) {
+      if (sourceModal) sourceModal.classList.add("hidden");
+      if (chapterUrlInput) chapterUrlInput.value = url;
+      setMode("url");
+      inspectSeries(url, false, currentCatalogCoverUrl);
+    }
+  };
+
+  window.downloadSourceFromModal = function(btn) {
+    const url = btn.getAttribute("data-url");
+    if (url) {
+      if (sourceModal) sourceModal.classList.add("hidden");
+      if (chapterUrlInput) chapterUrlInput.value = url;
+      setMode("url");
+      inspectSeries(url, false, currentCatalogCoverUrl).then(() => {
+        const startBtn = document.getElementById("btn-start-download");
+        if (startBtn) startBtn.click();
+      });
+    }
+  };
+
+  function quickDownloadCluster(idxOrCluster) {
+    let cluster = idxOrCluster;
+    if (typeof idxOrCluster === "number" || typeof idxOrCluster === "string") {
+      cluster = currentSearchResults[parseInt(idxOrCluster, 10)];
+    }
     if (!cluster || !cluster.sources || cluster.sources.length === 0) {
       showToast("No active source found for this series.", "error");
       return;
     }
     const bestSource = cluster.sources[0];
-    if (bestSource && bestSource.series_url) {
-      if (chapterUrlInput) chapterUrlInput.value = bestSource.series_url;
+    const srcUrl = bestSource.series_url || bestSource.url;
+    if (bestSource && srcUrl) {
+      currentCatalogCoverUrl = cluster.cover_url || "";
+      currentSeriesTitle = cluster.canonical_title || "";
+      if (chapterUrlInput) chapterUrlInput.value = srcUrl;
       setMode("url");
       showToast(`Selected source '${bestSource.source_name}'. Fetching chapter catalog...`, "info");
-      inspectSeries(bestSource.series_url);
+      inspectSeries(srcUrl, false, currentCatalogCoverUrl);
     }
   }
+  window.quickDownloadCluster = quickDownloadCluster;
+
 
   async function performGlobalSearch(query) {
     if (!query || !query.trim()) return;
