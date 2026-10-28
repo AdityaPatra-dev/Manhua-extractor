@@ -191,6 +191,10 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             pass
 
     conn.close()
+    try:
+        consolidate_duplicate_series(db_path)
+    except Exception:
+        pass
 
 # --- Series Operations ---
 
@@ -208,7 +212,15 @@ def get_or_create_series(
 ) -> int:
     conn = get_connection(db_path)
     clean_title = (title or "").strip()
+    # Strip any trailing chapter or episode indicators from the title
+    clean_title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', clean_title, flags=re.I).strip(' -:|—')
+    clean_title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_title, flags=re.I).strip(' -:|—')
+    if not clean_title:
+        clean_title = (title or "").strip()
+
     clean_slug = (slug or "").strip().lower()
+    # Strip chapter numbering suffix from slug (e.g. island-of-stars-and-chains-1 -> island-of-stars-and-chains)
+    clean_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', clean_slug, flags=re.I)
 
     # If slug looks like a chapter number or unknown, derive from clean_title if available
     is_chapter_slug = bool(clean_slug and (clean_slug.startswith("ch") or clean_slug.isdigit() or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', clean_slug, re.I)))
@@ -220,17 +232,26 @@ def get_or_create_series(
             row = None
             # 1. Match by slug
             if clean_slug and clean_slug != "unknown-series":
-                row = conn.execute("SELECT id FROM series WHERE slug = ?", (clean_slug,)).fetchone()
+                row = conn.execute("SELECT id, title FROM series WHERE slug = ?", (clean_slug,)).fetchone()
 
             # 2. Match by exact/case-insensitive title
             if not row and clean_title and clean_title.lower() != "unknown series":
-                row = conn.execute("SELECT id FROM series WHERE lower(trim(title)) = lower(trim(?))", (clean_title,)).fetchone()
+                row = conn.execute("SELECT id, title FROM series WHERE lower(trim(title)) = lower(trim(?))", (clean_title,)).fetchone()
 
             # 3. Match by normalized title slug
             if not row and clean_title and clean_title.lower() != "unknown series":
                 title_slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')
                 if title_slug:
-                    row = conn.execute("SELECT id FROM series WHERE slug = ?", (title_slug,)).fetchone()
+                    row = conn.execute("SELECT id, title FROM series WHERE slug = ?", (title_slug,)).fetchone()
+
+            # 4. Match using is_same_series across existing series to prevent duplicate cards
+            if not row and clean_title and clean_title.lower() != "unknown series":
+                all_s = conn.execute("SELECT id, title, slug FROM series").fetchall()
+                from core.search.clustering import is_same_series
+                for s_item in all_s:
+                    if is_same_series(clean_title, s_item["title"]):
+                        row = s_item
+                        break
 
             if row:
                 series_id = row["id"]
@@ -242,16 +263,81 @@ def get_or_create_series(
                         engine = coalesce(?, engine),
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                """, (title, cover_url, source_url, engine, series_id))
+                """, (clean_title or title, cover_url, source_url, engine, series_id))
                 return series_id
 
             cursor = conn.execute("""
                 INSERT INTO series (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (clean_slug or slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine))
+            """, (clean_slug or slug, clean_title or title, alt_titles, author, status, synopsis, cover_url, source_url, engine))
             return cursor.lastrowid
     finally:
         conn.close()
+
+def consolidate_duplicate_series(db_path: str = DEFAULT_DB_PATH) -> int:
+    """
+    Find series records that are duplicates of the same series
+    (e.g., created per-chapter like 'Series 1' vs 'Series 2'),
+    reassign all chapters to the canonical series, and remove the duplicates.
+    """
+    from core.search.clustering import is_same_series
+    conn = get_connection(db_path)
+    merged_count = 0
+    try:
+        with conn:
+            all_series = conn.execute("SELECT id, slug, title, cover_path, cover_url, source_url FROM series ORDER BY id ASC").fetchall()
+            canonical_map: Dict[int, int] = {}
+
+            for i, s1 in enumerate(all_series):
+                s1_id = s1["id"]
+                if s1_id in canonical_map:
+                    continue
+                t1 = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', s1["title"], flags=re.I).strip(' -:|—')
+                t1 = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', t1, flags=re.I).strip(' -:|—')
+                if not t1:
+                    t1 = s1["title"]
+
+                slug1 = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', s1["slug"], flags=re.I)
+
+                for j in range(i + 1, len(all_series)):
+                    s2 = all_series[j]
+                    s2_id = s2["id"]
+                    if s2_id in canonical_map:
+                        continue
+                    t2 = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', s2["title"], flags=re.I).strip(' -:|—')
+                    t2 = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', t2, flags=re.I).strip(' -:|—')
+                    if not t2:
+                        t2 = s2["title"]
+
+                    slug2 = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', s2["slug"], flags=re.I)
+
+                    if slug1 == slug2 or t1.lower() == t2.lower() or is_same_series(t1, t2):
+                        canonical_map[s2_id] = s1_id
+
+            for dup_id, can_id in canonical_map.items():
+                dup_chaps = conn.execute("SELECT id, chapter_num, file_path FROM chapters WHERE series_id = ?", (dup_id,)).fetchall()
+                for ch in dup_chaps:
+                    existing = conn.execute("SELECT id FROM chapters WHERE series_id = ? AND chapter_num = ?", (can_id, ch["chapter_num"])).fetchone()
+                    if not existing:
+                        conn.execute("UPDATE chapters SET series_id = ? WHERE id = ?", (can_id, ch["id"]))
+                    else:
+                        conn.execute("DELETE FROM chapters WHERE id = ?", (ch["id"],))
+
+                conn.execute("DELETE FROM series WHERE id = ?", (dup_id,))
+                merged_count += 1
+
+            # Clean up titles and slugs for canonical series
+            for s in all_series:
+                if s["id"] not in canonical_map:
+                    clean_t = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', s["title"], flags=re.I).strip(' -:|—')
+                    clean_t = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_t, flags=re.I).strip(' -:|—')
+                    clean_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', s["slug"], flags=re.I)
+                    if clean_t and (clean_t != s["title"] or clean_slug != s["slug"]):
+                        conn.execute("UPDATE series SET title = ?, slug = coalesce(nullif(?, ''), slug) WHERE id = ?", (clean_t, clean_slug, s["id"]))
+    finally:
+        conn.close()
+    return merged_count
+
 
 def update_series_cover(series_id: int, cover_path: str, cover_url: Optional[str] = None, db_path: str = DEFAULT_DB_PATH) -> bool:
     """Update series record with locally downloaded cover image path."""
@@ -267,6 +353,59 @@ def update_series_cover(series_id: int, cover_path: str, cover_url: Optional[str
     conn.close()
     return True
 
+def _attach_resume_info(s: Dict[str, Any], conn: sqlite3.Connection) -> None:
+    """Compute exact chapter to resume reading for a series."""
+    try:
+        chaps = conn.execute("""
+            SELECT *
+            FROM chapters
+            WHERE series_id = ?
+            ORDER BY chapter_num ASC
+        """, (s["id"],)).fetchall()
+    except Exception:
+        chaps = []
+
+    resume_chap = None
+    if chaps:
+        def get_rs(c):
+            return c["read_status"] if "read_status" in c.keys() else 0
+        def get_stat(c):
+            return c["status"] if "status" in c.keys() else "completed"
+
+        # 1. Currently reading chapter (read_status = 1)
+        reading = [c for c in chaps if get_rs(c) == 1]
+        if reading:
+            resume_chap = reading[-1]
+        else:
+            # 2. Completed chapters (read_status = 2) -> Next unread chapter
+            completed = [c for c in chaps if get_rs(c) == 2]
+            if completed:
+                max_comp = max(c["chapter_num"] for c in completed)
+                unread_after = [c for c in chaps if c["chapter_num"] > max_comp and get_rs(c) < 2]
+                if unread_after:
+                    resume_chap = unread_after[0]
+                else:
+                    resume_chap = completed[-1]
+            else:
+                # 3. First downloaded chapter or first chapter
+                comp_chaps = [c for c in chaps if get_stat(c) == "completed"]
+                resume_chap = comp_chaps[0] if comp_chaps else chaps[0]
+
+    if resume_chap:
+        s["resume_chapter_id"] = resume_chap["id"]
+        s["resume_chapter_num"] = resume_chap["chapter_num"]
+        title_val = resume_chap["title"] if "title" in resume_chap.keys() else None
+        s["resume_chapter_title"] = title_val or f"Chapter {resume_chap['chapter_num']}"
+        s["last_read_page"] = (resume_chap["last_read_page"] if "last_read_page" in resume_chap.keys() else 0) or 0
+        s["read_status"] = (resume_chap["read_status"] if "read_status" in resume_chap.keys() else 0) or 0
+    else:
+        s["resume_chapter_id"] = None
+        s["resume_chapter_num"] = None
+        s["resume_chapter_title"] = None
+        s["last_read_page"] = 0
+        s["read_status"] = 0
+
+
 def get_all_series(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
     conn = get_connection(db_path)
     rows = conn.execute("""
@@ -278,14 +417,22 @@ def get_all_series(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:
         GROUP BY s.id
         ORDER BY s.updated_at DESC
     """).fetchall()
+    series_list = [dict(r) for r in rows]
+    for s in series_list:
+        _attach_resume_info(s, conn)
     conn.close()
-    return [dict(r) for r in rows]
+    return series_list
 
 def get_series_by_id(series_id: int, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
     conn = get_connection(db_path)
     row = conn.execute("SELECT * FROM series WHERE id = ?", (series_id,)).fetchone()
+    if not row:
+        conn.close()
+        return None
+    s = dict(row)
+    _attach_resume_info(s, conn)
     conn.close()
-    return dict(row) if row else None
+    return s
 
 def delete_series(series_id: int, db_path: str = DEFAULT_DB_PATH) -> bool:
     conn = get_connection(db_path)
