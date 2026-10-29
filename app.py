@@ -130,6 +130,7 @@ class AnalyzeRequest(BaseModel):
 
 class InspectSeriesRequest(BaseModel):
     url: str
+    cover_url: Optional[str] = None
 
 class DownloadRequest(BaseModel):
     url: str
@@ -147,6 +148,9 @@ class DownloadRequest(BaseModel):
     filter_promos: bool = True
     save_dir: Optional[str] = None
     chapter_urls: Optional[List[str]] = None
+    cover_url: Optional[str] = None
+    series_title: Optional[str] = None
+
 
 
 class TestSiteRequest(BaseModel):
@@ -204,9 +208,20 @@ async def inspect_series_catalog(req: InspectSeriesRequest):
         res = await loop.run_in_executor(None, dispatcher.inspect_series, url)
         if not res.get("success"):
             return JSONResponse(res, status_code=400)
+
+        # Prioritize search cover passed from frontend or resolve from global search
+        if req.cover_url:
+            res["cover_url"] = req.cover_url
+        elif not res.get("cover_url"):
+            from core.search.clustering import resolve_cover_from_search
+            sc = resolve_cover_from_search(res.get("series_title") or "")
+            if sc:
+                res["cover_url"] = sc
+
         return res
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 
 
 @app.get("/api/search")
@@ -332,31 +347,54 @@ def save_series_cover_locally(
     series_id: int,
     series_dir: str,
     cover_url: Optional[str] = None,
+    series_title: Optional[str] = None,
     fallback_bytes: Optional[bytes] = None,
     referer: Optional[str] = None
 ) -> Optional[str]:
     os.makedirs(series_dir, exist_ok=True)
     target_path = os.path.join(series_dir, "cover.jpg")
 
-    # 1. Try remote cover download with headers
-    if cover_url and cover_url.startswith("http"):
+    def _try_fetch(url: str, ref: Optional[str] = None) -> bool:
+        if not url or not url.startswith("http"):
+            return False
         try:
             import requests
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                "Referer": referer or cover_url,
+                "Referer": ref or url,
                 "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
             }
-            resp = requests.get(cover_url, headers=headers, timeout=12)
+            resp = requests.get(url, headers=headers, timeout=12)
             if resp.status_code == 200 and len(resp.content) > 1000 and b"<html" not in resp.content[:200].lower():
                 with open(target_path, "wb") as f:
                     f.write(resp.content)
-                update_series_cover(series_id, target_path, cover_url)
+                update_series_cover(series_id, target_path, url)
+                return True
+        except Exception:
+            pass
+        return False
+
+    # 1. Try provided remote cover_url
+    if cover_url and _try_fetch(cover_url, referer):
+        return target_path
+
+    # 2. Try looking up verified cover from Global Search
+    stitle = series_title
+    if not stitle:
+        s_rec = get_series_by_id(series_id)
+        if s_rec:
+            stitle = s_rec.get("title")
+
+    if stitle:
+        try:
+            from core.search.clustering import resolve_cover_from_search
+            search_cover = resolve_cover_from_search(stitle)
+            if search_cover and _try_fetch(search_cover, None):
                 return target_path
         except Exception:
             pass
 
-    # 2. Try fallback bytes (first panel of downloaded chapter)
+    # 3. Try fallback bytes (first panel of downloaded chapter) ONLY as absolute last resort
     if fallback_bytes and len(fallback_bytes) > 500:
         try:
             with open(target_path, "wb") as f:
@@ -386,6 +424,7 @@ async def run_download_job(req: DownloadRequest):
     current_url = specific_urls[0] if specific_urls else req.url.strip()
     chapters_processed = 0
     base_save_dir = req.save_dir or DOWNLOADS_DIR
+    downloaded_chapter_nums = set()
 
     try:
         while chapters_processed < target_count:
@@ -426,29 +465,49 @@ async def run_download_job(req: DownloadRequest):
                 download_progress["message"] = "Download stopped by user."
                 break
 
-            series_title = data.get("series_title") or "Unknown Series"
+            raw_title = req.series_title or data.get("series_title") or "Unknown Series"
+            clean_series_title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', raw_title, flags=re.I).strip(' -:|—')
+            clean_series_title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', clean_series_title, flags=re.I).strip(' -:|—')
+            series_title = clean_series_title if clean_series_title else raw_title
+
             series_slug = data.get("series_slug")
+            if series_slug:
+                series_slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', str(series_slug), flags=re.I)
             if not series_slug or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', str(series_slug), re.I):
                 if series_title and series_title != "Unknown Series":
                     series_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', series_title.lower()).strip('_')
                 else:
                     series_slug = series_slug or "unknown_series"
-            chapter_num = data.get("chapter_num") or (chapters_processed + 1)
+            extracted_ch_num = data.get("chapter_num")
+            if extracted_ch_num is not None and extracted_ch_num not in downloaded_chapter_nums:
+                chapter_num = extracted_ch_num
+            elif downloaded_chapter_nums:
+                chapter_num = max(downloaded_chapter_nums) + 1.0
+            else:
+                chapter_num = extracted_ch_num or (chapters_processed + 1.0)
+            downloaded_chapter_nums.add(chapter_num)
+
             pages = data.get("pages", [])
+
+            # Register/Update in Database (prioritize verified cover from global search if provided)
+            effective_cover = req.cover_url or data.get("series_cover")
+            series_id = get_or_create_series(
+                slug=series_slug,
+                title=series_title,
+                cover_url=effective_cover,
+                source_url=current_url,
+                engine=data.get("engine_id")
+            )
+
+            # Ensure canonical series title from database is used for directory & metadata
+            canonical = get_series_by_id(series_id)
+            if canonical and canonical.get("title"):
+                series_title = canonical["title"]
 
             download_progress["series_title"] = series_title
             download_progress["chapter_num"] = chapter_num
             download_progress["total_panels"] = len(pages)
             download_progress["current_panel"] = 0
-
-            # Register/Update in Database
-            series_id = get_or_create_series(
-                slug=series_slug,
-                title=series_title,
-                cover_url=data.get("series_cover"),
-                source_url=current_url,
-                engine=data.get("engine_id")
-            )
 
             # Create series directory
             safe_title = re.sub(r'[\\/*?:"<>|]', "", series_title)
@@ -566,7 +625,8 @@ async def run_download_job(req: DownloadRequest):
                 save_series_cover_locally(
                     series_id=series_id,
                     series_dir=series_dir,
-                    cover_url=data.get("series_cover") or (series_rec.get("cover_url") if series_rec else None),
+                    cover_url=effective_cover or (series_rec.get("cover_url") if series_rec else None),
+                    series_title=series_title,
                     fallback_bytes=panel_bytes[0] if panel_bytes else None,
                     referer=current_url
                 )
@@ -603,7 +663,11 @@ async def run_download_job(req: DownloadRequest):
 
             chapters_processed += 1
             if not specific_urls:
-                current_url = data.get("next_chapter_url")
+                next_url = data.get("next_chapter_url")
+                if not next_url and chapters_processed < target_count:
+                    from extractors.heuristic import HeuristicExtractor
+                    next_url = HeuristicExtractor().extract_next_chapter(None, current_url)
+                current_url = next_url
 
             # Small breather between chapters
             await asyncio.sleep(1)
@@ -699,12 +763,105 @@ async def get_series_detail(series_id: int):
             storage_dir = os.path.dirname(c["file_path"])
             break
 
+    # Discover and register any chapter files on disk that aren't yet in the database
+    if os.path.exists(storage_dir):
+        known_paths = {c.get("file_path") for c in chapters if c.get("file_path")}
+        known_nums = {c.get("chapter_num") for c in chapters if c.get("chapter_num") is not None}
+        new_found = False
+        for fname in sorted(os.listdir(storage_dir)):
+            full_p = os.path.join(storage_dir, fname)
+            if not os.path.isfile(full_p) or full_p in known_paths:
+                continue
+            ext = os.path.splitext(fname)[1].lower().lstrip('.')
+            if ext not in ("pdf", "cbz"):
+                continue
+            m = re.search(r'[-_]ch[-_.]?(\d+(?:[\.-]\d+)?)|\b(\d+(?:[\.-]\d+)?)\.(?:pdf|cbz)$', fname, re.I)
+            if m:
+                raw_num = (m.group(1) or m.group(2)).replace('-', '.')
+                try:
+                    ch_val = float(raw_num)
+                    if ch_val not in known_nums:
+                        add_or_update_chapter(
+                            series_id=series_id,
+                            chapter_num=ch_val,
+                            chapter_slug=f"chapter-{int(ch_val) if ch_val.is_integer() else ch_val}",
+                            title=f"Chapter {int(ch_val) if ch_val.is_integer() else ch_val}",
+                            file_path=full_p,
+                            file_format=ext,
+                            file_size=os.path.getsize(full_p),
+                            status="completed"
+                        )
+                        known_nums.add(ch_val)
+                        known_paths.add(full_p)
+                        new_found = True
+                except ValueError:
+                    pass
+        if new_found:
+            chapters = get_chapters_for_series(series_id)
+
     return {
         "success": True, 
         "series": series, 
         "chapters": chapters,
         "storage_dir": os.path.abspath(storage_dir)
     }
+
+def detect_image_media_type(path_or_bytes) -> str:
+    """Detect appropriate MIME type from image bytes or file header."""
+    head = b""
+    if isinstance(path_or_bytes, (bytes, bytearray)):
+        head = path_or_bytes[:16]
+    elif isinstance(path_or_bytes, str) and os.path.exists(path_or_bytes):
+        try:
+            with open(path_or_bytes, "rb") as f:
+                head = f.read(16)
+        except Exception:
+            pass
+    if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if len(head) >= 8 and head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if len(head) >= 3 and head[:3] == b"GIF":
+        return "image/gif"
+    if len(head) >= 2 and head[:2] == b"\xff\xd8":
+        return "image/jpeg"
+    return "image/jpeg"
+
+@app.get("/api/cover-proxy")
+async def proxy_cover_image(url: str, referer: Optional[str] = None):
+    """Safely proxy and cache remote cover images with proper headers to prevent 403 Forbidden / CORS blocks."""
+    if not url or not url.startswith("http"):
+        return Response(content=generate_svg_cover("No Cover"), media_type="image/svg+xml")
+
+    import hashlib
+    h = hashlib.md5(url.encode()).hexdigest()
+    cache_dir = os.path.join(DOWNLOADS_DIR, ".cover_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f"{h}.img")
+
+    if os.path.exists(cache_file) and os.path.getsize(cache_file) > 500:
+        with open(cache_file, "rb") as f:
+            data = f.read()
+        media_type = detect_image_media_type(data)
+        return Response(content=data, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
+
+    try:
+        import requests
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Referer": referer or url,
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
+        }
+        resp = requests.get(url, headers=headers, timeout=12)
+        if resp.status_code == 200 and len(resp.content) > 500 and b"<html" not in resp.content[:200].lower():
+            with open(cache_file, "wb") as f:
+                f.write(resp.content)
+            media_type = detect_image_media_type(resp.content)
+            return Response(content=resp.content, media_type=media_type, headers={"Cache-Control": "public, max-age=86400"})
+    except Exception:
+        pass
+
+    return Response(content=generate_svg_cover("No Cover"), media_type="image/svg+xml")
 
 @app.get("/api/series/{series_id}/cover")
 async def get_series_cover_endpoint(series_id: int):
@@ -715,25 +872,25 @@ async def get_series_cover_endpoint(series_id: int):
 
     # 1. Existing local cover file
     if series.get("cover_path") and os.path.exists(series["cover_path"]):
-        return FileResponse(series["cover_path"], media_type="image/jpeg")
+        return FileResponse(series["cover_path"], media_type=detect_image_media_type(series["cover_path"]))
 
     safe_title = re.sub(r'[\\/*?:"<>|]', "", series["title"])
     series_dir = os.path.join(DOWNLOADS_DIR, safe_title)
     cand_path = os.path.join(series_dir, "cover.jpg")
     if os.path.exists(cand_path):
         update_series_cover(series_id, cand_path)
-        return FileResponse(cand_path, media_type="image/jpeg")
+        return FileResponse(cand_path, media_type=detect_image_media_type(cand_path))
 
-    # 2. Try downloading remote cover_url with referer headers
-    if series.get("cover_url"):
-        saved = save_series_cover_locally(
-            series_id=series_id,
-            series_dir=series_dir,
-            cover_url=series["cover_url"],
-            referer=series.get("source_url")
-        )
-        if saved and os.path.exists(saved):
-            return FileResponse(saved, media_type="image/jpeg")
+    # 2. Try downloading remote cover_url or resolving from Global Search
+    saved = save_series_cover_locally(
+        series_id=series_id,
+        series_dir=series_dir,
+        cover_url=series.get("cover_url"),
+        series_title=series.get("title"),
+        referer=series.get("source_url")
+    )
+    if saved and os.path.exists(saved):
+        return FileResponse(saved, media_type=detect_image_media_type(saved))
 
     # 3. Fallback: extract page 0 of any downloaded chapter
     chapters = get_chapters_for_series(series_id)
@@ -747,11 +904,37 @@ async def get_series_cover_endpoint(series_id: int):
                     fallback_bytes=p_bytes
                 )
                 if saved and os.path.exists(saved):
-                    return FileResponse(saved, media_type="image/jpeg")
-                return Response(content=p_bytes, media_type="image/jpeg")
+                    return FileResponse(saved, media_type=detect_image_media_type(saved))
+                return Response(content=p_bytes, media_type=detect_image_media_type(p_bytes))
 
     # 4. Fallback: stylized SVG badge
     return Response(content=generate_svg_cover(series["title"]), media_type="image/svg+xml")
+
+@app.post("/api/series/{series_id}/sync-search-cover")
+async def sync_search_cover_endpoint(series_id: int):
+    """Force lookup the verified cover from Global Search and update series cover."""
+    series = get_series_by_id(series_id)
+    if not series:
+        return JSONResponse({"success": False, "error": "Series not found"}, status_code=404)
+
+    safe_title = re.sub(r'[\\/*?:"<>|]', "", series["title"])
+    series_dir = os.path.join(DOWNLOADS_DIR, safe_title)
+
+    from core.search.clustering import resolve_cover_from_search
+    search_cover = resolve_cover_from_search(series["title"])
+    if not search_cover:
+        return JSONResponse({"success": False, "error": "Could not discover cover in Global Search"}, status_code=404)
+
+    saved = save_series_cover_locally(
+        series_id=series_id,
+        series_dir=series_dir,
+        cover_url=search_cover,
+        series_title=series["title"]
+    )
+    if saved and os.path.exists(saved):
+        return {"success": True, "cover_url": search_cover, "cover_path": saved}
+    return JSONResponse({"success": False, "error": "Failed to download search cover"}, status_code=500)
+
 
 @app.post("/api/library/{series_id}/open-folder")
 async def open_series_folder(series_id: int):

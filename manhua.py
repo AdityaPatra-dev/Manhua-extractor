@@ -236,7 +236,11 @@ def download_series(
         except Exception:
             pass
 
-        current_url = ch_data.get("next_chapter_url")
+        next_url = ch_data.get("next_chapter_url")
+        if not next_url and ch_idx + 1 < total_chapters:
+            from extractors.heuristic import HeuristicExtractor
+            next_url = HeuristicExtractor().extract_next_chapter(None, current_url)
+        current_url = next_url
 
     print("\n" + "=" * 65)
     print(f"[🎉] Run complete! Series and chapters recorded in SQLite library.db.")
