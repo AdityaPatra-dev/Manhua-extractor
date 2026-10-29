@@ -166,21 +166,42 @@ class HeuristicExtractor(BaseExtractor):
 
     def extract_next_chapter(self, soup: BeautifulSoup, current_url: str) -> Optional[str]:
         # 1. Check link text cues
-        for a in soup.find_all("a", href=True):
-            text = a.get_text(strip=True).lower()
-            rel = a.get("rel", "")
-            if "next" in text or "›" in text or "»" in text or "next" in rel:
-                href = a["href"].strip()
-                if href and href != "#" and href != current_url and href.startswith("http"):
-                    return href
+        if soup is not None:
+            for a in soup.find_all("a", href=True):
+                text = a.get_text(strip=True).lower()
+                rel = a.get("rel", "")
+                if "next" in text or "›" in text or "»" in text or "next" in rel:
+                    href = a["href"].strip()
+                    if href and href != "#" and href != current_url and href.startswith("http"):
+                        return href
 
         # 2. Heuristic URL incrementation fallback
-        m = re.search(r'(chapter[-/])(\d+)', current_url, re.I)
+        clean = current_url.split('?')[0].rstrip('/')
+        trailing_slash = current_url.split('?')[0].endswith('/')
+
+        # Pattern A: explicit chapter/ep/ch keyword with number
+        m = re.search(r'((?:[-_/]|^)(?:chapter|episode|ep|ch)[-_.]?)(\d+)', clean, re.I)
         if m:
             prefix = m.group(1)
             num = int(m.group(2))
-            next_url = current_url[:m.start()] + f"{prefix}{num + 1}" + current_url[m.end():]
-            return next_url
+            res = clean[:m.start()] + f"{prefix}{num + 1}" + clean[m.end():]
+            return res + ("/" if trailing_slash else "")
+
+        # Pattern B: trailing hyphen/underscore + number at end of slug (e.g. series-1)
+        m = re.search(r'([-_])(\d+)$', clean)
+        if m:
+            sep = m.group(1)
+            num = int(m.group(2))
+            res = clean[:m.start()] + f"{sep}{num + 1}"
+            return res + ("/" if trailing_slash else "")
+
+        # Pattern C: trailing number in path (/123)
+        m = re.search(r'(/)(\d+)$', clean)
+        if m:
+            sep = m.group(1)
+            num = int(m.group(2))
+            res = clean[:m.start()] + f"{sep}{num + 1}"
+            return res + ("/" if trailing_slash else "")
 
         return None
 

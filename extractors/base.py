@@ -44,19 +44,25 @@ class BaseExtractor(ABC):
         h1 = soup.find('h1')
         if h1:
             title = h1.get_text(strip=True)
-            title = re.sub(r'chapter\s*[\d\.\-]+.*', '', title, flags=re.I).strip(' -:|—')
+            title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', title, flags=re.I).strip(' -:|—')
+            title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', title, flags=re.I).strip(' -:|—')
             title = re.sub(r'^read\s+', '', title, flags=re.I).strip()
             title = re.sub(r'\s+[-—|]\s+.*$', '', title, flags=re.I).strip()
         if not title:
             og_title = soup.find('meta', property='og:title')
             if og_title and og_title.get('content'):
                 title = og_title['content'].strip()
-                title = re.sub(r'chapter\s*[\d\.\-]+.*', '', title, flags=re.I).strip(' -:|—')
+                title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', title, flags=re.I).strip(' -:|—')
+                title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', title, flags=re.I).strip(' -:|—')
                 title = re.sub(r'^read\s+', '', title, flags=re.I).strip()
                 title = re.sub(r'\s+[-—|]\s+.*$', '', title, flags=re.I).strip()
         if not title:
             title = slug.replace('-', ' ').title()
+            title = re.sub(r'(?:[-—|:]\s*)?(?:chapter|episode|ep|ch|vol|volume|#)\s*[\d\.\-]+.*', '', title, flags=re.I).strip(' -:|—')
+            title = re.sub(r'\s+[\d\.\-]+(?:\s*raw|\s*end)?$', '', title, flags=re.I).strip(' -:|—')
 
+        # Strip chapter numbering suffix from slug (e.g. island-of-stars-and-chains-1 -> island-of-stars-and-chains)
+        slug = re.sub(r'[-_](?:chapter|episode|ch|ep|vol|volume)?[-_.]?\d+(?:\.\d+)?$', '', slug, flags=re.I)
         if (slug == "unknown-series" or re.search(r'^(?:ch(?:apter)?|ep(?:isode)?)[-_.]?\d+|^\d+(?:\.\d+)?$', slug, re.I)) and title and title.lower() != "unknown series":
             slug = re.sub(r'[^a-zA-Z0-9_-]', '-', title.lower()).strip('-')
 
@@ -95,14 +101,34 @@ class BaseExtractor(ABC):
                 "img[itemprop='image']"
             ]
             for sel in dom_cover_selectors:
-                c_elem = soup.select_one(sel)
-                if c_elem:
+                elements = soup.select(sel)
+                for c_elem in elements:
+                    # Ignore images in sidebars, widgets, related mangas, or footers
+                    parent_str = " ".join([
+                        str(p.get("class", [])) + " " + str(p.get("id", ""))
+                        for p in c_elem.parents if hasattr(p, "get")
+                    ]).lower()
+                    if any(bad in parent_str for bad in ["sidebar", "widget", "related", "recommend", "recent", "popular", "footer", "author", "user", "comment"]):
+                        continue
+
+                    # If the image has an alt/title, check that it doesn't clearly name a different series
+                    alt_val = (c_elem.get("alt") or c_elem.get("title") or "").strip().lower()
+                    if title and alt_val and len(alt_val) > 3:
+                        t_clean = re.sub(r'[^a-z0-9]+', ' ', title.lower()).strip()
+                        # If alt has words but 0 overlap with series title, skip
+                        t_words = set(t_clean.split()) - {"the", "a", "an", "and", "of", "in", "to"}
+                        alt_words = set(re.sub(r'[^a-z0-9]+', ' ', alt_val).split()) - {"the", "a", "an", "and", "of", "in", "to"}
+                        if t_words and alt_words and not (t_words & alt_words):
+                            continue
+
                     src = c_elem.get("data-src") or c_elem.get("data-lazy-src") or c_elem.get("src")
                     if src and isinstance(src, str) and src.strip().startswith("http"):
                         cand = src.strip()
-                        if not any(bad in cand.lower() for bad in ["logo", "avatar", "icon", "banner", "placeholder"]):
+                        if not any(bad in cand.lower() for bad in ["logo", "avatar", "icon", "banner", "placeholder", "discord"]):
                             cover_url = cand
                             break
+                if cover_url:
+                    break
 
         return {
             "title": title or slug.replace('-', ' ').title(),
@@ -118,14 +144,23 @@ class BaseExtractor(ABC):
             m = re.search(r'(?:chapter|episode|ep|ch)\s*(\d+(?:[\.-]\d+)?)', title, re.I)
             if not m:
                 m = re.search(r'#\s*(\d+(?:[\.-]\d+)?)', title)
+            if not m:
+                m = re.search(r'\b(?:chapter|episode|ep|ch)?\s*(\d+(?:[\.-]\d+)?)\s*$', title.strip(), re.I)
 
         # Look in URL if title did not yield a valid chapter number
+        clean_url = (url or "").split('?')[0].rstrip('/')
+        path_last = clean_url.split('/')[-1] if clean_url else ""
+
         if not m:
-            m = re.search(r'chapter[-/](\d+(?:[\.-]\d+)?)', url, re.I)
+            m = re.search(r'(?:chapter|episode|ep|ch)[-_/](\d+(?:[\.-]\d+)?)', clean_url, re.I)
         if not m:
-            m = re.search(r'/c(?:h|hapter)?[-/]?(\d+(?:[\.-]\d+)?)', url, re.I)
+            m = re.search(r'[-_/]c(?:h|hapter)?[-/.]?(\d+(?:[\.-]\d+)?)', clean_url, re.I)
         if not m:
-            m = re.search(r'(\d+(?:[\.-]\d+)?)', url.split('/')[-1])
+            m = re.search(r'[-_](\d+(?:[\.-]\d+)?)$', path_last)
+        if not m:
+            m = re.search(r'/(\d+(?:[\.-]\d+)?)$', clean_url)
+        if not m:
+            m = re.search(r'(\d+(?:[\.-]\d+)?)', path_last)
 
         if m:
             raw_num = m.group(1).replace('-', '.')

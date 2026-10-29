@@ -168,7 +168,16 @@ class ExtractorDispatcher:
 
         # Extract series metadata
         series_info = matched_engine.extract_series_info(soup, url, html)
-        chapter_num = matched_engine.extract_chapter_number(url, series_info.get("title"))
+
+        # Retain raw page heading/title prior to chapter stripping for accurate chapter numbering
+        page_raw_title = ""
+        h1 = soup.find('h1')
+        if h1:
+            page_raw_title = h1.get_text(strip=True)
+        elif soup.title:
+            page_raw_title = soup.title.get_text(strip=True)
+
+        chapter_num = matched_engine.extract_chapter_number(url, page_raw_title or series_info.get("title"))
         pages = matched_engine.extract_pages(soup, url, html)
         next_chapter_url = matched_engine.extract_next_chapter(soup, url)
 
