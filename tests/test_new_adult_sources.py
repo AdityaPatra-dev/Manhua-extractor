@@ -184,8 +184,6 @@ class TestNewAdultSources(unittest.TestCase):
         self.assertIn("3hentai", keys)
         self.assertIn("nhentaito", keys)
         self.assertIn("hentainame", keys)
-        self.assertIn("nhentaicom", keys)
-        self.assertIn("hentairead", keys)
 
 
 if __name__ == "__main__":

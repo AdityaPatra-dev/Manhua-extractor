@@ -38,9 +38,9 @@ class TestNewSources(unittest.TestCase):
         keys = {s["key"] for s in TIER_2_MADARA}
         fast_keys = {s["key"] for s in search_dispatcher.get_sources_for_tier("fast")}
         expected = [
-            "toongod", "hentai20", "manhwaclub", "allporncomics",
+            "toongod", "hentai20", "manhwaclub",
             "comicland", "manhwa18", "toontop", "manga18fx",
-            "mangadass", "manga18club"
+            "mangadass"
         ]
         for exp in expected:
             self.assertIn(exp, keys)

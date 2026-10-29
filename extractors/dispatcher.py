@@ -89,6 +89,11 @@ class ExtractorDispatcher:
 
     def fetch_page(self, url: str) -> Tuple[int, str, BeautifulSoup]:
         """Fetch URL using curl_cffi Chrome impersonation, falling back to Cloudscraper, then Browser Sidecar."""
+        # Normalize legacy/dead ComicK domains
+        for _cd in ("comick.dev", "comick.io", "comick.app", "comick.cc", "comick.top", "comick.art"):
+            if _cd in url:
+                url = url.replace(_cd, "comick.live")
+
         if "hentai.name" in url.lower():
             try:
                 r = requests.get(url, headers={"User-Agent": "curl/7.88.1", "Referer": "https://www.hentai.name/"}, timeout=15)

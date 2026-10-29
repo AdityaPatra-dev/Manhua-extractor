@@ -74,7 +74,7 @@ KNOWN_DOMAINS = {
     "manhwanex": "manhwanex.com",
     "zinmanga": "www.zinmanga.net",
     "mangadex": "api.mangadex.org",
-    "comick": "api.comick.dev",
+    "comick": "comick.live",
     "weebcentral": "weebcentral.com",
     "mangapill": "mangapill.com",
     "mangakatana": "mangakatana.com",

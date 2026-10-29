@@ -51,12 +51,10 @@ TIER_1_SOURCES = [
 
     # Curated High-Speed Aggregators
     {"key": "mangadex", "name": "MangaDex", "type": "api_mangadex"},
-    {"key": "comick", "name": "ComicK", "type": "api_comick"},
     {"key": "weebcentral", "name": "WeebCentral", "type": "weebcentral"},
     {"key": "mangapill", "name": "MangaPill", "type": "mangapill"},
     {"key": "mangakatana", "name": "MangaKatana", "type": "mangakatana"},
     {"key": "mangafox", "name": "MangaFox", "type": "mangafox"},
-    {"key": "mangahub", "name": "MangaHub", "type": "mangahub"},
     {"key": "mangahere", "name": "MangaHere", "type": "mangahere"},
     {"key": "mangatown", "name": "MangaTown", "type": "mangatown"},
     {"key": "mgeko", "name": "MangaGeko", "type": "mgeko"},
@@ -67,8 +65,6 @@ TIER_1_SOURCES = [
     {"key": "hentai20", "name": "Hentai20", "type": "mangastream", "domain": "hentai20.io"},
     {"key": "manga18fx", "name": "Manga18fx", "type": "manga18fx", "domain": "manga18fx.com"},
     {"key": "manhwaclub", "name": "ManhwaClub", "type": "madara", "domain": "manhwaclub.net"},
-    {"key": "allporncomics", "name": "AllPornComics", "type": "madara", "domain": "allporncomics.co"},
-    {"key": "manga18club", "name": "Manga18.club", "type": "manga18club", "domain": "manga18.club"},
     {"key": "mangadass", "name": "MangaDass", "type": "mangadass", "domain": "mangadass.com"},
     {"key": "toontop", "name": "ToonTop", "type": "toontop", "domain": "toontop.io"},
     {"key": "comicland", "name": "ComicLand", "type": "comicland", "domain": "comicland.org"},
@@ -77,24 +73,19 @@ TIER_1_SOURCES = [
     {"key": "3hentai", "name": "3Hentai", "type": "3hentai", "domain": "3hentai.net"},
     {"key": "nhentaito", "name": "nhentai.to", "type": "nhentaito", "domain": "nhentai.to"},
     {"key": "hentainame", "name": "hentai.name", "type": "hentainame", "domain": "hentai.name"},
-    {"key": "nhentaicom", "name": "nHentai.com", "type": "nhentaicom", "domain": "nhentai.com"},
-    {"key": "hentairead", "name": "HentaiRead", "type": "madara", "domain": "hentairead.com"},
 ]
 
 TIER_2_MADARA = [
     {"key": "zinmanga", "name": "ZinManga", "type": "madara", "domain": "www.zinmanga.net"},
     {"key": "hiperdex", "name": "Hiperdex", "type": "hiperdex", "domain": "hiperdex.tv"},
-    {"key": "hentairead", "name": "HentaiRead", "type": "madara", "domain": "hentairead.com"},
     {"key": "toongod", "name": "ToonGod", "type": "toongod", "domain": "toongod.cc"},
     {"key": "hentai20", "name": "Hentai20", "type": "mangastream", "domain": "hentai20.io"},
     {"key": "manhwaclub", "name": "ManhwaClub", "type": "madara", "domain": "manhwaclub.net"},
-    {"key": "allporncomics", "name": "AllPornComics", "type": "madara", "domain": "allporncomics.co"},
     {"key": "comicland", "name": "ComicLand", "type": "comicland", "domain": "comicland.org"},
     {"key": "manhwa18", "name": "Manhwa18", "type": "manhwa18", "domain": "manhwa18.net"},
     {"key": "toontop", "name": "ToonTop", "type": "toontop", "domain": "toontop.io"},
     {"key": "manga18fx", "name": "Manga18fx", "type": "manga18fx", "domain": "manga18fx.com"},
     {"key": "mangadass", "name": "MangaDass", "type": "mangadass", "domain": "mangadass.com"},
-    {"key": "manga18club", "name": "Manga18.club", "type": "manga18club", "domain": "manga18.club"},
 ]
 
 TIER_3_MANGASTREAM = []
@@ -261,7 +252,7 @@ class SearchDispatcher:
                         "source_key": "comick",
                         "source_name": "ComicK",
                         "source_logo": "/docs/logos/comick.png",
-                        "series_url": f"https://comick.io/comic/{hid}",
+                        "series_url": f"https://comick.live/comic/{hid}",
                         "cover_url": cover_url,
                         "latest_chapter": f"Chapter {last_ch}",
                         "latest_chapter_num": last_ch_num,
