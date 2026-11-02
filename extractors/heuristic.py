@@ -189,7 +189,13 @@ class HeuristicExtractor(BaseExtractor):
             if clean:
                 raw_urls.append(clean)
 
-        return self.deduplicate_urls(raw_urls)
+        deduped = self.deduplicate_urls(raw_urls)
+        # Safeguard: Never return 1 or 2 random images if they are thumbnails, covers, logos, or banners
+        if len(deduped) <= 2:
+            if any(any(b in u.lower() for b in ["cover", "thumb", "logo", "banner", "featured", "avatar", "discord"]) for u in deduped):
+                return []
+
+        return deduped
 
     def _is_potential_panel(self, img) -> bool:
         src = (

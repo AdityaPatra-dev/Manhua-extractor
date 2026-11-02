@@ -20,6 +20,7 @@ from .nhentaito import NHentaiToExtractor
 from .hentainame import HentaiNameExtractor
 from .nhentaicom import NHentaiComExtractor
 from .hivescans import HiveScansExtractor
+from .vortexscans import VortexScansExtractor
 from .manhwa18 import Manhwa18Extractor
 from .modern_ssr import ModernSSRExtractor
 from .madara import MadaraExtractor
@@ -51,6 +52,7 @@ class ExtractorDispatcher:
             ComicLandExtractor(),
             Manhwa18Extractor(),
             HiveScansExtractor(),
+            VortexScansExtractor(),
             ComicKExtractor(),
             MangaDexExtractor(),
             HitomiExtractor(),
@@ -100,6 +102,11 @@ class ExtractorDispatcher:
         for _vd in ("void-scans.com", "voidscans.com", "hivescans.com", "hivetoon.com", "hivetoons.com"):
             if _vd in url:
                 url = url.replace(_vd, "hivetoons.org")
+
+        # Normalize legacy/mirrored Vortex Scans domains
+        for _vortex_d in ("vortexcomics.org", "vortextoon.com", "vortexscans.io", "vortexscans.com"):
+            if _vortex_d in url:
+                url = url.replace(_vortex_d, "vortexscans.org")
 
         if "hentai.name" in url.lower():
             try:

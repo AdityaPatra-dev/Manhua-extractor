@@ -12,6 +12,7 @@ from .nhentaito import NHentaiToExtractor
 from .hentainame import HentaiNameExtractor
 from .nhentaicom import NHentaiComExtractor
 from .hivescans import HiveScansExtractor
+from .vortexscans import VortexScansExtractor
 from .dispatcher import ExtractorDispatcher, dispatcher
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "HentaiNameExtractor",
     "NHentaiComExtractor",
     "HiveScansExtractor",
+    "VortexScansExtractor",
     "ExtractorDispatcher",
     "dispatcher",
 ]
