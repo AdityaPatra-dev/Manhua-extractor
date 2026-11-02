@@ -241,3 +241,4 @@ class VortexScansExtractor(BaseExtractor):
             return clean[:m.start()] + f"{prefix}{num + 1}" + clean[m.end():]
 
         return None
+
