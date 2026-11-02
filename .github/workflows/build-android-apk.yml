@@ -39,6 +39,17 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug assembleRelease --stacktrace
 
+      - name: Create Legacy Aliases and Verify APK Splits
+        working-directory: android
+        run: |
+          echo "=== Built Release APKs ==="
+          ls -lh app/build/outputs/apk/release/
+          # Provide backwards-compatible app-release.apk alias for older app versions
+          cp app/build/outputs/apk/release/app-universal-release.apk app/build/outputs/apk/release/app-release.apk || true
+          cp app/build/outputs/apk/debug/app-universal-debug.apk app/build/outputs/apk/debug/app-debug.apk || true
+          echo "=== Final APKs to Publish ==="
+          ls -lh app/build/outputs/apk/release/
+
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:

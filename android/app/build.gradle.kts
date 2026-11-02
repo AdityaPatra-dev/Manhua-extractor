@@ -12,8 +12,8 @@ android {
         applicationId = "com.manhua.extractor"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17
-        versionName = "1.2.6"
+        versionCode = 18
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -37,6 +37,15 @@ android {
                     install("aiohttp")
                 }
             }
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = true
         }
     }
 

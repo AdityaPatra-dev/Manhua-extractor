@@ -4281,6 +4281,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (window.AndroidApp && typeof window.AndroidApp.isDebug === "function" && window.AndroidApp.isDebug()) {
         q.set("debug", "true");
       }
+      if (window.AndroidApp && typeof window.AndroidApp.getDeviceAbi === "function") {
+        try {
+          const dAbi = window.AndroidApp.getDeviceAbi();
+          if (dAbi) q.set("abi", dAbi);
+        } catch (_) {}
+      }
       const url = `/api/app/check-update${q.toString() ? "?" + q.toString() : ""}`;
 
       const res = await fetch(url);
@@ -4341,13 +4347,72 @@ document.addEventListener("DOMContentLoaded", () => {
     const curVerEl = document.getElementById("update-modal-current-version");
     const latVerEl = document.getElementById("update-modal-latest-version");
     const apkSizeEl = document.getElementById("update-modal-apk-size");
+    const savingsBadge = document.getElementById("update-modal-savings-badge");
     const changelogEl = document.getElementById("update-modal-changelog");
+    const variantRow = document.getElementById("update-modal-variant-row");
+    const variantSelect = document.getElementById("update-modal-variant-select");
+    const selectedAbiEl = document.getElementById("update-modal-selected-abi");
 
     if (curVerEl) curVerEl.textContent = `v${info.current_version}`;
     if (latVerEl) latVerEl.textContent = `v${info.latest_version}`;
     
     const sizeMb = info.apk_size ? (info.apk_size / (1024 * 1024)).toFixed(1) + " MB" : "APK";
     if (apkSizeEl) apkSizeEl.textContent = sizeMb;
+
+    if (savingsBadge) {
+      if (info.data_savings_percent && info.data_savings_percent > 0) {
+        savingsBadge.textContent = `⚡ Saves ~${info.data_savings_percent}% data (${info.apk_abi})`;
+        savingsBadge.classList.remove("hidden");
+      } else {
+        savingsBadge.classList.add("hidden");
+      }
+    }
+
+    if (selectedAbiEl) {
+      selectedAbiEl.textContent = info.apk_abi ? info.apk_abi.toUpperCase() : "UNIVERSAL";
+    }
+
+    // Populate architecture / variant selector
+    if (variantRow && variantSelect && Array.isArray(info.available_variants) && info.available_variants.length > 1) {
+      variantSelect.innerHTML = "";
+      info.available_variants.forEach(v => {
+        const opt = document.createElement("option");
+        opt.value = v.url;
+        const vSizeMb = v.size ? (v.size / (1024 * 1024)).toFixed(1) + " MB" : "";
+        opt.textContent = `${v.label} ${vSizeMb ? `(${vSizeMb})` : ""}`;
+        if (v.url === info.apk_url || v.abi === info.apk_abi) {
+          opt.selected = true;
+        }
+        variantSelect.appendChild(opt);
+      });
+
+      variantSelect.onchange = (e) => {
+        const chosenUrl = e.target.value;
+        const chosenVar = info.available_variants.find(v => v.url === chosenUrl);
+        if (chosenVar) {
+          info.apk_url = chosenVar.url;
+          info.apk_size = chosenVar.size;
+          info.apk_abi = chosenVar.abi;
+          info.is_abi_specific = ["arm64-v8a", "armeabi-v7a", "x86_64"].includes(chosenVar.abi);
+          const newSizeMb = chosenVar.size ? (chosenVar.size / (1024 * 1024)).toFixed(1) + " MB" : "APK";
+          if (apkSizeEl) apkSizeEl.textContent = newSizeMb;
+          if (selectedAbiEl) selectedAbiEl.textContent = chosenVar.abi.toUpperCase();
+          if (savingsBadge) {
+            const uSize = info.universal_apk_size || 0;
+            if (uSize > 0 && chosenVar.size < uSize) {
+              const sPct = Math.round((uSize - chosenVar.size) / uSize * 100);
+              savingsBadge.textContent = `⚡ Saves ~${sPct}% data (${chosenVar.abi})`;
+              savingsBadge.classList.remove("hidden");
+            } else {
+              savingsBadge.classList.add("hidden");
+            }
+          }
+        }
+      };
+      variantRow.classList.remove("hidden");
+    } else if (variantRow) {
+      variantRow.classList.add("hidden");
+    }
 
     if (changelogEl) {
       changelogEl.textContent = info.release_notes || "Bug fixes, performance improvements, and updated scraper engine.";

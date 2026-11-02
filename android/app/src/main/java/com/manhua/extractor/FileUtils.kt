@@ -377,6 +377,22 @@ class AndroidWebAppInterface(private val context: Context) {
     }
 
     @JavascriptInterface
+    fun getDeviceAbi(): String {
+        val supported = android.os.Build.SUPPORTED_ABIS
+        if (supported != null && supported.isNotEmpty()) {
+            return supported[0]
+        }
+        @Suppress("DEPRECATION")
+        return android.os.Build.CPU_ABI ?: "arm64-v8a"
+    }
+
+    @JavascriptInterface
+    fun getSupportedAbis(): String {
+        val supported = android.os.Build.SUPPORTED_ABIS
+        return supported?.joinToString(",") ?: "arm64-v8a"
+    }
+
+    @JavascriptInterface
     fun downloadAndInstallApk(apkUrl: String) {
         FileUtils.downloadAndInstallApk(context, apkUrl, onProgress = { pct ->
             if (context is MainActivity) {

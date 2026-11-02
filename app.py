@@ -104,13 +104,13 @@ async def get_app_version():
     }
 
 @app.get("/api/app/check-update")
-async def check_app_update(force: bool = False, simulate: bool = False, debug: bool = False):
-    info = await asyncio.to_thread(get_latest_release, force=force, simulate=simulate, prefer_debug=debug)
+async def check_app_update(force: bool = False, simulate: bool = False, debug: bool = False, abi: Optional[str] = None):
+    info = await asyncio.to_thread(get_latest_release, force=force, simulate=simulate, prefer_debug=debug, abi=abi)
     return info
 
 @app.get("/api/app/download-update")
-async def download_update_redirect():
-    info = await asyncio.to_thread(get_latest_release, force=False)
+async def download_update_redirect(abi: Optional[str] = None, debug: bool = False):
+    info = await asyncio.to_thread(get_latest_release, force=False, prefer_debug=debug, abi=abi)
     apk_url = info.get("apk_url")
     if not apk_url:
         return JSONResponse(status_code=404, content={"error": "No APK asset found for latest release"})
