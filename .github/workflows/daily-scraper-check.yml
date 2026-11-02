@@ -44,6 +44,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Execute Daily Test Suite (Codecs, Compilers, Slicers, Extractors)
+        id: test_suite
+        continue-on-error: true
+        run: |
+          mkdir -p .github/reports
+          python3 -m unittest discover -s tests -p "test_*.py" 2>&1 | tee .github/reports/unittest_output.log
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+
+      - name: Manage Test Failure GitHub Issues
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${{ steps.test_suite.outputs.exit_code }}" -eq 0 ]; then
+            python3 .github/scripts/report_test_failure.py --status success --log-file .github/reports/unittest_output.log
+          else
+            python3 .github/scripts/report_test_failure.py --status failure --log-file .github/reports/unittest_output.log
+          fi
+
       - name: Execute Scraper Health Check
         run: |
           python3 .github/scripts/check_scrapers.py \
@@ -65,6 +84,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scraper-health-report
-          path: .github/reports/scraper_health.json
+          path: |
+            .github/reports/scraper_health.json
+            .github/reports/unittest_output.log
           retention-days: 14
 

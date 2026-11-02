@@ -19,6 +19,7 @@ from .threehentai import ThreeHentaiExtractor
 from .nhentaito import NHentaiToExtractor
 from .hentainame import HentaiNameExtractor
 from .nhentaicom import NHentaiComExtractor
+from .hivescans import HiveScansExtractor
 from .manhwa18 import Manhwa18Extractor
 from .modern_ssr import ModernSSRExtractor
 from .madara import MadaraExtractor
@@ -49,6 +50,7 @@ class ExtractorDispatcher:
             HiperdexExtractor(),
             ComicLandExtractor(),
             Manhwa18Extractor(),
+            HiveScansExtractor(),
             ComicKExtractor(),
             MangaDexExtractor(),
             HitomiExtractor(),
@@ -93,6 +95,11 @@ class ExtractorDispatcher:
         for _cd in ("comick.dev", "comick.io", "comick.app", "comick.cc", "comick.top", "comick.art"):
             if _cd in url:
                 url = url.replace(_cd, "comick.live")
+
+        # Normalize legacy Void Scans / Hive Scans domains
+        for _vd in ("void-scans.com", "voidscans.com", "hivescans.com", "hivetoon.com", "hivetoons.com"):
+            if _vd in url:
+                url = url.replace(_vd, "hivetoons.org")
 
         if "hentai.name" in url.lower():
             try:

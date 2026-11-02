@@ -182,7 +182,6 @@ class TestNewAdultSources(unittest.TestCase):
         keys = {s["key"] for s in TIER_1_SOURCES}
         self.assertIn("hentaifox", keys)
         self.assertIn("3hentai", keys)
-        self.assertIn("nhentaito", keys)
         self.assertIn("hentainame", keys)
 
 

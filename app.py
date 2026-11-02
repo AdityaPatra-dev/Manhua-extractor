@@ -154,8 +154,40 @@ download_progress = {
     "message": "Ready",
     "last_downloaded_series_id": None,
     "last_downloaded_chapter_id": None,
-    "last_downloaded_chapter_num": None
+    "last_downloaded_chapter_num": None,
+    "speed_bytes_sec": 0.0,
+    "speed_formatted": "0 KB/s",
+    "downloaded_bytes": 0,
+    "downloaded_formatted": "0 MB",
+    "eta_seconds": 0.0,
+    "eta_formatted": "--"
 }
+
+def format_byte_size(num_bytes: int) -> str:
+    if num_bytes >= 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
+    elif num_bytes >= 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.1f} MB"
+    elif num_bytes >= 1024:
+        return f"{num_bytes / 1024:.0f} KB"
+    return f"{num_bytes} B"
+
+def format_speed(bps: float) -> str:
+    if bps >= 1024 * 1024:
+        return f"{bps / (1024 * 1024):.1f} MB/s"
+    elif bps >= 1024:
+        return f"{bps / 1024:.0f} KB/s"
+    return f"{int(bps)} B/s"
+
+def format_eta(seconds: float) -> str:
+    if seconds <= 0:
+        return "--"
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    m = s // 60
+    rem_s = s % 60
+    return f"{m}m {rem_s}s"
 
 # --- Request Models ---
 
@@ -634,7 +666,14 @@ class DownloadQueueManager:
 
                 self.queue.remove(next_job)
                 self.active_job = next_job
-                self.active_job["status"] = "downloading"
+                self.active_job["status"] = "starting"
+                self.active_job["message"] = "Initializing download stream..."
+                download_progress["is_running"] = True
+                download_progress["status"] = "starting"
+                download_progress["message"] = f"Initializing download for {next_job.get('series_title') or 'series'}..."
+                download_progress["speed_formatted"] = "0 KB/s"
+                download_progress["downloaded_formatted"] = "0 MB"
+                download_progress["eta_formatted"] = "--"
 
             try:
                 await execute_download_job(self.active_job)
@@ -717,8 +756,13 @@ async def execute_download_job(job: Dict[str, Any]):
             # Analyze page
             data = await asyncio.to_thread(dispatcher.analyze_url, current_url)
             if not data.get("success") or not data.get("pages"):
-                job["message"] = f"Failed to extract panels from {current_url}"
-                download_progress["message"] = f"Failed to extract panels from {current_url}"
+                err_detail = f"Failed to extract panels from {current_url}"
+                if any(k in current_url.lower() for k in ("hivetoon", "void-scan", "hivescan")):
+                    err_detail = f"Chapter {chapters_processed + 1} is locked / paywalled on Void / Hive Scans (requires coins on hivetoons.org). Only free chapters can be downloaded."
+                job["status"] = "error"
+                job["message"] = err_detail
+                download_progress["status"] = "error"
+                download_progress["message"] = err_detail
                 break
 
             if job.get("is_cancelled") or download_progress.get("is_cancelled"):
@@ -813,11 +857,21 @@ async def execute_download_job(job: Dict[str, Any]):
             os.makedirs(series_dir, exist_ok=True)
 
             # Progress callback for downloader
-            def on_progress(done, total):
+            def on_progress(done, total, bytes_dl=0, speed_bps=0.0, eta_s=0.0):
                 job["current_panel"] = done
                 job["total_panels"] = total
+                job["downloaded_bytes"] = bytes_dl
+                job["speed_bytes_sec"] = speed_bps
+                job["eta_seconds"] = eta_s
+
                 download_progress["current_panel"] = done
                 download_progress["total_panels"] = total
+                download_progress["downloaded_bytes"] = bytes_dl
+                download_progress["downloaded_formatted"] = format_byte_size(bytes_dl)
+                download_progress["speed_bytes_sec"] = speed_bps
+                download_progress["speed_formatted"] = format_speed(speed_bps)
+                download_progress["eta_seconds"] = eta_s
+                download_progress["eta_formatted"] = format_eta(eta_s)
 
             # Stream download pages
             staging_dir = get_staging_dir(base_save_dir, series_slug, chapter_num)
@@ -825,6 +879,9 @@ async def execute_download_job(job: Dict[str, Any]):
             job["message"] = f"Downloading Chapter {chapter_num} (0/{len(pages)} panels)..."
             download_progress["status"] = "downloading"
             download_progress["message"] = f"Downloading Chapter {chapter_num} (0/{len(pages)} panels)..."
+            download_progress["speed_formatted"] = "0 KB/s"
+            download_progress["downloaded_formatted"] = "0 MB"
+            download_progress["eta_formatted"] = "--"
 
             panel_bytes = await download_panels_stream(
                 image_urls=pages,

@@ -144,8 +144,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (!isSilent && btnInspect) {
-      btnInspect.textContent = "🔍 Browsing...";
+      if (navigator.vibrate) try { navigator.vibrate(25); } catch(e){}
+      btnInspect.classList.add("btn-clicked-active", "btn-pulsing");
+      const btnInspectText = document.getElementById("btn-inspect-text");
+      const btnInspectSpinner = document.getElementById("btn-inspect-spinner");
+      if (btnInspectText) btnInspectText.textContent = "Fetching...";
+      else btnInspect.textContent = "🔄 Fetching...";
+      if (btnInspectSpinner) btnInspectSpinner.classList.remove("hidden");
       btnInspect.disabled = true;
+      showToast("Fetching chapter catalog from URL...", "info");
     }
 
     try {
@@ -204,7 +211,12 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!isSilent) showToast(`Network error inspecting series: ${err.message}`, "error");
     } finally {
       if (!isSilent && btnInspect) {
-        btnInspect.textContent = "🔍 Browse Chapters";
+        btnInspect.classList.remove("btn-clicked-active", "btn-pulsing");
+        const btnInspectText = document.getElementById("btn-inspect-text");
+        const btnInspectSpinner = document.getElementById("btn-inspect-spinner");
+        if (btnInspectText) btnInspectText.textContent = "🔍 Fetch & Browse";
+        else btnInspect.textContent = "🔍 Fetch & Browse";
+        if (btnInspectSpinner) btnInspectSpinner.classList.add("hidden");
         btnInspect.disabled = false;
       }
     }
@@ -425,8 +437,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    btnAnalyze.textContent = "Analyzing...";
+    if (navigator.vibrate) try { navigator.vibrate(25); } catch(e){}
+    btnAnalyze.classList.add("btn-clicked-active");
+    btnAnalyze.textContent = "⚡ Analyzing...";
     btnAnalyze.disabled = true;
+    showToast("Analyzing panels for chapter...", "info");
 
     try {
       const res = await fetch("/api/analyze", {
@@ -455,7 +470,8 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       showToast(`Network error during analysis: ${err.message}`, "error");
     } finally {
-      btnAnalyze.textContent = "Analyze";
+      btnAnalyze.classList.remove("btn-clicked-active");
+      btnAnalyze.textContent = "⚡ Quick Analyze";
       btnAnalyze.disabled = false;
     }
   });
@@ -607,6 +623,15 @@ document.addEventListener("DOMContentLoaded", () => {
           document.getElementById("progress-bar-fill").style.width = `${pct}%`;
           document.getElementById("prog-panel-count").textContent = `${state.current_panel} / ${state.total_panels} panels`;
         }
+
+        const speedVal = document.getElementById("prog-speed-val");
+        if (speedVal) speedVal.textContent = state.speed_formatted || "0 KB/s";
+
+        const sizeVal = document.getElementById("prog-size-val");
+        if (sizeVal) sizeVal.textContent = state.downloaded_formatted || "0 MB";
+
+        const etaVal = document.getElementById("prog-eta-val");
+        if (etaVal) etaVal.textContent = state.eta_formatted || "--";
 
         const progActions = document.getElementById("prog-completed-actions");
         const progControls = document.getElementById("prog-control-actions");

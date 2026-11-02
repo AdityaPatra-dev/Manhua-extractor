@@ -373,7 +373,24 @@ input:focus, select:focus {
   font-size: 0.95rem;
   border: none;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:active, .btn-clicked-active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) inset !important;
+  filter: brightness(0.9);
+}
+
+.btn-pulsing {
+  animation: pulse-btn 0.8s infinite alternate;
+}
+
+@keyframes pulse-btn {
+  from { box-shadow: 0 0 4px var(--accent-glow); }
+  to { box-shadow: 0 0 16px var(--accent); }
 }
 
 .btn-primary {

@@ -50,7 +50,6 @@ TIER_1_SOURCES = [
     {"key": "zinmanga", "name": "ZinManga", "type": "madara", "domain": "www.zinmanga.net"},
 
     # Curated High-Speed Aggregators
-    {"key": "mangadex", "name": "MangaDex", "type": "api_mangadex"},
     {"key": "weebcentral", "name": "WeebCentral", "type": "weebcentral"},
     {"key": "mangapill", "name": "MangaPill", "type": "mangapill"},
     {"key": "mangakatana", "name": "MangaKatana", "type": "mangakatana"},
@@ -71,7 +70,6 @@ TIER_1_SOURCES = [
     {"key": "manhwa18", "name": "Manhwa18", "type": "manhwa18", "domain": "manhwa18.net"},
     {"key": "hentaifox", "name": "HentaiFox", "type": "hentaifox", "domain": "hentaifox.com"},
     {"key": "3hentai", "name": "3Hentai", "type": "3hentai", "domain": "3hentai.net"},
-    {"key": "nhentaito", "name": "nhentai.to", "type": "nhentaito", "domain": "nhentai.to"},
     {"key": "hentainame", "name": "hentai.name", "type": "hentainame", "domain": "hentai.name"},
 ]
 

@@ -162,8 +162,13 @@
             <div class="input-with-button input-form-responsive">
               <input type="text" id="chapter-url" placeholder="Paste series or chapter URL (e.g. Asura, Toonily, ManhuaPlus)...">
               <div class="input-button-grid">
-                <button id="btn-inspect" class="btn btn-primary">🔍 Browse Chapters</button>
-                <button id="btn-analyze" class="btn btn-secondary">⚡ Quick Analyze</button>
+                <button id="btn-inspect" class="btn btn-primary" title="Fetch and browse full series chapter catalog">
+                  <span id="btn-inspect-spinner" class="spinner hidden" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle; margin-right: 4px;"></span>
+                  <span id="btn-inspect-text">🔍 Fetch & Browse</span>
+                </button>
+                <button id="btn-analyze" class="btn btn-secondary" title="Quickly analyze single chapter panels">
+                  <span id="btn-analyze-text">⚡ Quick Analyze</span>
+                </button>
               </div>
             </div>
           </div>
@@ -296,6 +301,13 @@
         <div class="progress-details">
           <span id="prog-message">Waiting for stream...</span>
           <span id="prog-chapter-tracker">Chapter 1 of 1</span>
+        </div>
+
+        <!-- Live Download Metrics (Speed, Size, ETA) -->
+        <div class="progress-metrics-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.65rem; padding: 6px 12px; background: rgba(0, 0, 0, 0.25); border-radius: 6px; font-size: 0.8rem; border: 1px solid rgba(255, 255, 255, 0.05);">
+          <span style="display: flex; align-items: center; gap: 4px; color: var(--text-muted);">⚡ Speed: <strong id="prog-speed-val" style="color: var(--accent); font-family: monospace;">0 KB/s</strong></span>
+          <span style="display: flex; align-items: center; gap: 4px; color: var(--text-muted);">📦 Downloaded: <strong id="prog-size-val" style="color: var(--text); font-family: monospace;">0 MB</strong></span>
+          <span style="display: flex; align-items: center; gap: 4px; color: var(--text-muted);">⏱️ ETA: <strong id="prog-eta-val" style="color: var(--text-muted); font-family: monospace;">--</strong></span>
         </div>
 
         <!-- Download Control Actions (Pause/Resume, Stop) -->

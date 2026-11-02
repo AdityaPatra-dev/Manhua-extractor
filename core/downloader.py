@@ -3,6 +3,7 @@ import os
 import shutil
 import hashlib
 import re
+import time
 from typing import List, Optional, Callable, Tuple, Any
 try:
     import aiohttp
@@ -215,6 +216,24 @@ async def download_panels_stream(
 
     semaphore = asyncio.Semaphore(concurrency)
     results = []
+    t_start = time.time()
+    bytes_downloaded = 0
+
+    def _report_progress(done_cnt: int, tot_cnt: int):
+        if not progress_callback:
+            return
+        elapsed = max(0.001, time.time() - t_start)
+        speed_bps = bytes_downloaded / elapsed
+        rem_panels = max(0, tot_cnt - done_cnt)
+        if done_cnt > 0 and speed_bps > 0:
+            avg_per_panel = bytes_downloaded / done_cnt
+            eta_s = (rem_panels * avg_per_panel) / speed_bps
+        else:
+            eta_s = 0.0
+        try:
+            progress_callback(done_cnt, tot_cnt, bytes_downloaded, speed_bps, eta_s)
+        except TypeError:
+            progress_callback(done_cnt, tot_cnt)
 
     if aiohttp is not None:
         async with aiohttp.ClientSession() as session:
@@ -251,8 +270,8 @@ async def download_panels_stream(
                             results.append(res)
                             if res[1] is not None:
                                 completed += 1
-                            if progress_callback:
-                                progress_callback(completed, total)
+                                bytes_downloaded += len(res[1])
+                            _report_progress(completed, total)
                         except Exception:
                             pass
             except asyncio.CancelledError:
@@ -293,8 +312,8 @@ async def download_panels_stream(
                         results.append(res)
                         if res[1] is not None:
                             completed += 1
-                        if progress_callback:
-                            progress_callback(completed, total)
+                            bytes_downloaded += len(res[1])
+                        _report_progress(completed, total)
                     except Exception:
                         pass
         except asyncio.CancelledError:
