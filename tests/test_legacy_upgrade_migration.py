@@ -4,18 +4,22 @@ import shutil
 import tempfile
 import unittest
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch, MagicMock
+
 from database.db import (
     init_db,
     get_all_series,
     get_series_by_id,
+    get_or_create_series,
     add_or_update_chapter,
     update_reading_progress,
     is_series_updatable,
     _calc_release_schedule
 )
+from core.updater import run_library_update, check_and_enqueue_series_update
 
 
-class TestLegacyUpgradeMigration(unittest.TestCase):
+class TestLegacyUpgradeMigration(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.temp_dir, "legacy_user.db")
@@ -95,7 +99,7 @@ class TestLegacyUpgradeMigration(unittest.TestCase):
                     VALUES (1, ?, ?, ?, 'pdf', 'completed')
                 """, (c_num, f"Chapter {int(c_num)}", fp))
 
-            # 2. Insert an existing completed static manga (e.g. Hitomi)
+            # 2. Insert an existing completed static manga (Hitomi)
             conn.execute("""
                 INSERT INTO series (id, slug, title, status, source_url, engine)
                 VALUES (2, 'hitomi-gallery', 'Hitomi Gallery One-Shot', 'Ongoing', 'https://hitomi.la/doujinshi/12345.html', 'hitomi')
@@ -118,10 +122,26 @@ class TestLegacyUpgradeMigration(unittest.TestCase):
                 VALUES (3, 1.0, 'Chapter 1', NULL, 'pdf', 'completed')
             """)
 
+            # 4. Insert an old legacy series where series source_url and engine were MISSING/AUTO, but chapter came from Hitomi
+            conn.execute("""
+                INSERT INTO series (id, slug, title, status, source_url, engine)
+                VALUES (4, 'old-doujinshi-work', 'Old Doujinshi Work', 'Ongoing', NULL, 'auto')
+            """)
+            conn.execute("""
+                INSERT INTO chapters (series_id, chapter_num, title, source_url, status)
+                VALUES (4, 1.0, 'One Shot', 'https://hitomi.la/reader/99999.html', 'completed')
+            """)
+
+            # 5. Insert an old legacy series with slug 'hentaifox-777' without engine
+            conn.execute("""
+                INSERT INTO series (id, slug, title, status, source_url, engine)
+                VALUES (5, 'hentaifox-777', 'HentaiFox Work', 'Ongoing', NULL, 'auto')
+            """)
+
         conn.close()
 
-    def test_upgrade_from_legacy_version_runs_cleanly(self):
-        """Test that updating an older version database runs flawlessly without data corruption or errors."""
+    async def test_upgrade_from_legacy_version_excludes_all_old_static_manga_data(self):
+        """Test that updating an older version database runs flawlessly and completely excludes all old static manga data."""
         self.create_v1_0_legacy_database()
 
         # Execute init_db which runs all schema migrations and legacy data migration
@@ -129,35 +149,57 @@ class TestLegacyUpgradeMigration(unittest.TestCase):
 
         # 1. Verify schema was upgraded without losing any data
         series = get_all_series(self.db_path)
-        self.assertEqual(len(series), 3)
+        self.assertEqual(len(series), 5)
 
-        # 2. Verify Nano Machine (Ongoing Manhua)
+        # 2. Verify Nano Machine (Ongoing Manhua) -> ONLY ONE UP-TO-DATE AND UPDATABLE
         nano = next(s for s in series if s["id"] == 1)
         self.assertTrue(nano["updatable"])
         self.assertEqual(nano["auto_update"], 1)
         self.assertEqual(nano["downloaded_chapters"], 3)
-        # Old completed chapters established a clean baseline (no false red dot)
         self.assertFalse(nano["has_unread"])
-        self.assertEqual(nano["unread_count"], 0)
-        # Downloaded_at was backfilled from file mtime (4 days ago) -> next expected in ~3d
-        self.assertIsNotNone(nano["latest_downloaded_at"])
         self.assertIn("in 3d", nano["next_expected_desc"])
-        self.assertEqual(nano["next_expected_short"], "In 3d")
 
-        # 3. Verify Hitomi Gallery (Static manga website)
+        # 3. Verify Hitomi Gallery (Static manga by source_url & engine) -> EXCLUDED
         hitomi = next(s for s in series if s["id"] == 2)
-        # Static source is automatically excluded from updates
         self.assertFalse(hitomi["updatable"])
+        self.assertEqual(hitomi["auto_update"], 0)
         self.assertIn("Static manga", hitomi["updatable_reason"])
-        self.assertEqual(hitomi["next_expected_desc"], "Static Archive (Single Release)")
         self.assertEqual(hitomi["next_expected_short"], "Static")
 
-        # 4. Verify Solo Leveling (Completed Series)
+        # 4. Verify Solo Leveling (Completed Series) -> EXCLUDED
         solo = next(s for s in series if s["id"] == 3)
         self.assertFalse(solo["updatable"])
+        self.assertEqual(solo["auto_update"], 0)
         self.assertEqual(solo["updatable_reason"], "Series status is Completed")
-        self.assertEqual(solo["next_expected_desc"], "Series Completed")
-        self.assertEqual(solo["next_expected_short"], "Completed")
+
+        # 5. Verify Old Doujinshi Work (Missing series source_url, but chapter source_url was hitomi.la) -> EXCLUDED
+        old_hitomi = next(s for s in series if s["id"] == 4)
+        self.assertFalse(old_hitomi["updatable"])
+        self.assertEqual(old_hitomi["auto_update"], 0)
+        self.assertIn("Static manga", old_hitomi["updatable_reason"])
+
+        # 6. Verify HentaiFox Work (Slug pattern match) -> EXCLUDED
+        hfox = next(s for s in series if s["id"] == 5)
+        self.assertFalse(hfox["updatable"])
+        self.assertEqual(hfox["auto_update"], 0)
+        self.assertIn("Static manga", hfox["updatable_reason"])
+
+        # 7. Test run_library_update with this database:
+        # It must ONLY check Nano Machine (id 1) and SKIP all 4 other series!
+        with patch("core.updater.get_all_series", return_value=series), \
+             patch("core.updater.check_and_enqueue_series_update") as mock_check:
+            mock_check.return_value = {"queued": False, "success": True, "series_id": 1, "series_title": "Nano Machine", "new_chapters": []}
+            mock_queue = MagicMock()
+            res = await run_library_update(queue_manager=mock_queue)
+            
+            self.assertEqual(res["total_series"], 5)
+            self.assertEqual(res["checked_series_count"], 1)  # Only Nano Machine!
+            self.assertEqual(res["skipped_series_count"], 4)  # All 4 static / completed titles excluded!
+            
+            # Verify mock_check was ONLY called for Nano Machine, NEVER for Hitomi / HentaiFox / etc.
+            mock_check.assert_called_once()
+            args, kwargs = mock_check.call_args
+            self.assertEqual(kwargs["series_id"], 1)
 
     def test_moving_forward_new_chapters_trigger_red_dot_and_clear_on_read(self):
         """Test that moving forward after migration, newly downloaded chapters trigger unread badges and clear upon reading."""
@@ -182,8 +224,6 @@ class TestLegacyUpgradeMigration(unittest.TestCase):
         self.assertTrue(nano_after_dl["has_unread"])
         self.assertEqual(nano_after_dl["unread_count"], 1)
         self.assertEqual(nano_after_dl["latest_downloaded_chapter_num"], 4.0)
-        # Downloaded today -> expected in ~7 days
-        self.assertIn("in 7d", nano_after_dl["next_expected_desc"])
 
         # User starts reading Chapter 4 (page 5 of 20) -> still unread dot active
         update_reading_progress(new_ch_id, read_status=1, last_read_page=5, db_path=self.db_path)

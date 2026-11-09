@@ -932,9 +932,11 @@ document.addEventListener("DOMContentLoaded", () => {
             <p class="series-card-desc" title="${escapeAttr(s.synopsis || s.genres || 'Saved in local library')}">
               ${escapeHtml(descSnippet)}
             </p>
-            <button class="btn-card-update" title="Check updates for ${escapeAttr(title)}" aria-label="Check updates" onclick="event.stopPropagation(); window.checkSpecificSeriesUpdate(${s.id}, this)">
-              <span class="update-icon">🔄</span>
-            </button>
+            ${s.updatable !== false ? `
+              <button class="btn-card-update" title="Check updates for ${escapeAttr(title)}" aria-label="Check updates" onclick="event.stopPropagation(); window.checkSpecificSeriesUpdate(${s.id}, this)">
+                <span class="update-icon">🔄</span>
+              </button>
+            ` : ''}
           </div>
           ${s.next_expected_short ? `
             <div style="margin: 2px 0 4px 0;">
@@ -1898,38 +1900,54 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const modalBtnCheckUpdate = document.getElementById("modal-btn-check-update");
         if (modalBtnCheckUpdate) {
-          modalBtnCheckUpdate.onclick = (e) => {
-            e.stopPropagation();
-            window.checkSpecificSeriesUpdate(seriesId, modalBtnCheckUpdate);
-          };
+          if (s.updatable === false) {
+            modalBtnCheckUpdate.style.display = "none";
+          } else {
+            modalBtnCheckUpdate.style.display = "inline-flex";
+            modalBtnCheckUpdate.onclick = (e) => {
+              e.stopPropagation();
+              window.checkSpecificSeriesUpdate(seriesId, modalBtnCheckUpdate);
+            };
+          }
         }
 
         const modalBtnAutoUpdate = document.getElementById("modal-btn-autoupdate");
         const modalAutoUpdateLabel = document.getElementById("modal-autoupdate-label");
         if (modalBtnAutoUpdate && modalAutoUpdateLabel) {
-          const isAuto = s.auto_update !== 0;
-          modalAutoUpdateLabel.textContent = isAuto ? "Auto-Update: On" : "Auto-Update: Off";
-          modalBtnAutoUpdate.style.opacity = isAuto ? "1" : "0.65";
-          modalBtnAutoUpdate.title = isAuto ? "Automatic updates enabled. Click to disable." : "Automatic updates disabled. Click to enable.";
-          modalBtnAutoUpdate.onclick = async (e) => {
-            e.stopPropagation();
-            try {
-              const newStatus = isAuto ? 0 : 1;
-              const res = await fetch(`/api/series/${seriesId}/toggle-update`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ auto_update: newStatus })
-              });
-              const resData = await res.json();
-              if (resData.success) {
-                showToast(newStatus === 1 ? "Auto-update enabled for this series" : "Auto-update disabled for this series", "info");
-                openSeriesModal(seriesId);
-                loadLibrary(false);
+          const isStatic = !s.updatable && s.updatable_reason && s.updatable_reason.includes("Static");
+          if (isStatic) {
+            modalAutoUpdateLabel.textContent = "Auto-Update: N/A (Static)";
+            modalBtnAutoUpdate.style.opacity = "0.5";
+            modalBtnAutoUpdate.title = `This series is from a static manga/gallery archive (${s.updatable_reason}). Periodic updates are not applicable.`;
+            modalBtnAutoUpdate.onclick = (e) => {
+              e.stopPropagation();
+              showToast("Static manga archives and single-release works do not receive updates.", "info");
+            };
+          } else {
+            const isAuto = s.auto_update !== 0 && s.updatable !== false;
+            modalAutoUpdateLabel.textContent = isAuto ? "Auto-Update: On" : "Auto-Update: Off";
+            modalBtnAutoUpdate.style.opacity = isAuto ? "1" : "0.65";
+            modalBtnAutoUpdate.title = isAuto ? "Automatic updates enabled. Click to disable." : "Automatic updates disabled. Click to enable.";
+            modalBtnAutoUpdate.onclick = async (e) => {
+              e.stopPropagation();
+              try {
+                const newStatus = isAuto ? 0 : 1;
+                const res = await fetch(`/api/series/${seriesId}/toggle-update`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ auto_update: newStatus })
+                });
+                const resData = await res.json();
+                if (resData.success) {
+                  showToast(newStatus === 1 ? "Auto-update enabled for this series" : "Auto-update disabled for this series", "info");
+                  openSeriesModal(seriesId);
+                  loadLibrary(false);
+                }
+              } catch(err) {
+                showToast("Error updating setting: " + err.message, "error");
               }
-            } catch(err) {
-              showToast("Error updating setting: " + err.message, "error");
-            }
-          };
+            };
+          }
         }
 
         const modalBtnGroup = document.getElementById("modal-btn-group");

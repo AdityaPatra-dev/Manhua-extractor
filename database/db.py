@@ -293,7 +293,52 @@ def migrate_legacy_user_data(db_path: str = DEFAULT_DB_PATH) -> None:
                     dl_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
                 conn.execute("UPDATE chapters SET downloaded_at = ? WHERE id = ?", (dl_time, ch_id))
 
-            # 2. Establish reading baseline for legacy data (runs once upon upgrade)
+            # 2. Exclude old/existing series from static manga websites & completed series from future auto-updates
+            conn.execute("""
+                UPDATE series
+                SET auto_update = 0
+                WHERE engine IN ('hitomi', 'hentaifox', 'threehentai', 'nhentaito', 'nhentaicom', 'hentainame', 'comicland')
+                   OR slug LIKE 'hitomi%'
+                   OR slug LIKE 'hentaifox%'
+                   OR slug LIKE '3hentai%'
+                   OR slug LIKE '%threehentai%'
+                   OR slug LIKE 'nhentai%'
+                   OR slug LIKE 'comicland%'
+                   OR source_url LIKE '%hitomi.la%'
+                   OR source_url LIKE '%hentaifox.com%'
+                   OR source_url LIKE '%3hentai.net%'
+                   OR source_url LIKE '%nhentai.net%'
+                   OR source_url LIKE '%nhentai.to%'
+                   OR source_url LIKE '%nhentai.xxx%'
+                   OR source_url LIKE '%nhentai.com%'
+                   OR source_url LIKE '%nhentai.io%'
+                   OR source_url LIKE '%hentai.name%'
+                   OR source_url LIKE '%comicland.org%'
+                   OR source_url LIKE '%e-hentai.org%'
+                   OR source_url LIKE '%exhentai.org%'
+                   OR source_url LIKE '%tsumino.com%'
+                   OR source_url LIKE '%pururin.io%'
+                   OR lower(status) IN ('completed', 'finished', 'cancelled', 'ended')
+                   OR id IN (
+                       SELECT DISTINCT series_id FROM chapters
+                       WHERE source_url LIKE '%hitomi.la%'
+                          OR source_url LIKE '%hentaifox.com%'
+                          OR source_url LIKE '%3hentai.net%'
+                          OR source_url LIKE '%nhentai.net%'
+                          OR source_url LIKE '%nhentai.to%'
+                          OR source_url LIKE '%nhentai.xxx%'
+                          OR source_url LIKE '%nhentai.com%'
+                          OR source_url LIKE '%nhentai.io%'
+                          OR source_url LIKE '%hentai.name%'
+                          OR source_url LIKE '%comicland.org%'
+                          OR source_url LIKE '%e-hentai.org%'
+                          OR source_url LIKE '%exhentai.org%'
+                          OR source_url LIKE '%tsumino.com%'
+                          OR source_url LIKE '%pururin.io%'
+                   )
+            """)
+
+            # 3. Establish reading baseline for legacy data (runs once upon upgrade)
             # Only runs if v2_6_baseline_migrated setting is not yet recorded.
             setting_row = conn.execute("SELECT value FROM settings WHERE key = 'v2_6_baseline_migrated'").fetchone()
             if not setting_row or str(setting_row["value"]) != "1":
@@ -474,10 +519,23 @@ def get_or_create_series(
                 """, (clean_title or title, author, synopsis, cover_url, source_url, engine, series_id))
                 return series_id
 
+            # Automatically set auto_update = 0 for static manga websites and completed titles
+            is_static_manga = False
+            if engine and str(engine).lower() in STATIC_ENGINES:
+                is_static_manga = True
+            elif clean_slug and any(str(clean_slug).lower().startswith(p) for p in ("hitomi", "hentaifox", "threehentai", "3hentai", "nhentai", "comicland", "tsumino", "pururin", "hentainame")):
+                is_static_manga = True
+            elif source_url and any(d in str(source_url).lower() for d in STATIC_DOMAINS):
+                is_static_manga = True
+            elif status and str(status).strip().lower() in ("completed", "finished", "cancelled", "ended"):
+                is_static_manga = True
+
+            init_auto_update = 0 if is_static_manga else 1
+
             cursor = conn.execute("""
-                INSERT INTO series (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (clean_slug or slug, clean_title or title, alt_titles, author, status, synopsis, cover_url, source_url, engine))
+                INSERT INTO series (slug, title, alt_titles, author, status, synopsis, cover_url, source_url, engine, auto_update)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (clean_slug or slug, clean_title or title, alt_titles, author, status, synopsis, cover_url, source_url, engine, init_auto_update))
             return cursor.lastrowid
     finally:
         conn.close()
@@ -576,40 +634,86 @@ def update_series_cover(series_id: int, cover_path: str, cover_url: Optional[str
 
 STATIC_DOMAINS = {
     "hitomi.la", "hentaifox.com", "3hentai.net", "nhentai.net",
-    "nhentai.to", "nhentai.xxx", "nhentai.com", "hentai.name",
-    "comicland.org", "e-hentai.org", "exhentai.org", "tsumino.com", "pururin.io"
+    "nhentai.to", "nhentai.xxx", "nhentai.com", "nhentai.io", "hentai.name",
+    "comicland.org", "e-hentai.org", "exhentai.org", "tsumino.com", "pururin.io",
+    "asmhentai.com", "simply-hentai.com", "imhentai.xxx", "hentai2read.com", "fakku.net"
 }
 STATIC_ENGINES = {
     "hitomi", "hentaifox", "threehentai", "nhentaito",
     "nhentaicom", "hentainame", "comicland"
 }
 
-def is_series_updatable(series: Dict[str, Any]) -> Tuple[bool, str]:
+def is_series_updatable(
+    series: Dict[str, Any],
+    chaps: Optional[List[Dict[str, Any]]] = None,
+    conn: Optional[sqlite3.Connection] = None,
+    db_path: str = DEFAULT_DB_PATH
+) -> Tuple[bool, str]:
     """
     Check if a series should be checked for periodic updates.
     Excludes static manga archives, single-volume/gallery sites, completed titles, and manually disabled series.
     Returns (can_update, reason).
     """
-    # 1. Explicit user toggle
-    if series.get("auto_update") is not None and int(series.get("auto_update")) == 0:
-        return False, "Auto-update disabled"
+    if not series:
+        return False, "Invalid series data"
 
-    # 2. Completed / Finished status
-    status = str(series.get("status") or "").strip().lower()
-    if status in ("completed", "finished", "cancelled", "ended"):
-        return False, "Series status is Completed"
-
-    # 3. Static one-shot / manga gallery domains & engines
+    # 1. Static one-shot / manga gallery engines
     engine = str(series.get("engine") or "").strip().lower()
     if engine in STATIC_ENGINES:
         return False, f"Static manga source ({engine})"
 
-    url = series.get("source_url") or ""
+    # 2. Slug pattern match (for legacy entries e.g. hitomi-1234, nhentai-5678, etc.)
+    slug = str(series.get("slug") or "").strip().lower()
+    if slug:
+        for prefix in ("hitomi", "hentaifox", "threehentai", "3hentai", "nhentai", "comicland", "tsumino", "pururin", "hentainame", "e-hentai", "exhentai"):
+            if slug == prefix or slug.startswith(prefix + "-") or slug.startswith(prefix + "_"):
+                return False, f"Static manga source ({prefix})"
+
+    # 3. URL domain match (checking netloc and full URL for mirrors)
+    url = str(series.get("source_url") or "").strip()
     if url:
         parsed = urlparse(url)
-        domain = parsed.netloc.lower()
-        if any(d in domain for d in STATIC_DOMAINS):
-            return False, f"Static manga website ({domain})"
+        domain = (parsed.netloc or "").lower()
+        url_lower = url.lower()
+        if any(d in domain or d in url_lower for d in STATIC_DOMAINS):
+            return False, f"Static manga website ({domain or 'gallery'})"
+
+    # 4. Deep check on chapters for legacy data where series source_url or engine was missing
+    if chaps:
+        for cr in chaps:
+            ch_url = (cr.get("source_url") or "").lower()
+            for d in STATIC_DOMAINS:
+                if d in ch_url:
+                    return False, f"Static manga website ({d})"
+    else:
+        series_id = series.get("id")
+        if series_id:
+            try:
+                active_conn = conn or get_connection(db_path)
+                chap_rows = active_conn.execute("""
+                    SELECT source_url FROM chapters 
+                    WHERE series_id = ? AND source_url IS NOT NULL AND source_url != ''
+                    LIMIT 5
+                """, (series_id,)).fetchall()
+                if not conn:
+                    active_conn.close()
+                for cr in chap_rows:
+                    ch_url = (cr["source_url"] or "").lower()
+                    for d in STATIC_DOMAINS:
+                        if d in ch_url:
+                            return False, f"Static manga website ({d})"
+            except Exception:
+                pass
+
+    # 5. Completed / Finished status
+    status = str(series.get("status") or "").strip().lower()
+    if status in ("completed", "finished", "cancelled", "ended"):
+        return False, "Series status is Completed"
+
+    # 6. Explicit user toggle or database flag
+    auto_up = series.get("auto_update")
+    if auto_up is not None and int(auto_up) == 0:
+        return False, "Auto-update disabled"
 
     return True, "Eligible for updates"
 
@@ -729,7 +833,7 @@ def _attach_resume_info(s: Dict[str, Any], conn: sqlite3.Connection) -> None:
         s["latest_downloaded_chapter_num"] = None
 
     # Updatability and release anticipation
-    can_update, reason = is_series_updatable(s)
+    can_update, reason = is_series_updatable(s, chaps=chaps, conn=conn)
     s["updatable"] = can_update
     s["updatable_reason"] = reason
 
