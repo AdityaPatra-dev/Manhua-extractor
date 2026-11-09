@@ -1,7 +1,7 @@
 import os
 import re
 import asyncio
-from typing import Dict, List, Any, Optional, Callable, Tuple
+from typing import Dict, List, Any, Optional, Callable, Tuple, Union
 from urllib.parse import urlparse
 
 from database.db import (
