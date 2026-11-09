@@ -42,11 +42,11 @@ class TestUpdater(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.status = 200
         mock_payload = {
-            "tag_name": "v1.3.1",
-            "name": "Release v1.3.1",
+            "tag_name": "v9.9.9",
+            "name": "Release v9.9.9",
             "body": "Awesome new features",
             "published_at": "2026-11-02T00:00:00Z",
-            "html_url": "https://github.com/AdityaPatra-dev/Manhua-extractor/releases/tag/v1.3.1",
+            "html_url": "https://github.com/AdityaPatra-dev/Manhua-extractor/releases/tag/v9.9.9",
             "assets": [
                 {
                     "name": "app-arm64-v8a-release.apk",
@@ -76,7 +76,7 @@ class TestUpdater(unittest.TestCase):
         # Request with arm64-v8a device ABI
         info = get_latest_release(force=True, abi="arm64-v8a")
         self.assertEqual(info["status"], "success")
-        self.assertEqual(info["latest_version"], "1.3.1")
+        self.assertEqual(info["latest_version"], "9.9.9")
         self.assertTrue(info["has_update"])
         self.assertEqual(info["apk_name"], "app-arm64-v8a-release.apk")
         self.assertEqual(info["apk_url"], "https://github.com/downloads/app-arm64-v8a-release.apk")
