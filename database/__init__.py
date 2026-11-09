@@ -27,7 +27,11 @@ from .db import (
     remove_series_from_folder,
     get_all_folders_with_items,
     get_folder_by_id,
-    get_folder_by_name
+    get_folder_by_name,
+    is_series_updatable,
+    set_series_auto_update,
+    STATIC_DOMAINS,
+    STATIC_ENGINES
 )
 
 

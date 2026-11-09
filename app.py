@@ -1599,6 +1599,33 @@ async def check_single_manhua_update(series_id: int):
     )
     return result
 
+class ToggleAutoUpdateRequest(BaseModel):
+    auto_update: Optional[int] = None
+
+@app.post("/api/series/{series_id}/toggle-update")
+async def toggle_series_auto_update(series_id: int, req: Optional[ToggleAutoUpdateRequest] = None):
+    series = get_series_by_id(series_id)
+    if not series:
+        return JSONResponse(status_code=404, content={"error": f"Series {series_id} not found"})
+    from database.db import set_series_auto_update
+    curr = series.get("auto_update")
+    new_val = req.auto_update if (req and req.auto_update is not None) else (0 if curr in (1, None) else 1)
+    set_series_auto_update(series_id, new_val)
+    return {"success": True, "series_id": series_id, "auto_update": new_val}
+
+class ToggleReadStatusRequest(BaseModel):
+    read_status: Optional[int] = None
+
+@app.post("/api/chapter/{chapter_id}/toggle-read")
+async def toggle_chapter_read_endpoint(chapter_id: int, req: Optional[ToggleReadStatusRequest] = None):
+    chap = get_chapter_by_id(chapter_id)
+    if not chap:
+        return JSONResponse(status_code=404, content={"error": f"Chapter {chapter_id} not found"})
+    curr = chap.get("read_status", 0)
+    new_val = req.read_status if (req and req.read_status is not None) else (0 if curr == 2 else 2)
+    update_reading_progress(chapter_id, new_val, chap.get("last_read_page", 0))
+    return {"success": True, "chapter_id": chapter_id, "read_status": new_val}
+
 @app.post("/api/library/update")
 async def trigger_library_update(background_tasks: BackgroundTasks):
     from core.updater import run_library_update

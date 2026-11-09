@@ -4,7 +4,8 @@ import sqlite3
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Any
+from urllib.parse import urlparse
+from typing import Dict, List, Optional, Any, Tuple
 
 DEFAULT_DB_PATH = os.environ.get("MANHUA_DB_PATH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "library.db")
 
@@ -187,6 +188,10 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             pass
         try:
             conn.execute("ALTER TABLE series ADD COLUMN sort_order INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE series ADD COLUMN auto_update INTEGER DEFAULT 1")
         except sqlite3.OperationalError:
             pass
 
@@ -472,15 +477,92 @@ def update_series_cover(series_id: int, cover_path: str, cover_url: Optional[str
     conn.close()
     return True
 
-def _attach_resume_info(s: Dict[str, Any], conn: sqlite3.Connection) -> None:
-    """Compute exact chapter to resume reading for a series."""
+STATIC_DOMAINS = {
+    "hitomi.la", "hentaifox.com", "3hentai.net", "nhentai.net",
+    "nhentai.to", "nhentai.xxx", "nhentai.com", "hentai.name",
+    "comicland.org", "e-hentai.org", "exhentai.org", "tsumino.com", "pururin.io"
+}
+STATIC_ENGINES = {
+    "hitomi", "hentaifox", "threehentai", "nhentaito",
+    "nhentaicom", "hentainame", "comicland"
+}
+
+def is_series_updatable(series: Dict[str, Any]) -> Tuple[bool, str]:
+    """
+    Check if a series should be checked for periodic updates.
+    Excludes static manga archives, single-volume/gallery sites, completed titles, and manually disabled series.
+    Returns (can_update, reason).
+    """
+    # 1. Explicit user toggle
+    if series.get("auto_update") is not None and int(series.get("auto_update")) == 0:
+        return False, "Auto-update disabled"
+
+    # 2. Completed / Finished status
+    status = str(series.get("status") or "").strip().lower()
+    if status in ("completed", "finished", "cancelled", "ended"):
+        return False, "Series status is Completed"
+
+    # 3. Static one-shot / manga gallery domains & engines
+    engine = str(series.get("engine") or "").strip().lower()
+    if engine in STATIC_ENGINES:
+        return False, f"Static manga source ({engine})"
+
+    url = series.get("source_url") or ""
+    if url:
+        parsed = urlparse(url)
+        domain = parsed.netloc.lower()
+        if any(d in domain for d in STATIC_DOMAINS):
+            return False, f"Static manga website ({domain})"
+
+    return True, "Eligible for updates"
+
+def _calc_release_schedule(latest_dl_str: Optional[str]) -> Tuple[str, str, Optional[str]]:
+    """Calculate next expected release window based on a 7-day chapter cadence."""
+    if not latest_dl_str:
+        return "Weekly release (~7 days)", "Weekly", None
     try:
-        chaps = conn.execute("""
+        clean = latest_dl_str.replace("T", " ").split(".")[0]
+        dt = datetime.strptime(clean, "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        try:
+            dt = datetime.strptime(latest_dl_str[:10], "%Y-%m-%d")
+        except Exception:
+            return "Weekly release (~7 days)", "Weekly", None
+
+    expected = dt + timedelta(days=7)
+    now = datetime.now()
+    diff_days = (expected - now).total_seconds() / 86400.0
+
+    exp_date_str = expected.strftime("%Y-%m-%d")
+    if diff_days > 1.0:
+        days_int = int(round(diff_days))
+        return f"Expected ~{expected.strftime('%b %d')} (in {days_int}d)", f"In {days_int}d", exp_date_str
+    elif diff_days > 0.0:
+        return f"Expected tomorrow ({expected.strftime('%b %d')})", "Tomorrow", exp_date_str
+    else:
+        overdue_days = int(abs(diff_days))
+        if overdue_days <= 1:
+            return "Expected now (weekly cadence)", "Due now", exp_date_str
+        return f"Due soon (last ch ~{overdue_days + 7}d ago)", "Due soon", exp_date_str
+
+def set_series_auto_update(series_id: int, auto_update: int, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """Enable or disable automated chapter update checks for a specific series."""
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute("UPDATE series SET auto_update = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (auto_update, series_id))
+    conn.close()
+    return True
+
+def _attach_resume_info(s: Dict[str, Any], conn: sqlite3.Connection) -> None:
+    """Compute exact chapter to resume reading for a series, unread badge status, and release anticipation."""
+    try:
+        raw_chaps = conn.execute("""
             SELECT *
             FROM chapters
             WHERE series_id = ?
             ORDER BY chapter_num ASC
         """, (s["id"],)).fetchall()
+        chaps = [dict(r) for r in raw_chaps]
     except Exception:
         chaps = []
 
@@ -523,6 +605,55 @@ def _attach_resume_info(s: Dict[str, Any], conn: sqlite3.Connection) -> None:
         s["resume_chapter_title"] = None
         s["last_read_page"] = 0
         s["read_status"] = 0
+
+    # Downloaded chapters
+    comp_chaps = [c for c in chaps if (c.get("status") == "completed") or (c.get("file_path") and os.path.exists(c.get("file_path")))]
+
+    # Red dot indicator: True if downloaded chapters exist and user hasn't read up to the latest one
+    if comp_chaps:
+        latest_dl_ch = max(comp_chaps, key=lambda c: c.get("chapter_num", 0))
+        latest_rs = (latest_dl_ch.get("read_status") if "read_status" in latest_dl_ch else 0) or 0
+        s["has_unread"] = bool(latest_rs < 2)
+        s["unread_count"] = sum(1 for c in comp_chaps if ((c.get("read_status") if "read_status" in c else 0) or 0) < 2)
+        
+        # Downloaded date tracking
+        dated_chaps = [c for c in comp_chaps if c.get("downloaded_at")]
+        if dated_chaps:
+            newest_dated = max(dated_chaps, key=lambda c: str(c.get("downloaded_at") or ""))
+            s["latest_downloaded_at"] = str(newest_dated.get("downloaded_at"))
+            s["latest_downloaded_chapter_num"] = newest_dated.get("chapter_num")
+        else:
+            s["latest_downloaded_at"] = None
+            s["latest_downloaded_chapter_num"] = None
+    else:
+        s["has_unread"] = False
+        s["unread_count"] = 0
+        s["latest_downloaded_at"] = None
+        s["latest_downloaded_chapter_num"] = None
+
+    # Updatability and release anticipation
+    can_update, reason = is_series_updatable(s)
+    s["updatable"] = can_update
+    s["updatable_reason"] = reason
+
+    status_lower = str(s.get("status") or "").strip().lower()
+    if status_lower in ("completed", "finished", "cancelled", "ended"):
+        s["next_expected_desc"] = "Series Completed"
+        s["next_expected_short"] = "Completed"
+        s["next_expected_date"] = None
+    elif not can_update and "Static" in reason:
+        s["next_expected_desc"] = "Static Archive (Single Release)"
+        s["next_expected_short"] = "Static"
+        s["next_expected_date"] = None
+    elif s.get("latest_downloaded_at"):
+        desc, short_desc, exp_date = _calc_release_schedule(s["latest_downloaded_at"])
+        s["next_expected_desc"] = desc
+        s["next_expected_short"] = short_desc
+        s["next_expected_date"] = exp_date
+    else:
+        s["next_expected_desc"] = "Weekly release (~7 days)"
+        s["next_expected_short"] = "Weekly"
+        s["next_expected_date"] = None
 
 
 def get_all_series(db_path: str = DEFAULT_DB_PATH) -> List[Dict[str, Any]]:

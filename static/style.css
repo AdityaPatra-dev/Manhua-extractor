@@ -606,6 +606,51 @@ input:focus, select:focus {
   letter-spacing: 0.02em;
 }
 
+.series-unread-dot {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 14px;
+  height: 14px;
+  background-color: #ef4444;
+  border: 2px solid #0b0f19;
+  border-radius: 50%;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.9);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.series-unread-dot .unread-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background-color: rgba(239, 68, 68, 0.6);
+  animation: unread-pulse-anim 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+@keyframes unread-pulse-anim {
+  0% { transform: scale(0.9); opacity: 0.9; }
+  50% { transform: scale(1.7); opacity: 0; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.series-schedule-pill {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
 .series-details {
   padding: 0.75rem;
   flex: 1;

@@ -917,6 +917,11 @@ document.addEventListener("DOMContentLoaded", () => {
       <div class="series-card" data-series-id="${s.id}" onclick="openSeriesModal(${s.id})" style="cursor: pointer;">
         <div class="series-cover-wrapper">
           <img class="series-cover" src="/api/series/${s.id}/cover" alt="${escapeAttr(title)}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
+          ${s.has_unread ? `
+            <div class="series-unread-dot" title="${s.unread_count ? s.unread_count + ' unread chapter(s)' : 'New downloaded chapters unread'}">
+              <span class="unread-pulse"></span>
+            </div>
+          ` : ''}
           <div class="series-badge-overlay">
             <span class="series-badge-count">📥 ${s.downloaded_chapters || 0} Ch</span>
           </div>
@@ -931,6 +936,11 @@ document.addEventListener("DOMContentLoaded", () => {
               <span class="update-icon">🔄</span>
             </button>
           </div>
+          ${s.next_expected_short ? `
+            <div style="margin: 2px 0 4px 0;">
+              <span class="series-schedule-pill" title="${escapeAttr(s.next_expected_desc || '')}">🕒 ${escapeHtml(s.next_expected_short)}</span>
+            </div>
+          ` : ''}
           ${showFolderBadge && s.folder_name ? `
             <div style="margin: 2px 0;">
               <span class="series-in-folder-badge" onclick="event.stopPropagation(); openFolderModal(${s.folder_id})">📁 In: ${escapeHtml(s.folder_name)}</span>
@@ -1894,6 +1904,34 @@ document.addEventListener("DOMContentLoaded", () => {
           };
         }
 
+        const modalBtnAutoUpdate = document.getElementById("modal-btn-autoupdate");
+        const modalAutoUpdateLabel = document.getElementById("modal-autoupdate-label");
+        if (modalBtnAutoUpdate && modalAutoUpdateLabel) {
+          const isAuto = s.auto_update !== 0;
+          modalAutoUpdateLabel.textContent = isAuto ? "Auto-Update: On" : "Auto-Update: Off";
+          modalBtnAutoUpdate.style.opacity = isAuto ? "1" : "0.65";
+          modalBtnAutoUpdate.title = isAuto ? "Automatic updates enabled. Click to disable." : "Automatic updates disabled. Click to enable.";
+          modalBtnAutoUpdate.onclick = async (e) => {
+            e.stopPropagation();
+            try {
+              const newStatus = isAuto ? 0 : 1;
+              const res = await fetch(`/api/series/${seriesId}/toggle-update`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ auto_update: newStatus })
+              });
+              const resData = await res.json();
+              if (resData.success) {
+                showToast(newStatus === 1 ? "Auto-update enabled for this series" : "Auto-update disabled for this series", "info");
+                openSeriesModal(seriesId);
+                loadLibrary(false);
+              }
+            } catch(err) {
+              showToast("Error updating setting: " + err.message, "error");
+            }
+          };
+        }
+
         const modalBtnGroup = document.getElementById("modal-btn-group");
         const modalGroupLabel = document.getElementById("modal-group-label");
         const matchedInCache = (libraryDataCache || []).find(it => it.id === seriesId);
@@ -1914,6 +1952,29 @@ document.addEventListener("DOMContentLoaded", () => {
         if (s.genres) metaParts.push(`🏷️ ${escapeHtml(s.genres)}`);
         if (s.year) metaParts.push(`📅 ${escapeHtml(s.year)}`);
         document.getElementById("modal-meta-tags").innerHTML = metaParts.length > 0 ? metaParts.join(" &bull; ") : "<em>No author/genre metadata cached yet.</em>";
+
+        // Release schedule & cadence box
+        const scheduleBox = document.getElementById("modal-schedule-box");
+        if (scheduleBox) {
+          if (s.next_expected_desc || s.latest_downloaded_at || (!s.updatable && s.updatable_reason)) {
+            scheduleBox.style.display = "block";
+            let schHtml = `<div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">`;
+            schHtml += `<div><span>🕒 <strong>Cadence / Schedule:</strong> ${escapeHtml(s.next_expected_desc || 'Estimated weekly interval')}</span>`;
+            if (s.latest_downloaded_at) {
+              const d = new Date(s.latest_downloaded_at);
+              const dateStr = !isNaN(d.getTime()) ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : s.latest_downloaded_at;
+              schHtml += `<div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">📥 Last chapter downloaded: ${escapeHtml(dateStr)} ${s.latest_downloaded_chapter_num != null ? `(Ch. ${s.latest_downloaded_chapter_num})` : ''}</div>`;
+            }
+            schHtml += `</div>`;
+            if (!s.updatable && s.updatable_reason) {
+              schHtml += `<span style="background: rgba(239, 68, 68, 0.2); color: #f87171; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">Auto-check skipped: ${escapeHtml(s.updatable_reason)}</span>`;
+            }
+            schHtml += `</div>`;
+            scheduleBox.innerHTML = schHtml;
+          } else {
+            scheduleBox.style.display = "none";
+          }
+        }
 
         // Manhua source URL in bio/card
         const sourceUrlBox = document.getElementById("modal-source-url-box");
@@ -2033,22 +2094,28 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const chList = document.getElementById("modal-chapters-list");
         if (data.chapters && data.chapters.length > 0) {
-          chList.innerHTML = data.chapters.map(c => `
+          chList.innerHTML = data.chapters.map(c => {
+            const dlDate = c.downloaded_at ? new Date(c.downloaded_at) : null;
+            const dlDateStr = (dlDate && !isNaN(dlDate.getTime())) ? dlDate.toLocaleDateString(undefined, {month: 'short', day: 'numeric'}) : '';
+            return `
             <div class="modal-chapter-row" id="modal-ch-${c.id}">
               <div>
                 <strong>${escapeHtml(c.title || `Chapter ${c.chapter_num}`)}</strong>
                 <span class="chapter-badge-format">${c.file_format || 'PDF'}</span>
                 <span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 0.5rem;">(${c.panel_count || 0} panels)</span>
                 ${c.read_status === 2 ? '<span style="font-size: 0.75rem; color: #4ade80; margin-left: 6px;">✓ Completed</span>' : (c.read_status === 1 ? `<span style="font-size: 0.75rem; color: #60a5fa; margin-left: 6px;">📖 Page ${c.last_read_page || 1}</span>` : '')}
+                ${dlDateStr ? `<span style="font-size: 0.73rem; color: var(--text-muted); margin-left: 6px;" title="Downloaded: ${escapeAttr(c.downloaded_at)}">📥 ${escapeHtml(dlDateStr)}</span>` : ''}
                 ${c.source_url ? `<a href="${escapeAttr(c.source_url)}" target="_blank" rel="noopener noreferrer" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 6px; text-decoration: none;" title="Online chapter URL: ${escapeAttr(c.source_url)}">🔗</a>` : ''}
               </div>
               <div style="display: flex; gap: 0.5rem; align-items: center;">
+                ${c.status === 'completed' ? `<button class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;" title="${c.read_status === 2 ? 'Mark as Unread' : 'Mark as Completed'}" onclick="event.stopPropagation(); window.toggleChapterReadStatus(${c.id}, ${c.read_status === 2 ? 0 : 2}, ${seriesId})">${c.read_status === 2 ? '↩ Unread' : '✓ Read'}</button>` : ''}
                 ${c.status === 'completed' ? `<button class="btn btn-primary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem;" onclick="openReader(${c.id})">${c.read_status === 1 ? '▶ Continue' : '📖 Read'}</button>` : `<span style="font-size: 0.8rem; color: var(--warning);">${c.status}</span>`}
                 ${c.status === 'completed' ? `<a href="/api/download/file/${c.id}" class="btn btn-secondary" style="padding: 0.3rem 0.8rem; font-size: 0.85rem; text-decoration: none;" download>💾 File</a>` : ''}
                 <button class="btn btn-secondary" style="padding: 0.3rem 0.6rem; font-size: 0.85rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Delete Chapter" onclick="deleteChapterPrompt(${c.id}, ${seriesId}, '${escapeAttr(c.title || `Chapter ${c.chapter_num}`)}')">🗑️</button>
               </div>
             </div>
-          `).join("");
+          `;
+          }).join("");
         } else {
           chList.innerHTML = '<p style="color: var(--text-muted); font-size: 0.9rem;">No chapters recorded yet.</p>';
         }
@@ -2257,7 +2324,8 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     readerProgressCounter.textContent = `Page ${pagedCurrentIndex + 1} of ${pagedTotalPages}`;
     readerView.scrollTop = 0;
-    saveReadingProgressThrottled(pagedCurrentIndex + 1);
+    const isCompleted = pagedCurrentIndex >= pagedTotalPages - 1;
+    saveReadingProgressThrottled(pagedCurrentIndex + 1, isCompleted);
   }
 
   // Tap in reading area toggles HUD or turns page in paged mode
@@ -2369,19 +2437,46 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   let progressSaveTimeout = null;
-  function saveReadingProgressThrottled(pageNum) {
+  function saveReadingProgressThrottled(pageNum, isCompleted = false) {
     if (!currentReadingChapterId) return;
-    if (!progressSaveTimeout) {
-      progressSaveTimeout = setTimeout(() => {
-        progressSaveTimeout = null;
-        fetch(`/api/chapter/${currentReadingChapterId}/progress`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ last_read_page: pageNum, read_status: 1 })
-        }).catch(() => {});
-      }, 1000);
+    const totalP = (currentChapterData && currentChapterData.total_pages) ? currentChapterData.total_pages : pagedTotalPages;
+    const isFinished = isCompleted || (totalP > 0 && pageNum >= totalP);
+    const readStatus = isFinished ? 2 : 1;
+    if (progressSaveTimeout) {
+      clearTimeout(progressSaveTimeout);
     }
+    progressSaveTimeout = setTimeout(() => {
+      progressSaveTimeout = null;
+      fetch(`/api/chapter/${currentReadingChapterId}/progress`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ last_read_page: pageNum, read_status: readStatus })
+      }).catch(() => {});
+    }, isFinished ? 200 : 1000);
   }
+  window.saveReadingProgressThrottled = saveReadingProgressThrottled;
+
+  window.toggleChapterReadStatus = async function(chapterId, newStatus, seriesId) {
+    try {
+      const res = await fetch(`/api/chapter/${chapterId}/toggle-read`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ read_status: newStatus })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(newStatus === 2 ? "Marked as completed" : "Marked as unread", "info");
+        if (seriesId) {
+          openSeriesModal(seriesId);
+        }
+        loadLibrary(false);
+      } else {
+        showToast("Error updating status: " + (data.error || "Unknown"), "error");
+      }
+    } catch (e) {
+      showToast("Failed to update status: " + e.message, "error");
+    }
+  };
 
   // Pre-buffer memory cache
   const prebufferedSet = new Set();
@@ -2431,7 +2526,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (data.next_chapter_id) {
           readerNextBtn.disabled = false;
-          readerNextBtn.onclick = () => openReader(data.next_chapter_id);
+          readerNextBtn.onclick = () => {
+            saveReadingProgressThrottled(data.total_pages || pagedTotalPages, true);
+            openReader(data.next_chapter_id);
+          };
         } else {
           readerNextBtn.disabled = true;
         }
@@ -2451,14 +2549,14 @@ document.addEventListener("DOMContentLoaded", () => {
             <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem;">${data.series_title}</p>
             <div style="display: flex; flex-direction: column; gap: 0.75rem; justify-content: center; align-items: stretch; max-width: 280px; margin: 0 auto;">
               ${data.next_chapter_id 
-                ? `<button class="btn btn-primary" style="padding: 12px 18px; font-size: 0.95rem; font-weight: 600;" onclick="openReader(${data.next_chapter_id})">Next Chapter ❯</button>` 
+                ? `<button class="btn btn-primary" style="padding: 12px 18px; font-size: 0.95rem; font-weight: 600;" onclick="saveReadingProgressThrottled(${data.total_pages}, true); openReader(${data.next_chapter_id})">Next Chapter ❯</button>` 
                 : '<p style="color: #4ade80; font-size: 0.85rem; margin: 4px 0;">🎉 You are caught up to the latest downloaded chapter!</p>'
               }
               ${data.prev_chapter_id 
                 ? `<button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="openReader(${data.prev_chapter_id})">❮ Previous Chapter</button>` 
                 : ''
               }
-              <button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="closeReader()">Back to Library</button>
+              <button class="btn btn-secondary" style="padding: 10px 16px; font-size: 0.85rem;" onclick="saveReadingProgressThrottled(${data.total_pages}, true); closeReader()">Back to Library</button>
             </div>
           </div>
         `;
@@ -2490,8 +2588,10 @@ document.addEventListener("DOMContentLoaded", () => {
               currentPage = i + 1;
             }
           });
+          const isAtBottom = (readerView.scrollTop + readerView.clientHeight >= readerPagesContainer.offsetHeight - 250);
+          const isCompleted = isAtBottom || (currentPage >= data.total_pages);
           readerProgressCounter.textContent = `Page ${currentPage} of ${data.total_pages}`;
-          saveReadingProgressThrottled(currentPage);
+          saveReadingProgressThrottled(currentPage, isCompleted);
           prebufferAhead(data.pages, currentPage - 1, 10);
         };
       } else {

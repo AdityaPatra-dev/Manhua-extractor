@@ -11,7 +11,8 @@ from database.db import (
     get_chapters_for_series,
     add_or_update_chapter,
     get_setting,
-    get_all_promo_signatures
+    get_all_promo_signatures,
+    is_series_updatable
 )
 from extractors.dispatcher import dispatcher
 from core.downloader import download_panels_stream, get_staging_dir, cleanup_staging_dir
@@ -154,6 +155,20 @@ async def check_and_enqueue_series_update(
         return {"success": False, "error": f"Series ID {series_id} not found."}
 
     series_title = series.get("title") or "Unknown Series"
+
+    can_update, reason = is_series_updatable(series)
+    if not can_update:
+        return {
+            "success": True,
+            "series_id": series_id,
+            "series_title": series_title,
+            "new_chapters": [],
+            "queued": False,
+            "skipped": True,
+            "reason": reason,
+            "message": f"'{series_title}' does not require updates ({reason})."
+        }
+
     fmt = (preferred_format or get_setting("preferred_format", "pdf") or "pdf").lower()
 
     target_url, new_chapters = await find_new_chapters_for_series(series)
@@ -207,7 +222,7 @@ async def check_and_enqueue_series_update(
 
 
 async def check_series_updates(
-    series: Dict[str, Any],
+    series: Union[int, Dict[str, Any]],
     base_save_dir: str = DOWNLOADS_DIR,
     preferred_format: str = "pdf",
     max_width: int = 1080,
@@ -217,9 +232,21 @@ async def check_series_updates(
     """
     Check a single series for new released chapters and download them directly (CLI fallback).
     """
+    if isinstance(series, int):
+        s_obj = get_series_by_id(series)
+        if not s_obj:
+            return []
+        series = s_obj
+
     series_id = series["id"]
     series_title = series["title"]
-    series_slug = series["slug"]
+    series_slug = series.get("slug") or str(series_id)
+
+    can_update, reason = is_series_updatable(series)
+    if not can_update:
+        if progress_cb:
+            progress_cb(f"Skipping {series_title} ({reason})")
+        return []
 
     if progress_cb:
         progress_cb(f"Checking catalog for {series_title}...")
@@ -304,27 +331,63 @@ async def run_library_update(
     progress_cb: Optional[Callable[[str], None]] = None
 ) -> Dict[str, Any]:
     """
-    Check all series in library.db for new releases.
-    If queue_manager is provided, automatically enqueues new chapters into the download queue!
+    Check all active series in library.db for new releases.
+    Automatically excludes static manga archives, one-shots, completed series, and manually disabled titles.
+    Runs checks concurrently with a bounded semaphore to maximize speed.
     """
     series_list = get_all_series()
     fmt = get_setting("preferred_format", "pdf")
+
+    # 1. Filter out static manga sites and completed series
+    updatable = []
+    skipped = []
+    for s in series_list:
+        can_update, reason = is_series_updatable(s)
+        if can_update:
+            updatable.append(s)
+        else:
+            skipped.append({"id": s["id"], "title": s["title"], "reason": reason})
+
     results = {
         "total_series": len(series_list),
+        "checked_series_count": len(updatable),
+        "skipped_series_count": len(skipped),
         "updated_series_count": 0,
         "total_new_chapters": 0,
-        "details": []
+        "details": [],
+        "skipped_details": skipped
     }
 
+    if not updatable:
+        if progress_cb:
+            progress_cb("All titles in library are completed or static; no checks required.")
+        return results
+
+    # 2. Concurrently check updatable series (up to 5 in parallel for fast throughput)
+    sem = asyncio.Semaphore(5)
+
     if queue_manager is not None:
-        for s in series_list:
-            if progress_cb:
-                progress_cb(f"Checking updates for '{s['title']}'...")
-            res = await check_and_enqueue_series_update(
-                series_id=s["id"],
-                queue_manager=queue_manager,
-                preferred_format=fmt
-            )
+        async def _check_one(s):
+            async with sem:
+                if progress_cb:
+                    progress_cb(f"Checking updates for '{s['title']}'...")
+                try:
+                    res = await check_and_enqueue_series_update(
+                        series_id=s["id"],
+                        queue_manager=queue_manager,
+                        preferred_format=fmt
+                    )
+                    return s, res
+                except Exception as e:
+                    return s, {"queued": False, "error": str(e)}
+
+        tasks = [_check_one(s) for s in updatable]
+        done_items = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for item in done_items:
+            if isinstance(item, Exception):
+                continue
+            s, res = item
             if res.get("queued") and res.get("new_chapters"):
                 results["updated_series_count"] += 1
                 results["total_new_chapters"] += len(res["new_chapters"])
@@ -335,13 +398,25 @@ async def run_library_update(
                 })
         return results
 
-    # Standalone CLI mode without queue manager
-    for s in series_list:
-        new_chaps = await check_series_updates(
-            series=s,
-            preferred_format=fmt,
-            progress_cb=progress_cb
-        )
+    # Standalone CLI mode
+    async def _check_cli(s):
+        async with sem:
+            try:
+                new_chaps = await check_series_updates(
+                    series=s,
+                    preferred_format=fmt,
+                    progress_cb=progress_cb
+                )
+                return s, new_chaps
+            except Exception:
+                return s, []
+
+    cli_tasks = [_check_cli(s) for s in updatable]
+    done_cli = await asyncio.gather(*cli_tasks, return_exceptions=True)
+    for item in done_cli:
+        if isinstance(item, Exception):
+            continue
+        s, new_chaps = item
         if new_chaps:
             results["updated_series_count"] += 1
             results["total_new_chapters"] += len(new_chaps)
