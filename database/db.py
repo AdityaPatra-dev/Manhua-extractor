@@ -194,6 +194,22 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             conn.execute("ALTER TABLE series ADD COLUMN auto_update INTEGER DEFAULT 1")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("UPDATE series SET auto_update = 1 WHERE auto_update IS NULL")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE chapters ADD COLUMN read_status INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE chapters ADD COLUMN last_read_page INTEGER DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE chapters ADD COLUMN downloaded_at TIMESTAMP")
+        except sqlite3.OperationalError:
+            pass
 
         # Deduplicate any existing duplicate series records sharing the same normalized title
         try:
@@ -234,6 +250,10 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
 
     conn.close()
     try:
+        migrate_legacy_user_data(db_path)
+    except Exception:
+        pass
+    try:
         fix_legacy_hitomi_series(db_path)
     except Exception:
         pass
@@ -241,6 +261,83 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         consolidate_duplicate_series(db_path)
     except Exception:
         pass
+
+def migrate_legacy_user_data(db_path: str = DEFAULT_DB_PATH) -> None:
+    """
+    Seamless migration for users upgrading from older versions:
+    1. Backfills downloaded_at for existing completed chapters from file mtime or series creation.
+    2. Establishes a clean read_status baseline so existing libraries don't light up with false unread badges.
+    3. Moving forward, newly downloaded chapters will track download dates and trigger unread badges properly.
+    """
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            # 1. Backfill downloaded_at from disk mtime for chapters that were completed before this version
+            rows = conn.execute("""
+                SELECT id, file_path, status, downloaded_at
+                FROM chapters
+                WHERE status = 'completed' AND (downloaded_at IS NULL OR downloaded_at = '')
+            """).fetchall()
+
+            for r in rows:
+                ch_id = r["id"]
+                fpath = r["file_path"]
+                dl_time = None
+                if fpath and os.path.exists(fpath):
+                    try:
+                        mtime = os.path.getmtime(fpath)
+                        dl_time = datetime.fromtimestamp(mtime, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        pass
+                if not dl_time:
+                    dl_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute("UPDATE chapters SET downloaded_at = ? WHERE id = ?", (dl_time, ch_id))
+
+            # 2. Establish reading baseline for legacy data (runs once upon upgrade)
+            # Only runs if v2_6_baseline_migrated setting is not yet recorded.
+            setting_row = conn.execute("SELECT value FROM settings WHERE key = 'v2_6_baseline_migrated'").fetchone()
+            if not setting_row or str(setting_row["value"]) != "1":
+                series_rows = conn.execute("SELECT id FROM series").fetchall()
+                for s_row in series_rows:
+                    s_id = s_row["id"]
+                    chaps = conn.execute("""
+                        SELECT id, chapter_num, read_status, last_read_page, panel_count, status
+                        FROM chapters
+                        WHERE series_id = ?
+                        ORDER BY chapter_num ASC
+                    """, (s_id,)).fetchall()
+
+                    if not chaps:
+                        continue
+
+                    # If the user was reading a specific chapter (last_read_page > 0 or read_status == 1)
+                    reading_chaps = [c for c in chaps if (c["last_read_page"] or 0) > 0 or (c["read_status"] or 0) == 1]
+                    if reading_chaps:
+                        curr_chap = reading_chaps[-1]
+                        curr_num = curr_chap["chapter_num"]
+                        # Chapters prior to current reading chapter were completed
+                        conn.execute("""
+                            UPDATE chapters
+                            SET read_status = 2
+                            WHERE series_id = ? AND chapter_num < ? AND status = 'completed'
+                        """, (s_id, curr_num))
+                        # Current chapter: if read past the end, mark completed, else reading
+                        if (curr_chap["last_read_page"] or 0) >= (curr_chap["panel_count"] or 1) and (curr_chap["panel_count"] or 0) > 0:
+                            conn.execute("UPDATE chapters SET read_status = 2 WHERE id = ?", (curr_chap["id"],))
+                    else:
+                        # Legacy series with completed chapters where read_status was never recorded:
+                        # Mark existing completed chapters as read so existing libraries start clean.
+                        conn.execute("""
+                            UPDATE chapters
+                            SET read_status = 2
+                            WHERE series_id = ? AND status = 'completed' AND (read_status IS NULL OR read_status = 0)
+                        """, (s_id,))
+
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('v2_6_baseline_migrated', '1')")
+    except Exception:
+        pass
+    finally:
+        conn.close()
 
 def fix_legacy_hitomi_series(db_path: str = DEFAULT_DB_PATH) -> None:
     """Repair any legacy Hitomi series records that were merged under slug='hitomi'."""
@@ -737,7 +834,7 @@ def add_or_update_chapter(
                         file_format = coalesce(?, file_format),
                         file_size = CASE WHEN ? > 0 THEN ? ELSE file_size END,
                         status = coalesce(?, status),
-                        downloaded_at = CASE WHEN ? = 'completed' THEN CURRENT_TIMESTAMP ELSE downloaded_at END
+                        downloaded_at = CASE WHEN ? = 'completed' THEN coalesce(downloaded_at, CURRENT_TIMESTAMP) ELSE downloaded_at END
                     WHERE id = ?
                 """, (chapter_slug, title, source_url, panel_count, panel_count, file_path, file_format, file_size, file_size, status, status, chap_id))
                 return chap_id

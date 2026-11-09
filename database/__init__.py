@@ -30,6 +30,7 @@ from .db import (
     get_folder_by_name,
     is_series_updatable,
     set_series_auto_update,
+    migrate_legacy_user_data,
     STATIC_DOMAINS,
     STATIC_ENGINES
 )
